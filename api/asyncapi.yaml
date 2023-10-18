@@ -1,0 +1,209 @@
+asyncapi: '2.6.0'
+info:
+  title: Kubescape Synchronizer API
+  version: '1.0.0'
+  description: |
+    The Kubescape Synchronizer API used to synchronize objects between
+    Kubernetes clusters and a compatible backend.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  localhost:
+    url: localhost:8080
+    protocol: ws
+    description: Local broker
+defaultContentType: application/json
+channels:
+  /:
+    publish:
+      description: Send messages to the API
+      message:
+        oneOf:
+          - $ref: '#/components/messages/objectAdded'
+          - $ref: '#/components/messages/objectDeleted'
+          - $ref: '#/components/messages/objectModified'
+          - $ref: '#/components/messages/getObject'
+          - $ref: '#/components/messages/patchObject'
+          - $ref: '#/components/messages/putObject'
+
+    subscribe:
+      description: Messages that you receive from the API
+      message:
+        oneOf:
+          - $ref: '#/components/messages/objectAdded'
+          - $ref: '#/components/messages/objectDeleted'
+          - $ref: '#/components/messages/objectModified'
+          - $ref: '#/components/messages/getObject'
+          - $ref: '#/components/messages/patchObject'
+          - $ref: '#/components/messages/putObject'
+components:
+  messages:
+    generic:
+      description: A generic message sent to the API
+      payload:
+        $ref: '#/components/schemas/generic'
+    newChecksum:
+      description: Event sent when a new checksum is observed
+      payload:
+        $ref: '#/components/schemas/newChecksum'
+    objectAdded:
+      description: Event sent when an object is added
+      payload:
+        $ref: '#/components/schemas/objectAdded'
+    objectDeleted:
+      description: Event sent when an object is deleted
+      payload:
+        $ref: '#/components/schemas/objectDeleted'
+    objectModified:
+      description: Event sent when an object is modified
+      payload:
+        $ref: '#/components/schemas/objectModified'
+    getObject:
+      description: Ask for an object to be sent back
+      payload:
+        $ref: '#/components/schemas/getObject'
+    patchObject:
+      description: Send a patch to apply to an object
+      payload:
+        $ref: '#/components/schemas/patchObject'
+    putObject:
+      description: Send an object
+      payload:
+        $ref: '#/components/schemas/putObject'
+  schemas:
+    generic:
+      type: object
+      properties:
+        event:
+          $ref: '#/components/schemas/event'
+        kind:
+          $ref: '#/components/schemas/kind'
+    newChecksum:
+      type: object
+      properties:
+        event:
+          $ref: '#/components/schemas/event'
+        cluster:
+          $ref: '#/components/schemas/cluster'
+        kind:
+          $ref: '#/components/schemas/kind'
+        name:
+          $ref: '#/components/schemas/name'
+        checksum:
+          $ref: '#/components/schemas/sum'
+    objectAdded:
+      type: object
+      properties:
+        event:
+          $ref: '#/components/schemas/event'
+        cluster:
+          $ref: '#/components/schemas/cluster'
+        kind:
+          $ref: '#/components/schemas/kind'
+        name:
+          $ref: '#/components/schemas/name'
+        checksum:
+          $ref: '#/components/schemas/sum'
+        object:
+          $ref: '#/components/schemas/object'
+    objectDeleted:
+      type: object
+      properties:
+        event:
+          $ref: '#/components/schemas/event'
+        cluster:
+          $ref: '#/components/schemas/cluster'
+        kind:
+          $ref: '#/components/schemas/kind'
+        name:
+          $ref: '#/components/schemas/name'
+    objectModified:
+      type: object
+      properties:
+        event:
+          $ref: '#/components/schemas/event'
+        cluster:
+          $ref: '#/components/schemas/cluster'
+        kind:
+          $ref: '#/components/schemas/kind'
+        name:
+          $ref: '#/components/schemas/name'
+        checksum:
+          $ref: '#/components/schemas/sum'
+        object:
+          $ref: '#/components/schemas/object'
+    getObject:
+      type: object
+      properties:
+        event:
+          $ref: '#/components/schemas/event'
+        cluster:
+          $ref: '#/components/schemas/cluster'
+        kind:
+          $ref: '#/components/schemas/kind'
+        name:
+          $ref: '#/components/schemas/name'
+        object:
+          $ref: '#/components/schemas/object'
+    patchObject:
+      type: object
+      properties:
+        event:
+          $ref: '#/components/schemas/event'
+        cluster:
+          $ref: '#/components/schemas/cluster'
+        kind:
+          $ref: '#/components/schemas/kind'
+        name:
+          $ref: '#/components/schemas/name'
+        checksum:
+          $ref: '#/components/schemas/sum'
+        patch:
+          $ref: '#/components/schemas/object'
+    putObject:
+      type: object
+      properties:
+        event:
+          $ref: '#/components/schemas/event'
+        cluster:
+          $ref: '#/components/schemas/cluster'
+        kind:
+          $ref: '#/components/schemas/kind'
+        name:
+          $ref: '#/components/schemas/name'
+        object:
+          $ref: '#/components/schemas/object'
+    cluster:
+      type: string
+      description: name of the cluster
+    event:
+      type: string
+      description: type of event
+      enum:
+        - newChecksum
+        - objectAdded
+        - objectDeleted
+        - objectModified
+        - getObject
+        - patchObject
+        - putObject
+    kind:
+      type: object
+      description: unambiguously identifies a resource
+      properties:
+        group:
+          type: string
+        version:
+          type: string
+        resource:
+          type: string
+    name:
+      type: string
+      description: name of the object
+    object:
+      type: string
+      description: The object is encoded in JSON
+    sum:
+      type: string
+      description: The checksum of the object
