@@ -27,7 +27,7 @@ func main() {
 	// in-cluster adapter
 	adapter := incluster.NewInClusterAdapter(cfg, k8sclient)
 	// websocket client
-	conn, _, _, err := ws.DefaultDialer.Dial(context.Background(), cfg.Backend)
+	conn, _, _, err := ws.DefaultDialer.Dial(context.Background(), cfg.InCluster.BackendUrl)
 	if err != nil {
 		logger.L().Fatal("unable to create websocket connection", helpers.Error(err))
 	}

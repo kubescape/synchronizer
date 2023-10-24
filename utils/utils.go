@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/SergJa/jsonhash"
+	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -166,4 +168,11 @@ func getConfig() (*rest.Config, error) {
 	}
 	// nothing works
 	return nil, errors.New("unable to find config")
+}
+
+// based on github.com/kubescape/event-ingester-service/utils/common.go:func PulsarMessageIDtoString
+func PulsarMessageIDtoString(msgID pulsar.MessageID) string {
+	batchStr := strconv.Itoa(int(msgID.BatchIdx()))
+	msgIDstr := msgID.String() + ":" + batchStr
+	return msgIDstr
 }

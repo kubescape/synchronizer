@@ -1,6 +1,13 @@
 {
-  "backend": "ws://127.0.0.1:8080/",
-  "cluster": "kind-kind",
+  "backend": {
+    "subscription": "subscription",
+    "syncTopic": "syncTopic",
+    "topic": "topic"
+  },
+  "inCluster": {
+    "backendUrl": "ws://127.0.0.1:8080/",
+    "clusterName": "kind-kind"
+  },
   "resources": [
     {
       "group": "apps",

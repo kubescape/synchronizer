@@ -12,6 +12,15 @@ import (
 
 func main() {
 	logger.L().SetLevel("debug")
+	// config
+	//cfg, err := config.LoadConfig("./configuration")
+	//if err != nil {
+	//	logger.L().Fatal("unable to load configuration", helpers.Error(err))
+	//}
+	// backend adapter
+	//ctx, cancel := context.WithCancel(context.Background())
+	//defer cancel()
+	//adapter := backend.NewBackendAdapter(ctx, cfg, nil)
 	// mock adapter
 	adapter := adapters.NewMockAdapter()
 	// websocket server

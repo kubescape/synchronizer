@@ -3,14 +3,25 @@ package config
 import (
 	"strings"
 
+	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	Backend   string     `mapstructure:"backend"`
-	Cluster   string     `mapstructure:"cluster"`
+	Backend   Backend    `mapstructure:"backend"`
+	InCluster InCluster  `mapstructure:"inCluster"`
 	Resources []Resource `mapstructure:"resources"`
+}
+
+type Backend struct {
+	Subscription string                    `mapstructure:"subscription"`
+	Topic        pulsarconnector.TopicName `mapstructure:"topic"`
+}
+
+type InCluster struct {
+	BackendUrl  string `mapstructure:"backendUrl"`
+	ClusterName string `mapstructure:"clusterName"`
 }
 
 type Resource struct {
