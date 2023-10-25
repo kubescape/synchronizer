@@ -75,101 +75,133 @@ components:
     generic:
       type: object
       properties:
+        depth:
+          $ref: '#/components/schemas/depth'
         event:
           $ref: '#/components/schemas/event'
         kind:
           $ref: '#/components/schemas/kind'
+        msgID:
+          $ref: '#/components/schemas/msgID'
     newChecksum:
       type: object
       properties:
-        event:
-          $ref: '#/components/schemas/event'
-        cluster:
-          $ref: '#/components/schemas/cluster'
-        kind:
-          $ref: '#/components/schemas/kind'
-        name:
-          $ref: '#/components/schemas/name'
         checksum:
           $ref: '#/components/schemas/sum'
+        cluster:
+          $ref: '#/components/schemas/cluster'
+        depth:
+          $ref: '#/components/schemas/depth'
+        event:
+          $ref: '#/components/schemas/event'
+        kind:
+          $ref: '#/components/schemas/kind'
+        msgID:
+          $ref: '#/components/schemas/msgID'
+        name:
+          $ref: '#/components/schemas/name'
     objectAdded:
       type: object
       properties:
-        event:
-          $ref: '#/components/schemas/event'
-        cluster:
-          $ref: '#/components/schemas/cluster'
-        kind:
-          $ref: '#/components/schemas/kind'
-        name:
-          $ref: '#/components/schemas/name'
         checksum:
           $ref: '#/components/schemas/sum'
+        cluster:
+          $ref: '#/components/schemas/cluster'
+        depth:
+          $ref: '#/components/schemas/depth'
+        event:
+          $ref: '#/components/schemas/event'
+        kind:
+          $ref: '#/components/schemas/kind'
+        msgID:
+          $ref: '#/components/schemas/msgID'
+        name:
+          $ref: '#/components/schemas/name'
         object:
           $ref: '#/components/schemas/object'
     objectDeleted:
       type: object
       properties:
-        event:
-          $ref: '#/components/schemas/event'
         cluster:
           $ref: '#/components/schemas/cluster'
+        depth:
+          $ref: '#/components/schemas/depth'
+        event:
+          $ref: '#/components/schemas/event'
         kind:
           $ref: '#/components/schemas/kind'
+        msgID:
+          $ref: '#/components/schemas/msgID'
         name:
           $ref: '#/components/schemas/name'
     objectModified:
       type: object
       properties:
-        event:
-          $ref: '#/components/schemas/event'
-        cluster:
-          $ref: '#/components/schemas/cluster'
-        kind:
-          $ref: '#/components/schemas/kind'
-        name:
-          $ref: '#/components/schemas/name'
         checksum:
           $ref: '#/components/schemas/sum'
+        cluster:
+          $ref: '#/components/schemas/cluster'
+        depth:
+          $ref: '#/components/schemas/depth'
+        event:
+          $ref: '#/components/schemas/event'
+        kind:
+          $ref: '#/components/schemas/kind'
+        msgID:
+          $ref: '#/components/schemas/msgID'
+        name:
+          $ref: '#/components/schemas/name'
         object:
           $ref: '#/components/schemas/object'
     getObject:
       type: object
       properties:
-        event:
-          $ref: '#/components/schemas/event'
         baseObject:
           $ref: '#/components/schemas/object'
         cluster:
           $ref: '#/components/schemas/cluster'
+        depth:
+          $ref: '#/components/schemas/depth'
+        event:
+          $ref: '#/components/schemas/event'
         kind:
           $ref: '#/components/schemas/kind'
+        msgID:
+          $ref: '#/components/schemas/msgID'
         name:
           $ref: '#/components/schemas/name'
     patchObject:
       type: object
       properties:
-        event:
-          $ref: '#/components/schemas/event'
-        cluster:
-          $ref: '#/components/schemas/cluster'
-        kind:
-          $ref: '#/components/schemas/kind'
-        name:
-          $ref: '#/components/schemas/name'
         checksum:
           $ref: '#/components/schemas/sum'
+        cluster:
+          $ref: '#/components/schemas/cluster'
+        depth:
+          $ref: '#/components/schemas/depth'
+        event:
+          $ref: '#/components/schemas/event'
+        kind:
+          $ref: '#/components/schemas/kind'
+        msgID:
+          $ref: '#/components/schemas/msgID'
+        name:
+          $ref: '#/components/schemas/name'
         patch:
           $ref: '#/components/schemas/object'
     putObject:
       type: object
       properties:
-        event:
-          $ref: '#/components/schemas/event'
         cluster:
           $ref: '#/components/schemas/cluster'
+        depth:
+          $ref: '#/components/schemas/depth'
+        event:
+          $ref: '#/components/schemas/event'
         kind:
           $ref: '#/components/schemas/kind'
+        msgID:
+          $ref: '#/components/schemas/msgID'
         name:
           $ref: '#/components/schemas/name'
         object:
@@ -177,6 +209,9 @@ components:
     cluster:
       type: string
       description: name of the cluster
+    depth:
+      type: integer
+      description: depth of the message exchange, used to break recursion
     event:
       type: string
       description: type of event
@@ -198,6 +233,9 @@ components:
           type: string
         resource:
           type: string
+    msgID:
+      type: string
+      description: unique identifier of the message
     name:
       type: string
       description: name of the object

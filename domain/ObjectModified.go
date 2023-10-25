@@ -2,11 +2,13 @@ package domain
 
 // ObjectModified represents a ObjectModified model.
 type ObjectModified struct {
-	Event                *Event
-	Cluster              string
-	Kind                 *Kind
-	Name                 string
 	Checksum             string
+	Cluster              string
+	Depth                int
+	Event                *Event
+	Kind                 *Kind
+	MsgId                string
+	Name                 string
 	Object               string
 	AdditionalProperties map[string]interface{}
 }

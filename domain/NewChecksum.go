@@ -2,10 +2,12 @@ package domain
 
 // NewChecksum represents a NewChecksum model.
 type NewChecksum struct {
-	Event                *Event
-	Cluster              string
-	Kind                 *Kind
-	Name                 string
 	Checksum             string
+	Cluster              string
+	Depth                int
+	Event                *Event
+	Kind                 *Kind
+	MsgId                string
+	Name                 string
 	AdditionalProperties map[string]interface{}
 }

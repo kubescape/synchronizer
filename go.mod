@@ -9,8 +9,9 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/evanphx/json-patch v4.12.0+incompatible
 	github.com/gobwas/ws v1.3.0
+	github.com/google/uuid v1.3.0
 	github.com/kubescape/go-logger v0.0.21
-	github.com/kubescape/messaging v0.0.15
+	github.com/kubescape/messaging v0.0.16-0.20231026162242-17242c2bdc35
 	github.com/panjf2000/ants/v2 v2.8.2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/spf13/viper v1.17.0
@@ -120,5 +121,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.3.0 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
-
-replace github.com/kubescape/messaging => github.com/kubescape/messaging v0.0.16-0.20231026111846-08264fd8f6a1

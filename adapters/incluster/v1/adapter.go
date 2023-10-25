@@ -1,6 +1,7 @@
 package incluster
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/kubescape/go-logger"
@@ -28,32 +29,32 @@ func NewInClusterAdapter(cfg config.Config, k8sclient dynamic.Interface) *InClus
 
 var _ adapters.Adapter = (*InClusterAdapter)(nil)
 
-func (a *InClusterAdapter) DeleteObject(id domain.ClusterKindName) error {
+func (a *InClusterAdapter) DeleteObject(_ context.Context, id domain.ClusterKindName) error {
 	if client, ok := a.clients[id.Kind.String()]; ok {
 		return client.DeleteObject(id)
 	}
 	return fmt.Errorf("unknown resource %s", id.Kind.String())
 }
 
-func (a *InClusterAdapter) GetObject(id domain.ClusterKindName, baseObject []byte) error {
+func (a *InClusterAdapter) GetObject(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
 	if client, ok := a.clients[id.Kind.String()]; ok {
-		return client.GetObject(id, baseObject)
+		return client.GetObject(ctx, id, baseObject)
 	}
 	return fmt.Errorf("unknown resource %s", id.Kind.String())
 }
 
-func (a *InClusterAdapter) PatchObject(id domain.ClusterKindName, checksum string, patch []byte) error {
+func (a *InClusterAdapter) PatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
 	if client, ok := a.clients[id.Kind.String()]; ok {
 		baseObject, err := client.PatchObject(id, checksum, patch)
 		if err != nil {
 			logger.L().Warning("patch object, sending get object", helpers.Error(err))
-			return a.callbacks.GetObject(id, baseObject)
+			return a.callbacks.GetObject(ctx, id, baseObject)
 		}
 	}
 	return fmt.Errorf("unknown resource %s", id.Kind.String())
 }
 
-func (a *InClusterAdapter) PutObject(id domain.ClusterKindName, object []byte) error {
+func (a *InClusterAdapter) PutObject(_ context.Context, id domain.ClusterKindName, object []byte) error {
 	if client, ok := a.clients[id.Kind.String()]; ok {
 		return client.PutObject(object)
 	}
@@ -73,12 +74,12 @@ func (a *InClusterAdapter) Start() error {
 	return nil
 }
 
-func (a *InClusterAdapter) VerifyObject(id domain.ClusterKindName, checksum string) error {
+func (a *InClusterAdapter) VerifyObject(ctx context.Context, id domain.ClusterKindName, checksum string) error {
 	if client, ok := a.clients[id.Kind.String()]; ok {
 		baseObject, err := client.VerifyObject(id, checksum)
 		if err != nil {
 			logger.L().Warning("verify object, sending get object", helpers.Error(err))
-			return a.callbacks.GetObject(id, baseObject)
+			return a.callbacks.GetObject(ctx, id, baseObject)
 		}
 	}
 	return fmt.Errorf("unknown resource %s", id.Kind.String())

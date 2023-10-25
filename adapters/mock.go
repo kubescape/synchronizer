@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"context"
 	"fmt"
 
 	jsonpatch "github.com/evanphx/json-patch"
@@ -26,12 +27,12 @@ func NewMockAdapter() *MockAdapter {
 
 var _ Adapter = (*MockAdapter)(nil)
 
-func (m *MockAdapter) DeleteObject(id domain.ClusterKindName) error {
+func (m *MockAdapter) DeleteObject(_ context.Context, id domain.ClusterKindName) error {
 	delete(m.resources, id.String())
 	return nil
 }
 
-func (m *MockAdapter) GetObject(id domain.ClusterKindName, baseObject []byte) error {
+func (m *MockAdapter) GetObject(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
 	object, ok := m.resources[id.String()]
 	if !ok {
 		return fmt.Errorf("object not found")
@@ -52,20 +53,20 @@ func (m *MockAdapter) GetObject(id domain.ClusterKindName, baseObject []byte) er
 			if err != nil {
 				return fmt.Errorf("create merge patch: %w", err)
 			}
-			return m.callbacks.PatchObject(id, checksum, patch)
+			return m.callbacks.PatchObject(ctx, id, checksum, patch)
 		} else {
-			return m.callbacks.PutObject(id, object)
+			return m.callbacks.PutObject(ctx, id, object)
 		}
 	} else {
-		return m.callbacks.PutObject(id, object)
+		return m.callbacks.PutObject(ctx, id, object)
 	}
 }
 
-func (m *MockAdapter) PatchObject(id domain.ClusterKindName, checksum string, patch []byte) error {
+func (m *MockAdapter) PatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
 	baseObject, err := m.patchObject(id, checksum, patch)
 	if err != nil {
 		logger.L().Warning("patch object, sending get object", helpers.Error(err))
-		return m.callbacks.GetObject(id, baseObject)
+		return m.callbacks.GetObject(ctx, id, baseObject)
 	}
 	return nil
 }
@@ -91,7 +92,7 @@ func (m *MockAdapter) patchObject(id domain.ClusterKindName, checksum string, pa
 	return object, nil
 }
 
-func (m *MockAdapter) PutObject(id domain.ClusterKindName, object []byte) error {
+func (m *MockAdapter) PutObject(_ context.Context, id domain.ClusterKindName, object []byte) error {
 	m.resources[id.String()] = object
 	return nil
 }
@@ -104,11 +105,11 @@ func (m *MockAdapter) Start() error {
 	return nil
 }
 
-func (m *MockAdapter) VerifyObject(id domain.ClusterKindName, newChecksum string) error {
+func (m *MockAdapter) VerifyObject(ctx context.Context, id domain.ClusterKindName, newChecksum string) error {
 	baseObject, err := m.verifyObject(id, newChecksum)
 	if err != nil {
 		logger.L().Warning("verify object, sending get object", helpers.Error(err))
-		return m.callbacks.GetObject(id, baseObject)
+		return m.callbacks.GetObject(ctx, id, baseObject)
 	}
 	return nil
 }

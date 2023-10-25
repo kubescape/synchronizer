@@ -51,19 +51,19 @@ func NewBackendAdapter(ctx context.Context, cfg config.Config, pulsarClient puls
 
 var _ adapters.Adapter = (*BackendAdapter)(nil)
 
-func (b BackendAdapter) DeleteObject(id domain.ClusterKindName) error {
+func (b BackendAdapter) DeleteObject(_ context.Context, id domain.ClusterKindName) error {
 	return b.sendDeleteObjectMessage(id)
 }
 
-func (b BackendAdapter) GetObject(id domain.ClusterKindName, baseObject []byte) error {
+func (b BackendAdapter) GetObject(_ context.Context, id domain.ClusterKindName, baseObject []byte) error {
 	return b.sendGetObjectMessage(id, baseObject)
 }
 
-func (b BackendAdapter) PatchObject(id domain.ClusterKindName, checksum string, patch []byte) error {
+func (b BackendAdapter) PatchObject(_ context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
 	return b.sendPatchObjectMessage(id, checksum, patch)
 }
 
-func (b BackendAdapter) PutObject(id domain.ClusterKindName, object []byte) error {
+func (b BackendAdapter) PutObject(_ context.Context, id domain.ClusterKindName, object []byte) error {
 	return b.sendPutObjectMessage(id, object)
 }
 
@@ -76,7 +76,7 @@ func (b BackendAdapter) Start() error {
 	return nil
 }
 
-func (b BackendAdapter) VerifyObject(id domain.ClusterKindName, checksum string) error {
+func (b BackendAdapter) VerifyObject(_ context.Context, id domain.ClusterKindName, checksum string) error {
 	return b.sendVerifyObjectMessage(id, checksum)
 }
 

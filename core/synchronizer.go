@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,8 @@ import (
 	"github.com/kubescape/synchronizer/utils"
 	"github.com/panjf2000/ants/v2"
 )
+
+const maxMessageDepth = 8
 
 type Synchronizer struct {
 	adapter      adapters.Adapter
@@ -62,30 +65,30 @@ func newSynchronizer(adapter adapters.Adapter, conn net.Conn, isClient bool, rea
 	return s
 }
 
-func (s *Synchronizer) GetObjectCallback(id domain.ClusterKindName, baseObject []byte) error {
+func (s *Synchronizer) GetObjectCallback(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
 	if s.isClient {
 		baseObject = nil
 	}
-	err := s.sendGetObject(id, baseObject)
+	err := s.sendGetObject(ctx, id, baseObject)
 	if err != nil {
 		return fmt.Errorf("send get object: %w", err)
 	}
 	return nil
 }
 
-func (s *Synchronizer) ObjectAddedCallback(id domain.ClusterKindName, object []byte) error {
+func (s *Synchronizer) ObjectAddedCallback(ctx context.Context, id domain.ClusterKindName, object []byte) error {
 	if s.isClient {
 		// calculate checksum
 		checksum, err := utils.CanonicalHash(object)
 		if err != nil {
 			return fmt.Errorf("calculate checksum: %w", err)
 		}
-		err = s.sendNewChecksum(id, checksum)
+		err = s.sendNewChecksum(ctx, id, checksum)
 		if err != nil {
 			return fmt.Errorf("send checksum: %w", err)
 		}
 	} else {
-		err := s.sendPutObject(id, object)
+		err := s.sendPutObject(ctx, id, object)
 		if err != nil {
 			return fmt.Errorf("send put object: %w", err)
 		}
@@ -93,24 +96,24 @@ func (s *Synchronizer) ObjectAddedCallback(id domain.ClusterKindName, object []b
 	return nil
 }
 
-func (s *Synchronizer) ObjectDeletedCallback(id domain.ClusterKindName) error {
-	err := s.sendObjectDeleted(id)
+func (s *Synchronizer) ObjectDeletedCallback(ctx context.Context, id domain.ClusterKindName) error {
+	err := s.sendObjectDeleted(ctx, id)
 	if err != nil {
 		return fmt.Errorf("send delete: %w", err)
 	}
 	return nil
 }
 
-func (s *Synchronizer) PatchObjectCallback(id domain.ClusterKindName, checksum string, patch []byte) error {
-	err := s.sendPatchObject(id, checksum, patch)
+func (s *Synchronizer) PatchObjectCallback(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
+	err := s.sendPatchObject(ctx, id, checksum, patch)
 	if err != nil {
 		return fmt.Errorf("send patch: %w", err)
 	}
 	return nil
 }
 
-func (s *Synchronizer) PutObjectCallback(id domain.ClusterKindName, object []byte) error {
-	err := s.sendPutObject(id, object)
+func (s *Synchronizer) PutObjectCallback(ctx context.Context, id domain.ClusterKindName, object []byte) error {
+	err := s.sendPutObject(ctx, id, object)
 	if err != nil {
 		return fmt.Errorf("send put object: %w", err)
 	}
@@ -146,7 +149,16 @@ func (s *Synchronizer) listenForSyncEvents() error {
 			logger.L().Error("cannot unmarshal message", helpers.Error(err))
 			continue
 		}
-		logger.L().Info("received message", helpers.Interface("event", generic.Event.Value()))
+		logger.L().Debug("received message", helpers.Interface("event", generic.Event.Value()),
+			helpers.String("msgid", generic.MsgId), helpers.Int("depth", generic.Depth))
+		// check message depth and ID
+		if generic.Depth > maxMessageDepth {
+			logger.L().Error("message depth too high", helpers.Int("depth", generic.Depth))
+			continue
+		}
+		// store in context
+		ctx := utils.ContextFromGeneric(generic)
+		// handle message
 		switch *generic.Event {
 		case domain.EventGetObject:
 			var msg domain.GetObject
@@ -161,7 +173,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 				Kind:    msg.Kind,
 				Name:    msg.Name,
 			}
-			err := s.handleSyncGetObject(id, []byte(msg.BaseObject))
+			err := s.handleSyncGetObject(ctx, id, []byte(msg.BaseObject))
 			if err != nil {
 				logger.L().Error("error handling message", helpers.Error(err),
 					helpers.Interface("event", generic.Event.Value()))
@@ -180,7 +192,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 				Kind:    msg.Kind,
 				Name:    msg.Name,
 			}
-			err := s.handleSyncNewChecksum(id, msg.Checksum)
+			err := s.handleSyncNewChecksum(ctx, id, msg.Checksum)
 			if err != nil {
 				logger.L().Error("error handling message", helpers.Error(err),
 					helpers.Interface("event", generic.Event.Value()))
@@ -199,7 +211,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 				Kind:    msg.Kind,
 				Name:    msg.Name,
 			}
-			err := s.handleSyncObjectDeleted(id)
+			err := s.handleSyncObjectDeleted(ctx, id)
 			if err != nil {
 				logger.L().Error("error handling message", helpers.Error(err),
 					helpers.Interface("event", generic.Event.Value()))
@@ -218,7 +230,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 				Kind:    msg.Kind,
 				Name:    msg.Name,
 			}
-			err := s.handleSyncPatchObject(id, msg.Checksum, []byte(msg.Patch))
+			err := s.handleSyncPatchObject(ctx, id, msg.Checksum, []byte(msg.Patch))
 			if err != nil {
 				logger.L().Error("error handling message", helpers.Error(err),
 					helpers.Interface("event", generic.Event.Value()))
@@ -237,7 +249,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 				Kind:    msg.Kind,
 				Name:    msg.Name,
 			}
-			err := s.handleSyncPutObject(id, []byte(msg.Object))
+			err := s.handleSyncPutObject(ctx, id, []byte(msg.Object))
 			if err != nil {
 				logger.L().Error("error handling message", helpers.Error(err),
 					helpers.Interface("event", generic.Event.Value()))
@@ -247,54 +259,58 @@ func (s *Synchronizer) listenForSyncEvents() error {
 	}
 }
 
-func (s *Synchronizer) handleSyncGetObject(id domain.ClusterKindName, baseObject []byte) error {
-	err := s.adapter.GetObject(id, baseObject)
+func (s *Synchronizer) handleSyncGetObject(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
+	err := s.adapter.GetObject(ctx, id, baseObject)
 	if err != nil {
 		return fmt.Errorf("get object: %w", err)
 	}
 	return nil
 }
 
-func (s *Synchronizer) handleSyncNewChecksum(id domain.ClusterKindName, newChecksum string) error {
-	err := s.adapter.VerifyObject(id, newChecksum)
+func (s *Synchronizer) handleSyncNewChecksum(ctx context.Context, id domain.ClusterKindName, newChecksum string) error {
+	err := s.adapter.VerifyObject(ctx, id, newChecksum)
 	if err != nil {
 		return fmt.Errorf("verify object: %w", err)
 	}
 	return nil
 }
 
-func (s *Synchronizer) handleSyncObjectDeleted(id domain.ClusterKindName) error {
-	err := s.adapter.DeleteObject(id)
+func (s *Synchronizer) handleSyncObjectDeleted(ctx context.Context, id domain.ClusterKindName) error {
+	err := s.adapter.DeleteObject(ctx, id)
 	if err != nil {
 		return fmt.Errorf("delete object: %w", err)
 	}
 	return nil
 }
 
-func (s *Synchronizer) handleSyncPatchObject(id domain.ClusterKindName, checksum string, patch []byte) error {
-	err := s.adapter.PatchObject(id, checksum, patch)
+func (s *Synchronizer) handleSyncPatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
+	err := s.adapter.PatchObject(ctx, id, checksum, patch)
 	if err != nil {
 		return fmt.Errorf("patch object: %w", err)
 	}
 	return nil
 }
 
-func (s *Synchronizer) handleSyncPutObject(id domain.ClusterKindName, object []byte) error {
-	err := s.adapter.PutObject(id, object)
+func (s *Synchronizer) handleSyncPutObject(ctx context.Context, id domain.ClusterKindName, object []byte) error {
+	err := s.adapter.PutObject(ctx, id, object)
 	if err != nil {
 		return fmt.Errorf("put object: %w", err)
 	}
 	return nil
 }
 
-func (s *Synchronizer) sendGetObject(id domain.ClusterKindName, baseObject []byte) error {
+func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
 	event := domain.EventGetObject
+	depth := ctx.Value(domain.ContextKeyDepth).(int)
+	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.GetObject{
-		Event:      &event,
-		Cluster:    id.Cluster,
-		Kind:       id.Kind,
-		Name:       id.Name,
 		BaseObject: string(baseObject),
+		Cluster:    id.Cluster,
+		Depth:      depth + 1,
+		Event:      &event,
+		Kind:       id.Kind,
+		MsgId:      msgId,
+		Name:       id.Name,
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -312,14 +328,18 @@ func (s *Synchronizer) sendGetObject(id domain.ClusterKindName, baseObject []byt
 	return nil
 }
 
-func (s *Synchronizer) sendNewChecksum(id domain.ClusterKindName, checksum string) error {
+func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.ClusterKindName, checksum string) error {
 	event := domain.EventNewChecksum
+	depth := ctx.Value(domain.ContextKeyDepth).(int)
+	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.NewChecksum{
-		Event:    &event,
-		Cluster:  id.Cluster,
-		Kind:     id.Kind,
-		Name:     id.Name,
 		Checksum: checksum,
+		Cluster:  id.Cluster,
+		Depth:    depth + 1,
+		Event:    &event,
+		Kind:     id.Kind,
+		MsgId:    msgId,
+		Name:     id.Name,
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -337,12 +357,16 @@ func (s *Synchronizer) sendNewChecksum(id domain.ClusterKindName, checksum strin
 	return nil
 }
 
-func (s *Synchronizer) sendObjectDeleted(id domain.ClusterKindName) error {
+func (s *Synchronizer) sendObjectDeleted(ctx context.Context, id domain.ClusterKindName) error {
 	event := domain.EventObjectDeleted
+	depth := ctx.Value(domain.ContextKeyDepth).(int)
+	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.ObjectDeleted{
-		Event:   &event,
 		Cluster: id.Cluster,
+		Depth:   depth + 1,
+		Event:   &event,
 		Kind:    id.Kind,
+		MsgId:   msgId,
 		Name:    id.Name,
 	}
 	data, err := json.Marshal(msg)
@@ -360,14 +384,18 @@ func (s *Synchronizer) sendObjectDeleted(id domain.ClusterKindName) error {
 	return nil
 }
 
-func (s *Synchronizer) sendPatchObject(id domain.ClusterKindName, checksum string, patch []byte) error {
+func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
 	event := domain.EventPatchObject
+	depth := ctx.Value(domain.ContextKeyDepth).(int)
+	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.PatchObject{
-		Event:    &event,
-		Cluster:  id.Cluster,
-		Kind:     id.Kind,
-		Name:     id.Name,
 		Checksum: checksum,
+		Cluster:  id.Cluster,
+		Depth:    depth + 1,
+		Event:    &event,
+		Kind:     id.Kind,
+		MsgId:    msgId,
+		Name:     id.Name,
 		Patch:    string(patch),
 	}
 	data, err := json.Marshal(msg)
@@ -387,12 +415,16 @@ func (s *Synchronizer) sendPatchObject(id domain.ClusterKindName, checksum strin
 	return nil
 }
 
-func (s *Synchronizer) sendPutObject(id domain.ClusterKindName, object []byte) error {
+func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.ClusterKindName, object []byte) error {
 	event := domain.EventPutObject
+	depth := ctx.Value(domain.ContextKeyDepth).(int)
+	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.PutObject{
-		Event:   &event,
 		Cluster: id.Cluster,
+		Depth:   depth + 1,
+		Event:   &event,
 		Kind:    id.Kind,
+		MsgId:   msgId,
 		Name:    id.Name,
 		Object:  string(object),
 	}

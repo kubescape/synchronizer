@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,8 +16,10 @@ import (
 	"github.com/SergJa/jsonhash"
 	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/google/uuid"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	"github.com/kubescape/synchronizer/domain"
 	"github.com/pmezard/go-difflib/difflib"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/client-go/dynamic"
@@ -33,6 +36,16 @@ func CanonicalHash(in []byte) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hash[:]), nil
+}
+
+func ContextFromGeneric(generic domain.Generic) context.Context {
+	if generic.MsgId == "" {
+		generic.MsgId = uuid.NewString()
+	}
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, domain.ContextKeyDepth, generic.Depth)
+	ctx = context.WithValue(ctx, domain.ContextKeyMsgId, generic.MsgId)
+	return ctx
 }
 
 func KeyToNsName(key string) (string, string) {
@@ -170,7 +183,7 @@ func getConfig() (*rest.Config, error) {
 	return nil, errors.New("unable to find config")
 }
 
-// based on github.com/kubescape/event-ingester-service/utils/common.go:func PulsarMessageIDtoString
+// PulsarMessageIDtoString is taken from github.com/kubescape/event-ingester-service/utils/common.go:func PulsarMessageIDtoString
 func PulsarMessageIDtoString(msgID pulsar.MessageID) string {
 	batchStr := strconv.Itoa(int(msgID.BatchIdx()))
 	msgIDstr := msgID.String() + ":" + batchStr
