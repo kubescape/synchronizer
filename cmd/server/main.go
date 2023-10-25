@@ -11,6 +11,7 @@ import (
 )
 
 func main() {
+	logger.L().SetLevel("debug")
 	// mock adapter
 	adapter := adapters.NewMockAdapter()
 	// websocket server

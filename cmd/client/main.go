@@ -13,6 +13,7 @@ import (
 )
 
 func main() {
+	logger.L().SetLevel("debug")
 	// config
 	cfg, err := config.LoadConfig("./configuration")
 	if err != nil {

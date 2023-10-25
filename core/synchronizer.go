@@ -218,7 +218,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 				Kind:    msg.Kind,
 				Name:    msg.Name,
 			}
-			err := s.handleSyncPatchObject(id, msg.Patch, []byte(msg.Patch))
+			err := s.handleSyncPatchObject(id, msg.Checksum, []byte(msg.Patch))
 			if err != nil {
 				logger.L().Error("error handling message", helpers.Error(err),
 					helpers.Interface("event", generic.Event.Value()))
@@ -329,7 +329,7 @@ func (s *Synchronizer) sendNewChecksum(id domain.ClusterKindName, checksum strin
 	if err != nil {
 		return fmt.Errorf("invoke outPool on checksum message: %w", err)
 	}
-	logger.L().Debug("sent checksum message",
+	logger.L().Debug("sent new checksum message",
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name),
@@ -353,7 +353,7 @@ func (s *Synchronizer) sendObjectDeleted(id domain.ClusterKindName) error {
 	if err != nil {
 		return fmt.Errorf("invoke outPool on delete message: %w", err)
 	}
-	logger.L().Debug("sent delete message",
+	logger.L().Debug("sent object deleted message",
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name))
@@ -378,7 +378,7 @@ func (s *Synchronizer) sendPatchObject(id domain.ClusterKindName, checksum strin
 	if err != nil {
 		return fmt.Errorf("invoke outPool on patch message: %w", err)
 	}
-	logger.L().Debug("sent patch message",
+	logger.L().Debug("sent patch object message",
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name),
@@ -404,7 +404,7 @@ func (s *Synchronizer) sendPutObject(id domain.ClusterKindName, object []byte) e
 	if err != nil {
 		return fmt.Errorf("invoke outPool on put object message: %w", err)
 	}
-	logger.L().Debug("sent patch message",
+	logger.L().Debug("sent put object message",
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name),

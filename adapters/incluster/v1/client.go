@@ -111,7 +111,7 @@ func (c *Client) Run() {
 			continue
 		}
 		switch {
-		case event.Type == watch.Added || event.Type == watch.Modified:
+		case event.Type == watch.Added:
 			logger.L().Info("added resource", helpers.Interface("id", id))
 			err := c.callbacks.ObjectAdded(id, newObject)
 			if err != nil {
@@ -126,6 +126,12 @@ func (c *Client) Run() {
 			if c.Strategy == domain.PatchStrategy {
 				// remove from known resources
 				delete(c.shadowObjects, id.Name)
+			}
+		case event.Type == watch.Modified:
+			logger.L().Info("modified resource", helpers.Interface("id", id))
+			err := c.putOrPatch(id, nil, newObject)
+			if err != nil {
+				logger.L().Error("cannot handle modified resource", helpers.Error(err), helpers.Interface("id", id))
 			}
 		}
 	}
@@ -150,6 +156,10 @@ func (c *Client) GetObject(id domain.ClusterKindName, baseObject []byte) error {
 	if err != nil {
 		return fmt.Errorf("marshal resource: %w", err)
 	}
+	return c.putOrPatch(id, baseObject, newObject)
+}
+
+func (c *Client) putOrPatch(id domain.ClusterKindName, baseObject []byte, newObject []byte) error {
 	if c.Strategy == domain.PatchStrategy {
 		if len(baseObject) > 0 {
 			// update reference object
@@ -171,7 +181,7 @@ func (c *Client) GetObject(id domain.ClusterKindName, baseObject []byte) error {
 				return fmt.Errorf("send patch object: %w", err)
 			}
 		} else {
-			err = c.callbacks.PutObject(id, newObject)
+			err := c.callbacks.PutObject(id, newObject)
 			if err != nil {
 				return fmt.Errorf("send put object: %w", err)
 			}
@@ -179,7 +189,7 @@ func (c *Client) GetObject(id domain.ClusterKindName, baseObject []byte) error {
 		// add/update known resources
 		c.shadowObjects[id.Name] = newObject
 	} else {
-		err = c.callbacks.PutObject(id, newObject)
+		err := c.callbacks.PutObject(id, newObject)
 		if err != nil {
 			return fmt.Errorf("send put object: %w", err)
 		}
