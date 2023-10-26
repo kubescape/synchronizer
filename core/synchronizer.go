@@ -161,7 +161,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 				Kind:    msg.Kind,
 				Name:    msg.Name,
 			}
-			err := s.handleSyncGetObject(id, []byte(msg.Object))
+			err := s.handleSyncGetObject(id, []byte(msg.BaseObject))
 			if err != nil {
 				logger.L().Error("error handling message", helpers.Error(err),
 					helpers.Interface("event", generic.Event.Value()))
@@ -290,11 +290,11 @@ func (s *Synchronizer) handleSyncPutObject(id domain.ClusterKindName, object []b
 func (s *Synchronizer) sendGetObject(id domain.ClusterKindName, baseObject []byte) error {
 	event := domain.EventGetObject
 	msg := domain.GetObject{
-		Event:   &event,
-		Cluster: id.Cluster,
-		Kind:    id.Kind,
-		Name:    id.Name,
-		Object:  string(baseObject),
+		Event:      &event,
+		Cluster:    id.Cluster,
+		Kind:       id.Kind,
+		Name:       id.Name,
+		BaseObject: string(baseObject),
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -308,7 +308,7 @@ func (s *Synchronizer) sendGetObject(id domain.ClusterKindName, baseObject []byt
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name),
-		helpers.Int("base object size", len(msg.Object)))
+		helpers.Int("base object size", len(msg.BaseObject)))
 	return nil
 }
 

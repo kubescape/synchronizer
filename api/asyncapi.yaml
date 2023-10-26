@@ -138,14 +138,14 @@ components:
       properties:
         event:
           $ref: '#/components/schemas/event'
+        baseObject:
+          $ref: '#/components/schemas/object'
         cluster:
           $ref: '#/components/schemas/cluster'
         kind:
           $ref: '#/components/schemas/kind'
         name:
           $ref: '#/components/schemas/name'
-        object:
-          $ref: '#/components/schemas/object'
     patchObject:
       type: object
       properties:

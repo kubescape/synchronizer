@@ -16,6 +16,7 @@ type Config struct {
 
 type Backend struct {
 	Subscription string                    `mapstructure:"subscription"`
+	SyncTopic    pulsarconnector.TopicName `mapstructure:"syncTopic"`
 	Topic        pulsarconnector.TopicName `mapstructure:"topic"`
 }
 

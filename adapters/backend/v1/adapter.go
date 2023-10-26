@@ -90,7 +90,7 @@ func (b BackendAdapter) consumePulsarMessages(ctx context.Context) {
 	}
 	defer k8sObjectsConsumer.Close()
 	synchronizerChannel := make(chan pulsar.ConsumerMessage)
-	synchronizerConsumer, err := b.pulsarClient.NewConsumer(pulsarconnector.WithTopic(synchronizer.SynchronizerTopic),
+	synchronizerConsumer, err := b.pulsarClient.NewConsumer(pulsarconnector.WithTopic(b.cfg.Backend.SyncTopic),
 		pulsarconnector.WithMessageChannel(synchronizerChannel),
 		pulsarconnector.WithSubscriptionName(b.cfg.Backend.Subscription))
 	if err != nil {
@@ -189,10 +189,12 @@ func (b BackendAdapter) handleSingleK8sObjectMessage(msg pulsar.ConsumerMessage)
 
 func (b BackendAdapter) handleSingleSynchronizerMessage(msg pulsar.ConsumerMessage) {
 	msgID := utils.PulsarMessageIDtoString(msg.ID())
+	msgTopic := msg.Topic()
 	logger.L().Debug("Received message from pulsar",
 		helpers.String("msgId", msgID),
 		helpers.String("subscriptionName", b.cfg.Backend.Subscription),
-		helpers.String("topicName", synchronizer.SynchronizerTopic))
+		helpers.String("topicName", string(b.cfg.Backend.Topic)),
+		helpers.String("msgTopic", msgTopic))
 }
 
 // this message is sent to the k8s_objects topic
@@ -202,13 +204,39 @@ func (b BackendAdapter) sendDeleteObjectMessage(id domain.ClusterKindName) error
 }
 
 // this message is sent to the synchronizer topic
-func (b BackendAdapter) sendGetObjectMessage(id domain.ClusterKindName, object []byte) error {
+func (b BackendAdapter) sendGetObjectMessage(id domain.ClusterKindName, baseObject []byte) error {
+	msg := synchronizer.GetObjectMessage{
+		BaseObject:   baseObject,
+		ClusterName:  id.Cluster,
+		CustomerGUID: "", // FIXME
+		Kind:         id.Kind.String(),
+		Name:         id.Name,
+	}
+	logger.L().Debug("Sending get object message to pulsar",
+		helpers.String("cluster", msg.ClusterName),
+		helpers.String("kind", id.Kind.String()),
+		helpers.String("name", id.Name),
+		helpers.Int("base object size", len(msg.BaseObject)))
 	// TODO implement me
 	return nil
 }
 
 // this message is sent to the synchronizer topic
 func (b BackendAdapter) sendPatchObjectMessage(id domain.ClusterKindName, checksum string, patch []byte) error {
+	msg := synchronizer.PatchObjectMessage{
+		Checksum:     checksum,
+		ClusterName:  id.Cluster,
+		CustomerGUID: "", // FIXME
+		Kind:         id.Kind.String(),
+		Name:         id.Name,
+		Patch:        patch,
+	}
+	logger.L().Debug("Sending get object message to pulsar",
+		helpers.String("cluster", msg.ClusterName),
+		helpers.String("kind", id.Kind.String()),
+		helpers.String("name", id.Name),
+		helpers.String("checksum", msg.Checksum),
+		helpers.Int("patch size", len(msg.Patch)))
 	// TODO implement me
 	return nil
 }
@@ -221,6 +249,18 @@ func (b BackendAdapter) sendPutObjectMessage(id domain.ClusterKindName, object [
 
 // this message is sent to the synchronizer topic
 func (b BackendAdapter) sendVerifyObjectMessage(id domain.ClusterKindName, checksum string) error {
+	msg := synchronizer.VerifyObjectMessage{
+		Checksum:     checksum,
+		ClusterName:  id.Cluster,
+		CustomerGUID: "", // FIXME
+		Kind:         id.Kind.String(),
+		Name:         id.Name,
+	}
+	logger.L().Debug("Sending get object message to pulsar",
+		helpers.String("cluster", msg.ClusterName),
+		helpers.String("kind", id.Kind.String()),
+		helpers.String("name", id.Name),
+		helpers.String("checksum", msg.Checksum))
 	// TODO implement me
 	return nil
 }

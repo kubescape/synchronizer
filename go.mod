@@ -121,5 +121,4 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-//replace github.com/kubescape/messaging => github.com/kubescape/messaging v0.0.16-0.20231025090320-c7fcc9cf0321
-replace github.com/kubescape/messaging => ../messaging
+replace github.com/kubescape/messaging => github.com/kubescape/messaging v0.0.16-0.20231026111846-08264fd8f6a1
