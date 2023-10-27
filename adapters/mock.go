@@ -101,7 +101,7 @@ func (m *MockAdapter) RegisterCallbacks(callbacks domain.Callbacks) {
 	m.callbacks = callbacks
 }
 
-func (m *MockAdapter) Start() error {
+func (m *MockAdapter) Start(_ context.Context) error {
 	return nil
 }
 

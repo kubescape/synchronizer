@@ -34,7 +34,7 @@ func main() {
 	defer conn.Close()
 	// synchronizer
 	synchronizer := core.NewSynchronizerClient(adapter, conn)
-	err = synchronizer.Start()
+	err = synchronizer.Start(context.TODO())
 	if err != nil {
 		logger.L().Fatal("error during sync", helpers.Error(err))
 	}

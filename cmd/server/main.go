@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gobwas/ws"
@@ -33,7 +34,7 @@ func main() {
 		go func() {
 			defer conn.Close()
 			synchronizer := core.NewSynchronizerServer(adapter, conn)
-			err = synchronizer.Start()
+			err = synchronizer.Start(context.TODO())
 			if err != nil {
 				logger.L().Error("error during sync", helpers.Error(err))
 				return

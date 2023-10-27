@@ -108,10 +108,10 @@ func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.Clust
 	return nil
 }
 
-func (s *Synchronizer) Start() error {
+func (s *Synchronizer) Start(mainCtx context.Context) error {
 	logger.L().Info("starting sync")
 	// adapter events
-	err := s.adapter.Start()
+	err := s.adapter.Start(mainCtx)
 	if err != nil {
 		return fmt.Errorf("start adapter: %w", err)
 	}
