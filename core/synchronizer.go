@@ -55,14 +55,22 @@ func newSynchronizer(adapter adapters.Adapter, conn net.Conn, isClient bool, rea
 		readDataFunc: readDataFunc,
 	}
 	callbacks := domain.Callbacks{
-		GetObject:     s.GetObjectCallback,
-		ObjectAdded:   s.ObjectAddedCallback,
-		ObjectDeleted: s.ObjectDeletedCallback,
-		PatchObject:   s.PatchObjectCallback,
-		PutObject:     s.PutObjectCallback,
+		DeleteObject: s.DeleteObjectCallback,
+		GetObject:    s.GetObjectCallback,
+		PatchObject:  s.PatchObjectCallback,
+		PutObject:    s.PutObjectCallback,
+		VerifyObject: s.VerifyObjectCallback,
 	}
 	adapter.RegisterCallbacks(callbacks)
 	return s
+}
+
+func (s *Synchronizer) DeleteObjectCallback(ctx context.Context, id domain.ClusterKindName) error {
+	err := s.sendObjectDeleted(ctx, id)
+	if err != nil {
+		return fmt.Errorf("send delete: %w", err)
+	}
+	return nil
 }
 
 func (s *Synchronizer) GetObjectCallback(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
@@ -72,34 +80,6 @@ func (s *Synchronizer) GetObjectCallback(ctx context.Context, id domain.ClusterK
 	err := s.sendGetObject(ctx, id, baseObject)
 	if err != nil {
 		return fmt.Errorf("send get object: %w", err)
-	}
-	return nil
-}
-
-func (s *Synchronizer) ObjectAddedCallback(ctx context.Context, id domain.ClusterKindName, object []byte) error {
-	if s.isClient {
-		// calculate checksum
-		checksum, err := utils.CanonicalHash(object)
-		if err != nil {
-			return fmt.Errorf("calculate checksum: %w", err)
-		}
-		err = s.sendNewChecksum(ctx, id, checksum)
-		if err != nil {
-			return fmt.Errorf("send checksum: %w", err)
-		}
-	} else {
-		err := s.sendPutObject(ctx, id, object)
-		if err != nil {
-			return fmt.Errorf("send put object: %w", err)
-		}
-	}
-	return nil
-}
-
-func (s *Synchronizer) ObjectDeletedCallback(ctx context.Context, id domain.ClusterKindName) error {
-	err := s.sendObjectDeleted(ctx, id)
-	if err != nil {
-		return fmt.Errorf("send delete: %w", err)
 	}
 	return nil
 }
@@ -116,6 +96,14 @@ func (s *Synchronizer) PutObjectCallback(ctx context.Context, id domain.ClusterK
 	err := s.sendPutObject(ctx, id, object)
 	if err != nil {
 		return fmt.Errorf("send put object: %w", err)
+	}
+	return nil
+}
+
+func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.ClusterKindName, checksum string) error {
+	err := s.sendNewChecksum(ctx, id, checksum)
+	if err != nil {
+		return fmt.Errorf("send checksum: %w", err)
 	}
 	return nil
 }

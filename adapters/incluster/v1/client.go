@@ -71,7 +71,7 @@ func (c *Client) Run() {
 				logger.L().Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
 				continue
 			}
-			err = c.callbacks.ObjectAdded(ctx, id, newObject)
+			err = c.verify(ctx, id, newObject)
 			if err != nil {
 				logger.L().Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
 				continue
@@ -115,13 +115,13 @@ func (c *Client) Run() {
 		switch {
 		case event.Type == watch.Added:
 			logger.L().Debug("added resource", helpers.String("id", id.String()))
-			err := c.callbacks.ObjectAdded(ctx, id, newObject)
+			err := c.verify(ctx, id, newObject)
 			if err != nil {
 				logger.L().Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
 		case event.Type == watch.Deleted:
 			logger.L().Debug("deleted resource", helpers.String("id", id.String()))
-			err := c.callbacks.ObjectDeleted(ctx, id)
+			err := c.callbacks.DeleteObject(ctx, id)
 			if err != nil {
 				logger.L().Error("cannot handle deleted resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
@@ -240,6 +240,19 @@ func (c *Client) PutObject(object []byte) error {
 	_, err = c.client.Resource(c.res).Namespace("").Create(context.Background(), &obj, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("create resource: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) verify(ctx context.Context, id domain.ClusterKindName, object []byte) error {
+	// calculate checksum
+	checksum, err := utils.CanonicalHash(object)
+	if err != nil {
+		return fmt.Errorf("calculate checksum: %w", err)
+	}
+	err = c.callbacks.VerifyObject(ctx, id, checksum)
+	if err != nil {
+		return fmt.Errorf("send checksum: %w", err)
 	}
 	return nil
 }
