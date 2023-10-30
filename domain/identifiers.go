@@ -9,5 +9,11 @@ type ClusterKindName struct {
 }
 
 func (c ClusterKindName) String() string {
-	return strings.Join([]string{c.Cluster, c.Kind.String(), c.Name}, "/")
+	var kind string
+	if c.Kind == nil {
+		kind = ""
+	} else {
+		kind = c.Kind.String()
+	}
+	return strings.Join([]string{c.Cluster, kind, c.Name}, "/")
 }
