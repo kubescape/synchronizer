@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"strings"
 
 	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
@@ -23,6 +24,8 @@ type Backend struct {
 type InCluster struct {
 	BackendUrl  string `mapstructure:"backendUrl"`
 	ClusterName string `mapstructure:"clusterName"`
+	Account     string `mapstructure:"account"`
+	AccessKey   string `mapstructure:"accessKey"`
 }
 
 type Resource struct {
@@ -39,6 +42,9 @@ func (r Resource) String() string {
 
 // LoadConfig reads configuration from file or environment variables.
 func LoadConfig(path string) (Config, error) {
+	if configPathFromEnv := os.Getenv("CONFIG_PATH"); configPathFromEnv != "" {
+		viper.AddConfigPath(configPathFromEnv)
+	}
 	viper.AddConfigPath(path)
 	viper.SetConfigName("config")
 	viper.SetConfigType("json")
