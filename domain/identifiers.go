@@ -3,6 +3,7 @@ package domain
 import "strings"
 
 type ClusterKindName struct {
+	Account string
 	Cluster string
 	Kind    *Kind
 	Name    string
@@ -15,5 +16,5 @@ func (c ClusterKindName) String() string {
 	} else {
 		kind = c.Kind.String()
 	}
-	return strings.Join([]string{c.Cluster, kind, c.Name}, "/")
+	return strings.Join([]string{c.Account, c.Cluster, kind, c.Name}, "/")
 }

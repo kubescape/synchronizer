@@ -45,9 +45,13 @@ func (b *Adapter) RegisterCallbacks(callbacks domain.Callbacks) {
 	b.callbacks = callbacks
 }
 
-func (b *Adapter) Start(mainCtx context.Context) error {
+func (b *Adapter) Init(ctx context.Context) error {
 	b.client = NewClient(b.cfg, b.pulsarClient)
 	b.client.RegisterCallbacks(b.callbacks)
+	return b.client.Init(ctx)
+}
+
+func (b *Adapter) Start(mainCtx context.Context) error {
 	go func() {
 		_ = b.client.Start(mainCtx)
 	}()

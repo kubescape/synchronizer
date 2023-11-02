@@ -20,6 +20,7 @@ import (
 
 type Client struct {
 	client        dynamic.Interface
+	account       string
 	cluster       string
 	kind          *domain.Kind
 	callbacks     domain.Callbacks
@@ -28,9 +29,10 @@ type Client struct {
 	Strategy      domain.Strategy
 }
 
-func NewClient(client dynamic.Interface, cluster string, r config.Resource) *Client {
+func NewClient(client dynamic.Interface, account, cluster string, r config.Resource) *Client {
 	res := schema.GroupVersionResource{Group: r.Group, Version: r.Version, Resource: r.Resource}
 	return &Client{
+		account: account,
 		client:  client,
 		cluster: cluster,
 		kind: &domain.Kind{
@@ -46,6 +48,10 @@ func NewClient(client dynamic.Interface, cluster string, r config.Resource) *Cli
 
 var _ adapters.Client = (*Client)(nil)
 
+func (c *Client) Init(_ context.Context) error {
+	return nil
+}
+
 func (c *Client) Start(_ context.Context) error {
 	watchOpts := metav1.ListOptions{}
 	// for our storage, we need to list all resources and get them one by one
@@ -59,6 +65,7 @@ func (c *Client) Start(_ context.Context) error {
 		for _, d := range list.Items {
 			ctx := utils.ContextFromGeneric(domain.Generic{})
 			id := domain.ClusterKindName{
+				Account: c.account,
 				Cluster: c.cluster,
 				Kind:    c.kind,
 				Name:    utils.NsNameToKey(d.GetNamespace(), d.GetName()),
@@ -105,6 +112,7 @@ func (c *Client) Start(_ context.Context) error {
 		}
 		key := utils.NsNameToKey(d.GetNamespace(), d.GetName())
 		id := domain.ClusterKindName{
+			Account: c.account,
 			Cluster: c.cluster,
 			Kind:    c.kind,
 			Name:    key,

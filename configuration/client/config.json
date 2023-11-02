@@ -1,12 +1,8 @@
 {
-  "backend": {
-    "subscription": "subscription",
-    "syncTopic": "syncTopic",
-    "topic": "topic"
-  },
   "inCluster": {
     "backendUrl": "ws://127.0.0.1:8080/",
-    "clusterName": "kind-kind"
+    "clusterName": "cluster-2",
+    "account": "285f6ed5-8fb0-4e52-86d4-c29afa6966ac"
   },
   "resources": [
     {

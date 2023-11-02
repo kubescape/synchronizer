@@ -88,6 +88,8 @@ components:
       properties:
         checksum:
           $ref: '#/components/schemas/sum'
+        account:
+          $ref: '#/components/schemas/account'
         cluster:
           $ref: '#/components/schemas/cluster'
         depth:
@@ -105,6 +107,8 @@ components:
       properties:
         checksum:
           $ref: '#/components/schemas/sum'
+        account:
+          $ref: '#/components/schemas/account'
         cluster:
           $ref: '#/components/schemas/cluster'
         depth:
@@ -122,6 +126,8 @@ components:
     objectDeleted:
       type: object
       properties:
+        account:
+          $ref: '#/components/schemas/account'
         cluster:
           $ref: '#/components/schemas/cluster'
         depth:
@@ -139,6 +145,8 @@ components:
       properties:
         checksum:
           $ref: '#/components/schemas/sum'
+        account:
+          $ref: '#/components/schemas/account'
         cluster:
           $ref: '#/components/schemas/cluster'
         depth:
@@ -158,6 +166,8 @@ components:
       properties:
         baseObject:
           $ref: '#/components/schemas/object'
+        account:
+          $ref: '#/components/schemas/account'
         cluster:
           $ref: '#/components/schemas/cluster'
         depth:
@@ -175,6 +185,8 @@ components:
       properties:
         checksum:
           $ref: '#/components/schemas/sum'
+        account: 
+          $ref: '#/components/schemas/account'
         cluster:
           $ref: '#/components/schemas/cluster'
         depth:
@@ -192,6 +204,8 @@ components:
     putObject:
       type: object
       properties:
+        account:
+          $ref: '#/components/schemas/account'
         cluster:
           $ref: '#/components/schemas/cluster'
         depth:
@@ -209,6 +223,9 @@ components:
     cluster:
       type: string
       description: name of the cluster
+    account:
+      type: string
+      description: name of the account
     depth:
       type: integer
       description: depth of the message exchange, used to break recursion

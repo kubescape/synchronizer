@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 
+	pulsarconfig "github.com/kubescape/messaging/pulsar/config"
 	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/spf13/viper"
@@ -16,9 +17,10 @@ type Config struct {
 }
 
 type Backend struct {
-	Subscription string                    `mapstructure:"subscription"`
-	SyncTopic    pulsarconnector.TopicName `mapstructure:"syncTopic"`
-	Topic        pulsarconnector.TopicName `mapstructure:"topic"`
+	Subscription string                     `mapstructure:"subscription"`
+	PulsarConfig *pulsarconfig.PulsarConfig `mapstructure:"pulsarConfig"`
+	SyncTopic    pulsarconnector.TopicName  `mapstructure:"syncTopic"`
+	Topic        pulsarconnector.TopicName  `mapstructure:"topic"`
 }
 
 type InCluster struct {

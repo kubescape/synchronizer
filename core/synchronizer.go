@@ -110,8 +110,13 @@ func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.Clust
 
 func (s *Synchronizer) Start(mainCtx context.Context) error {
 	logger.L().Info("starting sync")
+	err := s.adapter.Init(mainCtx)
+	if err != nil {
+		return fmt.Errorf("init adapter: %w", err)
+	}
+
 	// adapter events
-	err := s.adapter.Start(mainCtx)
+	err = s.adapter.Start(mainCtx)
 	if err != nil {
 		return fmt.Errorf("start adapter: %w", err)
 	}
@@ -157,6 +162,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 				continue
 			}
 			id := domain.ClusterKindName{
+				Account: msg.Account,
 				Cluster: msg.Cluster,
 				Kind:    msg.Kind,
 				Name:    msg.Name,
@@ -176,6 +182,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 				continue
 			}
 			id := domain.ClusterKindName{
+				Account: msg.Account,
 				Cluster: msg.Cluster,
 				Kind:    msg.Kind,
 				Name:    msg.Name,
@@ -195,6 +202,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 				continue
 			}
 			id := domain.ClusterKindName{
+				Account: msg.Account,
 				Cluster: msg.Cluster,
 				Kind:    msg.Kind,
 				Name:    msg.Name,
@@ -214,6 +222,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 				continue
 			}
 			id := domain.ClusterKindName{
+				Account: msg.Account,
 				Cluster: msg.Cluster,
 				Kind:    msg.Kind,
 				Name:    msg.Name,
@@ -233,6 +242,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 				continue
 			}
 			id := domain.ClusterKindName{
+				Account: msg.Account,
 				Cluster: msg.Cluster,
 				Kind:    msg.Kind,
 				Name:    msg.Name,
@@ -293,6 +303,7 @@ func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.ClusterKindN
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.GetObject{
 		BaseObject: string(baseObject),
+		Account:    id.Account,
 		Cluster:    id.Cluster,
 		Depth:      depth + 1,
 		Event:      &event,
@@ -309,6 +320,7 @@ func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.ClusterKindN
 		return fmt.Errorf("invoke outPool on get object message: %w", err)
 	}
 	logger.L().Debug("sent get object message",
+		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name),
@@ -322,6 +334,7 @@ func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.ClusterKin
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.NewChecksum{
 		Checksum: checksum,
+		Account:  id.Account,
 		Cluster:  id.Cluster,
 		Depth:    depth + 1,
 		Event:    &event,
@@ -338,6 +351,7 @@ func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.ClusterKin
 		return fmt.Errorf("invoke outPool on checksum message: %w", err)
 	}
 	logger.L().Debug("sent new checksum message",
+		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name),
@@ -351,6 +365,7 @@ func (s *Synchronizer) sendObjectDeleted(ctx context.Context, id domain.ClusterK
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.ObjectDeleted{
 		Cluster: id.Cluster,
+		Account: id.Account,
 		Depth:   depth + 1,
 		Event:   &event,
 		Kind:    id.Kind,
@@ -366,6 +381,7 @@ func (s *Synchronizer) sendObjectDeleted(ctx context.Context, id domain.ClusterK
 		return fmt.Errorf("invoke outPool on delete message: %w", err)
 	}
 	logger.L().Debug("sent object deleted message",
+		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name))
@@ -378,6 +394,7 @@ func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.ClusterKin
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.PatchObject{
 		Checksum: checksum,
+		Account:  id.Account,
 		Cluster:  id.Cluster,
 		Depth:    depth + 1,
 		Event:    &event,
@@ -395,6 +412,7 @@ func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.ClusterKin
 		return fmt.Errorf("invoke outPool on patch message: %w", err)
 	}
 	logger.L().Debug("sent patch object message",
+		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name),
@@ -408,6 +426,7 @@ func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.ClusterKindN
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.PutObject{
+		Account: id.Account,
 		Cluster: id.Cluster,
 		Depth:   depth + 1,
 		Event:   &event,
@@ -425,6 +444,7 @@ func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.ClusterKindN
 		return fmt.Errorf("invoke outPool on put object message: %w", err)
 	}
 	logger.L().Debug("sent put object message",
+		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name),

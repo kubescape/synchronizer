@@ -2,6 +2,7 @@ package domain
 
 // PutObject represents a PutObject model.
 type PutObject struct {
+	Account              string
 	Cluster              string
 	Depth                int
 	Event                *Event

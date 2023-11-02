@@ -12,6 +12,7 @@ type Adapter interface {
 	PatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error
 	PutObject(ctx context.Context, id domain.ClusterKindName, object []byte) error
 	RegisterCallbacks(callbacks domain.Callbacks)
+	Init(ctx context.Context) error
 	Start(mainCtx context.Context) error
 	VerifyObject(ctx context.Context, id domain.ClusterKindName, checksum string) error
 }

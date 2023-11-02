@@ -59,9 +59,13 @@ func (a *Adapter) RegisterCallbacks(callbacks domain.Callbacks) {
 	a.callbacks = callbacks
 }
 
+func (a *Adapter) Init(ctx context.Context) error {
+	return nil
+}
+
 func (a *Adapter) Start(mainCtx context.Context) error {
 	for _, r := range a.cfg.Resources {
-		client := NewClient(a.k8sclient, a.cfg.InCluster.ClusterName, r)
+		client := NewClient(a.k8sclient, a.cfg.InCluster.Account, a.cfg.InCluster.ClusterName, r)
 		client.RegisterCallbacks(a.callbacks)
 		a.clients[r.String()] = client
 		go func() {
