@@ -11,7 +11,7 @@ require (
 	github.com/gobwas/ws v1.3.0
 	github.com/google/uuid v1.3.0
 	github.com/kubescape/go-logger v0.0.21
-	github.com/kubescape/messaging v0.0.16-0.20231027162103-0ab3b22a0e99
+	github.com/kubescape/messaging v0.0.17-0.20231102092238-0bd3eb82ffc2
 	github.com/panjf2000/ants/v2 v2.8.2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/spf13/viper v1.17.0

@@ -290,6 +290,8 @@ github.com/kubescape/go-logger v0.0.21 h1:4ZRIEw3UGUH6BG/cH3yiqFipzQSfGAoCrxlsZu
 github.com/kubescape/go-logger v0.0.21/go.mod h1:x3HBpZo3cMT/WIdy18BxvVVd5D0e/PWFVk/HiwBNu3g=
 github.com/kubescape/messaging v0.0.16-0.20231027162103-0ab3b22a0e99 h1:9AwA5l3xwy5rEwpx4Hgiq1HujXgdIBB5gFXHw3xI+A4=
 github.com/kubescape/messaging v0.0.16-0.20231027162103-0ab3b22a0e99/go.mod h1:tZPh7QPRAgcFLgLf3N9NjJtAyy0BO0wGUeArNBDap+o=
+github.com/kubescape/messaging v0.0.17-0.20231102092238-0bd3eb82ffc2 h1:Vvnm2fYW1PCILhSN3ImjomNm5xn+GX4z07gEEA/ePbw=
+github.com/kubescape/messaging v0.0.17-0.20231102092238-0bd3eb82ffc2/go.mod h1:tZPh7QPRAgcFLgLf3N9NjJtAyy0BO0wGUeArNBDap+o=
 github.com/linkedin/goavro/v2 v2.9.8 h1:jN50elxBsGBDGVDEKqUlDuU1cFwJ11K/yrJCBMe/7Wg=
 github.com/linkedin/goavro/v2 v2.9.8/go.mod h1:UgQUb2N/pmueQYH9bfqFioWxzYCZXSfF8Jw03O5sjqA=
 github.com/lunixbochs/vtclean v1.0.0/go.mod h1:pHhQNgMf3btfWnGBVipUOjRYhoOsdGqdm/+2c2E2WMI=
