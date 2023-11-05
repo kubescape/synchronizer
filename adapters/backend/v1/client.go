@@ -117,25 +117,69 @@ func (c *Client) handleSingleSynchronizerMessage(msg pulsar.ConsumerMessage) err
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
 			return fmt.Errorf("failed to unmarshal message: %w", err)
 		}
-		// TODO process it
+		ctx := utils.ContextFromGeneric(domain.Generic{
+			Depth: data.Depth,
+			MsgId: data.MsgId,
+		})
+		if err := c.callbacks.PatchObject(ctx, domain.ClusterKindName{
+			Account: data.CustomerGUID,
+			Cluster: data.ClusterName,
+			Kind:    domain.KindFromString(data.Kind),
+			Name:    data.Name,
+		}, data.Checksum, data.Patch); err != nil {
+			return fmt.Errorf("failed to send PatchObject message: %w", err)
+		}
 	case synchronizer.MsgPropEventValueVerifyObjectMessage:
 		var data synchronizer.VerifyObjectMessage
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
 			return fmt.Errorf("failed to unmarshal message: %w", err)
 		}
-		// TODO process it
+		ctx := utils.ContextFromGeneric(domain.Generic{
+			Depth: data.Depth,
+			MsgId: data.MsgId,
+		})
+		if err := c.callbacks.VerifyObject(ctx, domain.ClusterKindName{
+			Account: data.CustomerGUID,
+			Cluster: data.ClusterName,
+			Kind:    domain.KindFromString(data.Kind),
+			Name:    data.Name,
+		}, data.Checksum); err != nil {
+			return fmt.Errorf("failed to send VerifyObject message: %w", err)
+		}
 	case synchronizer.MsgPropEventValuePutObjectMessage:
 		var data synchronizer.PutObjectMessage
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
 			return fmt.Errorf("failed to unmarshal message: %w", err)
 		}
-		// TODO process it
+		ctx := utils.ContextFromGeneric(domain.Generic{
+			Depth: data.Depth,
+			MsgId: data.MsgId,
+		})
+		if err := c.callbacks.PutObject(ctx, domain.ClusterKindName{
+			Account: data.CustomerGUID,
+			Cluster: data.ClusterName,
+			Kind:    domain.KindFromString(data.Kind),
+			Name:    data.Name,
+		}, data.Object); err != nil {
+			return fmt.Errorf("failed to send PutObject message: %w", err)
+		}
 	case synchronizer.MsgPropEventValueDeleteObjectMessage:
 		var data synchronizer.DeleteObjectMessage
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
 			return fmt.Errorf("failed to unmarshal message: %w", err)
 		}
-		// TODO process it
+		ctx := utils.ContextFromGeneric(domain.Generic{
+			Depth: data.Depth,
+			MsgId: data.MsgId,
+		})
+		if err := c.callbacks.DeleteObject(ctx, domain.ClusterKindName{
+			Account: data.CustomerGUID,
+			Cluster: data.ClusterName,
+			Kind:    domain.KindFromString(data.Kind),
+			Name:    data.Name,
+		}); err != nil {
+			return fmt.Errorf("failed to send DeleteObject message: %w", err)
+		}
 	default:
 		return fmt.Errorf("unknown message type")
 	}
