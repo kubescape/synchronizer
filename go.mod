@@ -11,12 +11,11 @@ require (
 	github.com/gobwas/ws v1.3.0
 	github.com/google/uuid v1.3.0
 	github.com/kubescape/go-logger v0.0.21
-	github.com/kubescape/messaging v0.0.17-0.20231102092238-0bd3eb82ffc2
+	github.com/kubescape/messaging v0.0.17-0.20231105103758-8afd7175fee0
 	github.com/panjf2000/ants/v2 v2.8.2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/spf13/viper v1.17.0
 	github.com/stretchr/testify v1.8.4
-	go.uber.org/zap v1.26.0
 	k8s.io/apimachinery v0.28.2
 	k8s.io/client-go v0.28.2
 )
@@ -98,6 +97,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.0.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
+	go.uber.org/zap v1.26.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/net v0.15.0 // indirect

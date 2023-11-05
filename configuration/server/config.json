@@ -1,8 +1,7 @@
 {
   "backend": {
     "subscription": "subscription",
-    "syncTopic": "syncTopic",
-    "topic": "topic",
+    "topic": "synchronizer",
     "pulsarConfig": {
       "url": "pulsar://localhost:6650",
         "tenant": "kubescape",
