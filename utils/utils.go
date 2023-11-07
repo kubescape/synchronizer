@@ -48,6 +48,12 @@ func ContextFromGeneric(parent context.Context, generic domain.Generic) context.
 	return ctx
 }
 
+func ContextFromIdentifiers(parent context.Context, id domain.ClientIdentifier) context.Context {
+	ctx := context.WithValue(parent, domain.ContextKeyAccount, id.Account)
+	ctx = context.WithValue(ctx, domain.ContextKeyClusterName, id.Cluster)
+	return ctx
+}
+
 func KeyToNsName(key string) (string, string) {
 	split := strings.Split(key, "/")
 	return split[0], split[1]

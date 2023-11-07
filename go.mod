@@ -12,7 +12,7 @@ require (
 	github.com/google/uuid v1.3.1
 	github.com/kubescape/backend v0.0.13
 	github.com/kubescape/go-logger v0.0.21
-	github.com/kubescape/messaging v0.0.17-0.20231106110102-803b50737e27
+	github.com/kubescape/messaging v0.0.17-0.20231107113853-8a488bcea09d
 	github.com/panjf2000/ants/v2 v2.8.2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/spf13/viper v1.17.0

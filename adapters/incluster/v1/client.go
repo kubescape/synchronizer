@@ -273,6 +273,10 @@ func (c *Client) RegisterCallbacks(_ context.Context, callbacks domain.Callbacks
 	c.callbacks = callbacks
 }
 
+func (c *Client) Callbacks(_ context.Context) (domain.Callbacks, error) {
+	return c.callbacks, nil
+}
+
 func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, newChecksum string) error {
 	baseObject, err := c.verifyObject(id, newChecksum)
 	if err != nil {

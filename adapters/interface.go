@@ -9,6 +9,7 @@ import (
 type Adapter interface {
 	Start(ctx context.Context) error
 	RegisterCallbacks(ctx context.Context, callbacks domain.Callbacks)
+	Callbacks(ctx context.Context) (domain.Callbacks, error) // returns the callbacks for the given context
 	DeleteObject(ctx context.Context, id domain.KindName) error
 	GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error
 	PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error

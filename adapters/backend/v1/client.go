@@ -4,14 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
-	"github.com/apache/pulsar-client-go/pulsar"
-	"github.com/armosec/armoapi-go/identifiers"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/messaging/pulsar/common/synchronizer"
-	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
@@ -19,16 +15,15 @@ import (
 )
 
 type Client struct {
-	callbacks domain.Callbacks
-	cfg       config.Config
-
-	producer pulsarconnector.Producer
+	callbacks       domain.Callbacks
+	cfg             config.Config
+	messageProducer MessageProducer
 }
 
-func NewClient(cfg config.Config, producer pulsarconnector.Producer) *Client {
+func NewClient(cfg config.Config, producer MessageProducer) *Client {
 	return &Client{
-		cfg:      cfg,
-		producer: producer,
+		cfg:             cfg,
+		messageProducer: producer,
 	}
 }
 
@@ -50,21 +45,21 @@ func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
 	id := domain.ClientIdentifierFromContext(ctx)
 
 	msg := synchronizer.ServerConnectedMessage{
-		ClusterName:  id.Cluster,
-		CustomerGUID: id.Account,
-		Depth:        depth + 1,
-		MsgId:        msgId,
+		Cluster: id.Cluster,
+		Account: id.Account,
+		Depth:   depth + 1,
+		MsgId:   msgId,
 	}
-	logger.L().Debug("sending server connected message to pulsar",
-		helpers.String("account", msg.CustomerGUID),
-		helpers.String("cluster", msg.ClusterName))
+	logger.L().Debug("sending server connected message to producer",
+		helpers.String("account", msg.Account),
+		helpers.String("cluster", msg.Cluster))
 
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("marshal server connected message: %w", err)
 	}
 
-	return c.producePulsarMessage(ctx, id, synchronizer.MsgPropEventValueServerConnectedMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, id, synchronizer.MsgPropEventValueServerConnectedMessage, data)
 }
 
 // FIXME no need to implement callPutOrPatch because we don't send patches from backend
@@ -107,6 +102,10 @@ func (c *Client) RegisterCallbacks(mainCtx context.Context, callbacks domain.Cal
 	c.callbacks = callbacks
 }
 
+func (c *Client) Callbacks(_ context.Context) (domain.Callbacks, error) {
+	return c.callbacks, nil
+}
+
 func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, checksum string) error {
 	// verifying the object is delegated to the ingester, it might emit a GetObject message if the verification fails
 	return c.sendVerifyObjectMessage(ctx, id, checksum)
@@ -118,15 +117,15 @@ func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName
 	cId := domain.ClientIdentifierFromContext(ctx)
 
 	msg := synchronizer.DeleteObjectMessage{
-		ClusterName:  cId.Cluster,
-		CustomerGUID: cId.Account,
-		Depth:        depth + 1,
-		Kind:         id.Kind.String(),
-		MsgId:        msgId,
-		Name:         id.Name,
+		Cluster: cId.Cluster,
+		Account: cId.Account,
+		Depth:   depth + 1,
+		Kind:    id.Kind.String(),
+		MsgId:   msgId,
+		Name:    id.Name,
 	}
-	logger.L().Debug("Sending delete object message to pulsar",
-		helpers.String("cluster", msg.ClusterName),
+	logger.L().Debug("Sending delete object message to producer",
+		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
 		helpers.String("name", id.Name))
 
@@ -135,7 +134,7 @@ func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName
 		return fmt.Errorf("marshal delete object message: %w", err)
 	}
 
-	return c.producePulsarMessage(ctx, cId, synchronizer.MsgPropEventValueDeleteObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, synchronizer.MsgPropEventValueDeleteObjectMessage, data)
 }
 
 func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, baseObject []byte) error {
@@ -144,16 +143,16 @@ func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, b
 	cId := domain.ClientIdentifierFromContext(ctx)
 
 	msg := synchronizer.GetObjectMessage{
-		BaseObject:   baseObject,
-		ClusterName:  cId.Cluster,
-		CustomerGUID: cId.Account,
-		Depth:        depth + 1,
-		Kind:         id.Kind.String(),
-		MsgId:        msgId,
-		Name:         id.Name,
+		BaseObject: baseObject,
+		Cluster:    cId.Cluster,
+		Account:    cId.Account,
+		Depth:      depth + 1,
+		Kind:       id.Kind.String(),
+		MsgId:      msgId,
+		Name:       id.Name,
 	}
-	logger.L().Debug("Sending get object message to pulsar",
-		helpers.String("cluster", msg.ClusterName),
+	logger.L().Debug("Sending get object message to producer",
+		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
 		helpers.String("name", id.Name),
 		helpers.Int("base object size", len(msg.BaseObject)))
@@ -163,7 +162,7 @@ func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, b
 		return fmt.Errorf("marshal get object message: %w", err)
 	}
 
-	return c.producePulsarMessage(ctx, cId, synchronizer.MsgPropEventValueGetObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, synchronizer.MsgPropEventValueGetObjectMessage, data)
 }
 
 func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
@@ -172,17 +171,17 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 	cId := domain.ClientIdentifierFromContext(ctx)
 
 	msg := synchronizer.PatchObjectMessage{
-		Checksum:     checksum,
-		ClusterName:  cId.Cluster,
-		CustomerGUID: cId.Account,
-		Depth:        depth + 1,
-		Kind:         id.Kind.String(),
-		MsgId:        msgId,
-		Name:         id.Name,
-		Patch:        patch,
+		Checksum: checksum,
+		Cluster:  cId.Cluster,
+		Account:  cId.Account,
+		Depth:    depth + 1,
+		Kind:     id.Kind.String(),
+		MsgId:    msgId,
+		Name:     id.Name,
+		Patch:    patch,
 	}
-	logger.L().Debug("Sending patch object message to pulsar",
-		helpers.String("cluster", msg.ClusterName),
+	logger.L().Debug("Sending patch object message to producer",
+		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
 		helpers.String("name", id.Name),
 		helpers.String("checksum", msg.Checksum),
@@ -193,7 +192,7 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 		return fmt.Errorf("marshal patch object message: %w", err)
 	}
 
-	return c.producePulsarMessage(ctx, cId, synchronizer.MsgPropEventValuePatchObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, synchronizer.MsgPropEventValuePatchObjectMessage, data)
 }
 
 func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, object []byte) error {
@@ -202,16 +201,16 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, o
 	cId := domain.ClientIdentifierFromContext(ctx)
 
 	msg := synchronizer.PutObjectMessage{
-		ClusterName:  cId.Cluster,
-		CustomerGUID: cId.Account,
-		Depth:        depth + 1,
-		Kind:         id.Kind.String(),
-		MsgId:        msgId,
-		Name:         id.Name,
-		Object:       object,
+		Cluster: cId.Cluster,
+		Account: cId.Account,
+		Depth:   depth + 1,
+		Kind:    id.Kind.String(),
+		MsgId:   msgId,
+		Name:    id.Name,
+		Object:  object,
 	}
-	logger.L().Debug("Sending put object message to pulsar",
-		helpers.String("cluster", msg.ClusterName),
+	logger.L().Debug("Sending put object message to producer",
+		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
 		helpers.String("name", id.Name),
 		helpers.Int("object size", len(msg.Object)))
@@ -221,7 +220,7 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, o
 		return fmt.Errorf("marshal put object message: %w", err)
 	}
 
-	return c.producePulsarMessage(ctx, cId, synchronizer.MsgPropEventValuePutObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, synchronizer.MsgPropEventValuePutObjectMessage, data)
 }
 
 func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName, checksum string) error {
@@ -230,16 +229,16 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName
 	cId := domain.ClientIdentifierFromContext(ctx)
 
 	msg := synchronizer.VerifyObjectMessage{
-		Checksum:     checksum,
-		ClusterName:  cId.Cluster,
-		CustomerGUID: cId.Account,
-		Depth:        depth + 1,
-		Kind:         id.Kind.String(),
-		MsgId:        msgId,
-		Name:         id.Name,
+		Checksum: checksum,
+		Cluster:  cId.Cluster,
+		Account:  cId.Account,
+		Depth:    depth + 1,
+		Kind:     id.Kind.String(),
+		MsgId:    msgId,
+		Name:     id.Name,
 	}
-	logger.L().Debug("Sending verify object message to pulsar",
-		helpers.String("cluster", msg.ClusterName),
+	logger.L().Debug("Sending verify object message to producer",
+		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
 		helpers.String("name", id.Name),
 		helpers.String("checksum", msg.Checksum))
@@ -249,30 +248,5 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName
 		return fmt.Errorf("marshal verify object message: %w", err)
 	}
 
-	return c.producePulsarMessage(ctx, cId, synchronizer.MsgPropEventValueVerifyObjectMessage, data)
-}
-
-func logSendErrors(msgID pulsar.MessageID, message *pulsar.ProducerMessage, err error) {
-	if err != nil {
-		logger.L().Error("failed to send message to pulsar", helpers.Error(err))
-	} else {
-		logger.L().Debug("successfully sent message to pulsar", helpers.String("messageID", msgID.String()), helpers.Interface("messageProperties", message.Properties))
-	}
-}
-
-func (c *Client) producePulsarMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte) error {
-	producerMessageProperties := map[string]string{
-		"timestamp":                       time.Now().Format(time.RFC3339Nano),
-		identifiers.AttributeCustomerGUID: id.Account,
-		"clusterName":                     id.Cluster,
-		synchronizer.MsgPropEvent:         eventType,
-	}
-	producerMessage := &pulsar.ProducerMessage{
-		Payload:    payload,
-		Properties: producerMessageProperties,
-		// this will be used to filter out messages by the synchronizer server consumer (so it doesn't process its own messages)
-		Key: SynchronizerServerProducerKey,
-	}
-	c.producer.SendAsync(ctx, producerMessage, logSendErrors)
-	return nil
+	return c.messageProducer.ProduceMessage(ctx, cId, synchronizer.MsgPropEventValueVerifyObjectMessage, data)
 }
