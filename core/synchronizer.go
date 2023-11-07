@@ -26,15 +26,15 @@ type Synchronizer struct {
 	readDataFunc func(rw io.ReadWriter) ([]byte, error)
 }
 
-func NewSynchronizerClient(adapter adapters.Adapter, conn net.Conn) *Synchronizer {
-	return newSynchronizer(adapter, conn, true, wsutil.ReadServerBinary, wsutil.WriteClientBinary)
+func NewSynchronizerClient(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn) *Synchronizer {
+	return newSynchronizer(mainCtx, adapter, conn, true, wsutil.ReadServerBinary, wsutil.WriteClientBinary)
 }
 
-func NewSynchronizerServer(adapter adapters.Adapter, conn net.Conn) *Synchronizer {
-	return newSynchronizer(adapter, conn, false, wsutil.ReadClientBinary, wsutil.WriteServerBinary)
+func NewSynchronizerServer(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn) *Synchronizer {
+	return newSynchronizer(mainCtx, adapter, conn, false, wsutil.ReadClientBinary, wsutil.WriteServerBinary)
 }
 
-func newSynchronizer(adapter adapters.Adapter, conn net.Conn, isClient bool, readDataFunc func(rw io.ReadWriter) ([]byte, error), writeDataFunc func(w io.Writer, p []byte) error) *Synchronizer {
+func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn, isClient bool, readDataFunc func(rw io.ReadWriter) ([]byte, error), writeDataFunc func(w io.Writer, p []byte) error) *Synchronizer {
 	// outgoing message pool
 	outPool, err := ants.NewPoolWithFunc(10, func(i interface{}) {
 		data := i.([]byte)
@@ -61,7 +61,7 @@ func newSynchronizer(adapter adapters.Adapter, conn net.Conn, isClient bool, rea
 		PutObject:    s.PutObjectCallback,
 		VerifyObject: s.VerifyObjectCallback,
 	}
-	adapter.RegisterCallbacks(callbacks)
+	adapter.RegisterCallbacks(mainCtx, callbacks)
 	return s
 }
 
@@ -108,27 +108,22 @@ func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.Clust
 	return nil
 }
 
-func (s *Synchronizer) Start(mainCtx context.Context) error {
+func (s *Synchronizer) Start(ctx context.Context) error {
 	logger.L().Info("starting sync")
-	err := s.adapter.Init(mainCtx)
-	if err != nil {
-		return fmt.Errorf("init adapter: %w", err)
-	}
-
 	// adapter events
-	err = s.adapter.Start(mainCtx)
+	err := s.adapter.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("start adapter: %w", err)
 	}
 	// synchronizer events
-	err = s.listenForSyncEvents()
+	err = s.listenForSyncEvents(ctx)
 	if err != nil {
 		return fmt.Errorf("listen for sync events: %w", err)
 	}
 	return nil
 }
 
-func (s *Synchronizer) listenForSyncEvents() error {
+func (s *Synchronizer) listenForSyncEvents(mainCtx context.Context) error {
 	// process incoming messages
 	for {
 		data, err := s.readDataFunc(s.conn)
@@ -150,7 +145,7 @@ func (s *Synchronizer) listenForSyncEvents() error {
 			continue
 		}
 		// store in context
-		ctx := utils.ContextFromGeneric(generic)
+		ctx := utils.ContextFromGeneric(mainCtx, generic)
 		// handle message
 		switch *generic.Event {
 		case domain.EventGetObject:
@@ -349,6 +344,9 @@ func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.ClusterKin
 	err = s.outPool.Invoke(data)
 	if err != nil {
 		return fmt.Errorf("invoke outPool on checksum message: %w", err)
+	}
+	if msg.Kind == nil {
+		return fmt.Errorf("invalid resource kind. name: %s", msg.Name)
 	}
 	logger.L().Debug("sent new checksum message",
 		helpers.String("account", msg.Account),

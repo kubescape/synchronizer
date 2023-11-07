@@ -97,12 +97,8 @@ func (m *MockAdapter) PutObject(_ context.Context, id domain.ClusterKindName, ob
 	return nil
 }
 
-func (m *MockAdapter) RegisterCallbacks(callbacks domain.Callbacks) {
+func (m *MockAdapter) RegisterCallbacks(mainCtx context.Context, callbacks domain.Callbacks) {
 	m.callbacks = callbacks
-}
-
-func (m *MockAdapter) Init(_ context.Context) error {
-	return nil
 }
 
 func (m *MockAdapter) Start(_ context.Context) error {

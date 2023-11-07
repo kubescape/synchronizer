@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/gobwas/ws"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/adapters/incluster/v1"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/core"
@@ -45,16 +48,41 @@ func main() {
 	}
 	// in-cluster adapter
 	adapter := incluster.NewInClusterAdapter(cfg, k8sclient)
+
+	// authentication headers
+	dialer := ws.Dialer{
+		Header: ws.HandshakeHeaderHTTP(map[string][]string{
+			core.AccessKeyHeader:   {cfg.InCluster.AccessKey},
+			core.AccountHeader:     {cfg.InCluster.Account},
+			core.ClusterNameHeader: {cfg.InCluster.ClusterName},
+		}),
+	}
+
+	for {
+		if err := start(ctx, cfg, adapter, dialer); err != nil {
+			d := 5 * time.Second // TODO: use exponential backoff for retries
+			logger.L().Error("connection error", helpers.Error(err), helpers.String("retry in", d.String()))
+			time.Sleep(d)
+		} else {
+			break
+		}
+	}
+	logger.L().Info("exiting")
+}
+
+func start(ctx context.Context, cfg config.Config, adapter adapters.Adapter, dialer ws.Dialer) error {
 	// websocket client
-	conn, _, _, err := ws.DefaultDialer.Dial(ctx, cfg.InCluster.BackendUrl)
+	conn, _, _, err := dialer.Dial(ctx, cfg.InCluster.BackendUrl)
 	if err != nil {
-		logger.L().Fatal("unable to create websocket connection", helpers.Error(err))
+		return fmt.Errorf("unable to create websocket connection: %w", err)
 	}
 	defer conn.Close()
+
 	// synchronizer
-	synchronizer := core.NewSynchronizerClient(adapter, conn)
+	synchronizer := core.NewSynchronizerClient(ctx, adapter, conn)
 	err = synchronizer.Start(ctx)
 	if err != nil {
-		logger.L().Fatal("error during sync", helpers.Error(err))
+		return fmt.Errorf("error during sync: %w", err)
 	}
+	return nil
 }

@@ -55,27 +55,26 @@ func (a *Adapter) PutObject(ctx context.Context, id domain.ClusterKindName, obje
 	return fmt.Errorf("unknown resource %s", id.Kind.String())
 }
 
-func (a *Adapter) RegisterCallbacks(callbacks domain.Callbacks) {
+func (a *Adapter) RegisterCallbacks(mainCtx context.Context, callbacks domain.Callbacks) {
 	a.callbacks = callbacks
 }
 
-func (a *Adapter) Init(ctx context.Context) error {
-	return nil
-}
-
-func (a *Adapter) Start(mainCtx context.Context) error {
+func (a *Adapter) Start(ctx context.Context) error {
 	for _, r := range a.cfg.Resources {
 		client := NewClient(a.k8sclient, a.cfg.InCluster.Account, a.cfg.InCluster.ClusterName, r)
-		client.RegisterCallbacks(a.callbacks)
+		client.RegisterCallbacks(ctx, a.callbacks)
 		a.clients[r.String()] = client
 		go func() {
-			_ = client.Start(mainCtx)
+			_ = client.Start(ctx)
 		}()
 	}
 	return nil
 }
 
 func (a *Adapter) VerifyObject(ctx context.Context, id domain.ClusterKindName, checksum string) error {
+	if id.Kind == nil {
+		return fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
+	}
 	if client, ok := a.clients[id.Kind.String()]; ok {
 		return client.VerifyObject(ctx, id, checksum)
 	}

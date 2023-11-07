@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
@@ -19,172 +18,54 @@ import (
 	"github.com/kubescape/synchronizer/utils"
 )
 
-const (
-	SynchronizerServerProducerKey = "SynchronizerServerProducer"
-)
-
 type Client struct {
-	callbacks    domain.Callbacks
-	cfg          config.Config
-	pulsarClient pulsarconnector.Client
+	callbacks domain.Callbacks
+	cfg       config.Config
 
-	producer           pulsarconnector.Producer
-	consumer           pulsarconnector.Consumer
-	consumerMsgChannel chan pulsar.ConsumerMessage
+	producer pulsarconnector.Producer
 }
 
-func NewClient(cfg config.Config, pulsarClient pulsarconnector.Client) *Client {
+func NewClient(cfg config.Config, producer pulsarconnector.Producer) *Client {
 	return &Client{
-		cfg:          cfg,
-		pulsarClient: pulsarClient,
+		cfg:      cfg,
+		producer: producer,
 	}
 }
 
 var _ adapters.Client = (*Client)(nil)
 
-func (c *Client) Init(ctx context.Context) error {
-	var err error
-	if err := c.initPulsarProducer(); err != nil {
-		return err
-	}
+func (c *Client) Start(ctx context.Context) error {
 
-	c.consumerMsgChannel = make(chan pulsar.ConsumerMessage)
-	c.consumer, err = c.pulsarClient.NewConsumer(pulsarconnector.WithTopic(c.cfg.Backend.Topic),
-		pulsarconnector.WithMessageChannel(c.consumerMsgChannel),
-		pulsarconnector.WithSubscriptionName(c.cfg.Backend.Subscription))
+	if err := c.sendServerConnectedMessage(ctx); err != nil {
+		return fmt.Errorf("failed to produce server connected message: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
+	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
+
+	depth := ctx.Value(domain.ContextKeyDepth).(int)
+	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	id := utils.ClusterKindNameFromContext(ctx)
+
+	msg := synchronizer.ServerConnectedMessage{
+		ClusterName:  id.Cluster,
+		CustomerGUID: id.Account,
+		Depth:        depth + 1,
+		MsgId:        msgId,
+	}
+	logger.L().Debug("sending server connected message to pulsar",
+		helpers.String("account", msg.CustomerGUID),
+		helpers.String("cluster", msg.ClusterName),
+		helpers.String("name", id.Name))
+
+	data, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to create synchronizerConsumer: %w", err)
-	}
-	return nil
-}
-
-func (c *Client) Start(mainCtx context.Context) error {
-	defer c.consumer.Close()
-
-	for {
-		select {
-		case <-mainCtx.Done():
-			close(c.consumerMsgChannel)
-			return nil
-		case msg := <-c.consumerMsgChannel:
-			// skip messages sent by the synchronizer server
-			if msg.Key() == SynchronizerServerProducerKey {
-				if err := c.consumer.Ack(msg); err != nil {
-					logger.L().Error("failed to ack message", helpers.Error(err))
-				}
-				continue
-			}
-			// handle message
-			if err := c.handleSingleSynchronizerMessage(msg); err != nil {
-				logger.L().Error("failed to handle message", helpers.Error(err))
-				c.consumer.Nack(msg)
-			} else if err := c.consumer.Ack(msg); err != nil {
-				logger.L().Error("failed to ack message", helpers.Error(err))
-			}
-		}
-	}
-}
-
-func (c *Client) handleSingleSynchronizerMessage(msg pulsar.ConsumerMessage) error {
-	msgID := utils.PulsarMessageIDtoString(msg.ID())
-	msgTopic := msg.Topic()
-	logger.L().Debug("Received message from pulsar",
-		helpers.String("msgId", msgID),
-		helpers.String("subscriptionName", c.cfg.Backend.Subscription),
-		helpers.String("topicName", string(c.cfg.Backend.Topic)),
-		helpers.String("msgTopic", msgTopic))
-
-	switch msg.Properties()[synchronizer.MsgPropEvent] {
-	case synchronizer.MsgPropEventValueGetObjectMessage:
-		var data synchronizer.GetObjectMessage
-		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
-			return fmt.Errorf("failed to unmarshal message: %w", err)
-		}
-		ctx := utils.ContextFromGeneric(domain.Generic{
-			Depth: data.Depth,
-			MsgId: data.MsgId,
-		})
-		if err := c.callbacks.GetObject(ctx, domain.ClusterKindName{
-			Account: data.CustomerGUID,
-			Cluster: data.ClusterName,
-			Kind:    domain.KindFromString(data.Kind),
-			Name:    data.Name,
-		}, data.BaseObject); err != nil {
-			return fmt.Errorf("failed to send GetObject message: %w", err)
-		}
-	case synchronizer.MsgPropEventValuePatchObjectMessage:
-		var data synchronizer.PatchObjectMessage
-		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
-			return fmt.Errorf("failed to unmarshal message: %w", err)
-		}
-		ctx := utils.ContextFromGeneric(domain.Generic{
-			Depth: data.Depth,
-			MsgId: data.MsgId,
-		})
-		if err := c.callbacks.PatchObject(ctx, domain.ClusterKindName{
-			Account: data.CustomerGUID,
-			Cluster: data.ClusterName,
-			Kind:    domain.KindFromString(data.Kind),
-			Name:    data.Name,
-		}, data.Checksum, data.Patch); err != nil {
-			return fmt.Errorf("failed to send PatchObject message: %w", err)
-		}
-	case synchronizer.MsgPropEventValueVerifyObjectMessage:
-		var data synchronizer.VerifyObjectMessage
-		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
-			return fmt.Errorf("failed to unmarshal message: %w", err)
-		}
-		ctx := utils.ContextFromGeneric(domain.Generic{
-			Depth: data.Depth,
-			MsgId: data.MsgId,
-		})
-		if err := c.callbacks.VerifyObject(ctx, domain.ClusterKindName{
-			Account: data.CustomerGUID,
-			Cluster: data.ClusterName,
-			Kind:    domain.KindFromString(data.Kind),
-			Name:    data.Name,
-		}, data.Checksum); err != nil {
-			return fmt.Errorf("failed to send VerifyObject message: %w", err)
-		}
-	case synchronizer.MsgPropEventValuePutObjectMessage:
-		var data synchronizer.PutObjectMessage
-		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
-			return fmt.Errorf("failed to unmarshal message: %w", err)
-		}
-		ctx := utils.ContextFromGeneric(domain.Generic{
-			Depth: data.Depth,
-			MsgId: data.MsgId,
-		})
-		if err := c.callbacks.PutObject(ctx, domain.ClusterKindName{
-			Account: data.CustomerGUID,
-			Cluster: data.ClusterName,
-			Kind:    domain.KindFromString(data.Kind),
-			Name:    data.Name,
-		}, data.Object); err != nil {
-			return fmt.Errorf("failed to send PutObject message: %w", err)
-		}
-	case synchronizer.MsgPropEventValueDeleteObjectMessage:
-		var data synchronizer.DeleteObjectMessage
-		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
-			return fmt.Errorf("failed to unmarshal message: %w", err)
-		}
-		ctx := utils.ContextFromGeneric(domain.Generic{
-			Depth: data.Depth,
-			MsgId: data.MsgId,
-		})
-		if err := c.callbacks.DeleteObject(ctx, domain.ClusterKindName{
-			Account: data.CustomerGUID,
-			Cluster: data.ClusterName,
-			Kind:    domain.KindFromString(data.Kind),
-			Name:    data.Name,
-		}); err != nil {
-			return fmt.Errorf("failed to send DeleteObject message: %w", err)
-		}
-	default:
-		return fmt.Errorf("unknown message type")
+		return fmt.Errorf("marshal server connected message: %w", err)
 	}
 
-	return nil
+	return c.producePulsarMessage(ctx, id, synchronizer.MsgPropEventValueServerConnectedMessage, data)
 }
 
 // FIXME no need to implement callPutOrPatch because we don't send patches from backend
@@ -223,7 +104,7 @@ func (c *Client) PutObject(ctx context.Context, id domain.ClusterKindName, objec
 	return c.sendPutObjectMessage(ctx, id, object)
 }
 
-func (c *Client) RegisterCallbacks(callbacks domain.Callbacks) {
+func (c *Client) RegisterCallbacks(mainCtx context.Context, callbacks domain.Callbacks) {
 	c.callbacks = callbacks
 }
 
@@ -360,31 +241,6 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.ClusterK
 	}
 
 	return c.producePulsarMessage(ctx, id, synchronizer.MsgPropEventValueVerifyObjectMessage, data)
-}
-
-func getCommonProducerOptions(topic string) pulsar.ProducerOptions {
-	// get pod name
-	podName := os.Getenv("HOSTNAME")
-	return pulsar.ProducerOptions{
-		CompressionType:  pulsar.ZSTD,
-		CompressionLevel: 1,
-		Properties: map[string]string{
-			"podName": podName,
-		},
-		Topic: topic,
-	}
-}
-
-func (c *Client) initPulsarProducer() error {
-	topic := c.cfg.Backend.Topic
-	fullTopic := pulsarconnector.BuildPersistentTopic(c.pulsarClient.GetConfig().Tenant, c.pulsarClient.GetConfig().Namespace, pulsarconnector.TopicName(topic))
-	ksr, err := c.pulsarClient.CreateProducer(getCommonProducerOptions(fullTopic))
-	if err != nil {
-		return fmt.Errorf("failed to create producer for topic '%s': %w", topic, err)
-	}
-
-	c.producer = ksr
-	return nil
 }
 
 func logSendErrors(msgID pulsar.MessageID, message *pulsar.ProducerMessage, err error) {

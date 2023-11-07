@@ -1,6 +1,9 @@
 package domain
 
 const (
-	ContextKeyDepth = "depth"
-	ContextKeyMsgId = "msgId"
+	ContextKeyAccount     = "account"
+	ContextKeyAccessKey   = "accessKey"
+	ContextKeyClusterName = "clusterName"
+	ContextKeyDepth       = "depth"
+	ContextKeyMsgId       = "msgId"
 )

@@ -18,3 +18,7 @@ func (c ClusterKindName) String() string {
 	}
 	return strings.Join([]string{c.Account, c.Cluster, kind, c.Name}, "/")
 }
+
+func (c ClusterKindName) IdentifierKey() string {
+	return strings.Join([]string{c.Account, c.Cluster}, "/")
+}

@@ -38,12 +38,12 @@ func CanonicalHash(in []byte) (string, error) {
 	return hex.EncodeToString(hash[:]), nil
 }
 
-func ContextFromGeneric(generic domain.Generic) context.Context {
+func ContextFromGeneric(parent context.Context, generic domain.Generic) context.Context {
 	if generic.MsgId == "" {
 		generic.MsgId = uuid.NewString()
 	}
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, domain.ContextKeyDepth, generic.Depth)
+
+	ctx := context.WithValue(parent, domain.ContextKeyDepth, generic.Depth)
 	ctx = context.WithValue(ctx, domain.ContextKeyMsgId, generic.MsgId)
 	return ctx
 }
@@ -188,4 +188,11 @@ func PulsarMessageIDtoString(msgID pulsar.MessageID) string {
 	batchStr := strconv.Itoa(int(msgID.BatchIdx()))
 	msgIDstr := msgID.String() + ":" + batchStr
 	return msgIDstr
+}
+
+func ClusterKindNameFromContext(ctx context.Context) domain.ClusterKindName {
+	return domain.ClusterKindName{
+		Cluster: ctx.Value(domain.ContextKeyClusterName).(string),
+		Account: ctx.Value(domain.ContextKeyAccount).(string),
+	}
 }

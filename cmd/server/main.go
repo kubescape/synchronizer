@@ -12,8 +12,10 @@ import (
 	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/adapters/backend/v1"
+
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/core"
+	"github.com/kubescape/synchronizer/domain"
 )
 
 func main() {
@@ -52,6 +54,12 @@ func main() {
 
 	// websocket server
 	_ = http.ListenAndServe(":8080", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorizedCtx, isAuthorized := authorizedContext(ctx, r)
+		if !isAuthorized {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
 		conn, _, _, err := ws.UpgradeHTTP(r, w)
 		if err != nil {
 			logger.L().Error("unable to upgrade connection", helpers.Error(err))
@@ -59,12 +67,31 @@ func main() {
 		}
 		go func() {
 			defer conn.Close()
-			synchronizer := core.NewSynchronizerServer(adapter, conn)
-			err = synchronizer.Start(ctx)
+			synchronizer := core.NewSynchronizerServer(authorizedCtx, adapter, conn)
+			err = synchronizer.Start(authorizedCtx)
 			if err != nil {
 				logger.L().Error("error during sync", helpers.Error(err))
 				return
 			}
 		}()
 	}))
+}
+
+// authorize checks if the request is authorized, and if so, returns an authorized context.
+func authorizedContext(ctx context.Context, r *http.Request) (context.Context, bool) {
+	accessKey := r.Header.Get(core.AccessKeyHeader)
+	account := r.Header.Get(core.AccountHeader)
+	cluster := r.Header.Get(core.ClusterNameHeader)
+
+	if accessKey == "" || account == "" || cluster == "" {
+		return ctx, false
+	}
+
+	// TODO: validate access key and account, maybe also cluster name
+
+	// updates the context with the access key and account
+	ctx = context.WithValue(ctx, domain.ContextKeyAccessKey, accessKey) //nolint
+	ctx = context.WithValue(ctx, domain.ContextKeyAccount, account)     //nolint
+	ctx = context.WithValue(ctx, domain.ContextKeyClusterName, cluster) //nolint
+	return ctx, true
 }

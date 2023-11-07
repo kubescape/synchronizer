@@ -48,11 +48,7 @@ func NewClient(client dynamic.Interface, account, cluster string, r config.Resou
 
 var _ adapters.Client = (*Client)(nil)
 
-func (c *Client) Init(_ context.Context) error {
-	return nil
-}
-
-func (c *Client) Start(_ context.Context) error {
+func (c *Client) Start(ctx context.Context) error {
 	watchOpts := metav1.ListOptions{}
 	// for our storage, we need to list all resources and get them one by one
 	// as list returns objects with empty spec
@@ -63,7 +59,7 @@ func (c *Client) Start(_ context.Context) error {
 			return fmt.Errorf("list resources: %w", err)
 		}
 		for _, d := range list.Items {
-			ctx := utils.ContextFromGeneric(domain.Generic{})
+			ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
 			id := domain.ClusterKindName{
 				Account: c.account,
 				Cluster: c.cluster,
@@ -95,7 +91,7 @@ func (c *Client) Start(_ context.Context) error {
 		logger.L().Fatal("unable to watch for resources", helpers.String("resource", c.res.Resource), helpers.Error(err))
 	}
 	for {
-		ctx := utils.ContextFromGeneric(domain.Generic{})
+		ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
 		event, chanActive := <-watcher.ResultChan()
 		if !chanActive {
 			watcher.Stop()
@@ -277,7 +273,7 @@ func (c *Client) PutObject(_ context.Context, _ domain.ClusterKindName, object [
 	return nil
 }
 
-func (c *Client) RegisterCallbacks(callbacks domain.Callbacks) {
+func (c *Client) RegisterCallbacks(mainCtx context.Context, callbacks domain.Callbacks) {
 	c.callbacks = callbacks
 }
 
