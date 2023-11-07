@@ -60,11 +60,9 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 		for _, d := range list.Items {
 			ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
-			id := domain.ClusterKindName{
-				Account: c.account,
-				Cluster: c.cluster,
-				Kind:    c.kind,
-				Name:    utils.NsNameToKey(d.GetNamespace(), d.GetName()),
+			id := domain.KindName{
+				Kind: c.kind,
+				Name: utils.NsNameToKey(d.GetNamespace(), d.GetName()),
 			}
 			obj, err := c.client.Resource(c.res).Namespace(d.GetNamespace()).Get(context.Background(), d.GetName(), metav1.GetOptions{})
 			if err != nil {
@@ -107,11 +105,9 @@ func (c *Client) Start(ctx context.Context) error {
 			continue
 		}
 		key := utils.NsNameToKey(d.GetNamespace(), d.GetName())
-		id := domain.ClusterKindName{
-			Account: c.account,
-			Cluster: c.cluster,
-			Kind:    c.kind,
-			Name:    key,
+		id := domain.KindName{
+			Kind: c.kind,
+			Name: key,
 		}
 		newObject, err := d.MarshalJSON()
 		if err != nil {
@@ -146,7 +142,7 @@ func (c *Client) Start(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) callPutOrPatch(ctx context.Context, id domain.ClusterKindName, baseObject []byte, newObject []byte) error {
+func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObject []byte, newObject []byte) error {
 	if c.Strategy == domain.PatchStrategy {
 		if len(baseObject) > 0 {
 			// update reference object
@@ -184,7 +180,7 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.ClusterKindName, 
 	return nil
 }
 
-func (c *Client) callVerifyObject(ctx context.Context, id domain.ClusterKindName, object []byte) error {
+func (c *Client) callVerifyObject(ctx context.Context, id domain.KindName, object []byte) error {
 	// calculate checksum
 	checksum, err := utils.CanonicalHash(object)
 	if err != nil {
@@ -197,7 +193,7 @@ func (c *Client) callVerifyObject(ctx context.Context, id domain.ClusterKindName
 	return nil
 }
 
-func (c *Client) DeleteObject(_ context.Context, id domain.ClusterKindName) error {
+func (c *Client) DeleteObject(_ context.Context, id domain.KindName) error {
 	if c.Strategy == domain.PatchStrategy {
 		// remove from known resources
 		delete(c.shadowObjects, id.Name)
@@ -206,7 +202,7 @@ func (c *Client) DeleteObject(_ context.Context, id domain.ClusterKindName) erro
 	return c.client.Resource(c.res).Namespace(ns).Delete(context.Background(), name, metav1.DeleteOptions{})
 }
 
-func (c *Client) GetObject(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
+func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
 	ns, name := utils.KeyToNsName(id.Name)
 	obj, err := c.client.Resource(c.res).Namespace(ns).Get(context.Background(), name, metav1.GetOptions{})
 	if err != nil {
@@ -219,7 +215,7 @@ func (c *Client) GetObject(ctx context.Context, id domain.ClusterKindName, baseO
 	return c.callPutOrPatch(ctx, id, baseObject, newObject)
 }
 
-func (c *Client) PatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
+func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	baseObject, err := c.patchObject(ctx, id, checksum, patch)
 	if err != nil {
 		logger.L().Warning("patch object, sending get object", helpers.Error(err))
@@ -228,7 +224,7 @@ func (c *Client) PatchObject(ctx context.Context, id domain.ClusterKindName, che
 	return nil
 }
 
-func (c *Client) patchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) ([]byte, error) {
+func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) ([]byte, error) {
 	if c.Strategy != domain.PatchStrategy {
 		return nil, fmt.Errorf("patch strategy not enabled for resource %s", id.Kind.String())
 	}
@@ -260,7 +256,7 @@ func (c *Client) patchObject(ctx context.Context, id domain.ClusterKindName, che
 	return object, c.PutObject(ctx, id, modified)
 }
 
-func (c *Client) PutObject(_ context.Context, _ domain.ClusterKindName, object []byte) error {
+func (c *Client) PutObject(_ context.Context, _ domain.KindName, object []byte) error {
 	var obj unstructured.Unstructured
 	err := obj.UnmarshalJSON(object)
 	if err != nil {
@@ -273,11 +269,11 @@ func (c *Client) PutObject(_ context.Context, _ domain.ClusterKindName, object [
 	return nil
 }
 
-func (c *Client) RegisterCallbacks(mainCtx context.Context, callbacks domain.Callbacks) {
+func (c *Client) RegisterCallbacks(_ context.Context, callbacks domain.Callbacks) {
 	c.callbacks = callbacks
 }
 
-func (c *Client) VerifyObject(ctx context.Context, id domain.ClusterKindName, newChecksum string) error {
+func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, newChecksum string) error {
 	baseObject, err := c.verifyObject(id, newChecksum)
 	if err != nil {
 		logger.L().Warning("verify object, sending get object", helpers.Error(err))
@@ -286,7 +282,7 @@ func (c *Client) VerifyObject(ctx context.Context, id domain.ClusterKindName, ne
 	return nil
 }
 
-func (c *Client) verifyObject(id domain.ClusterKindName, newChecksum string) ([]byte, error) {
+func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, error) {
 	ns, name := utils.KeyToNsName(id.Name)
 	obj, err := c.client.Resource(c.res).Namespace(ns).Get(context.Background(), name, metav1.GetOptions{})
 	if err != nil {

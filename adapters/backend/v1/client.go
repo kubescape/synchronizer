@@ -47,7 +47,7 @@ func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
 
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
-	id := utils.ClusterKindNameFromContext(ctx)
+	id := domain.ClientIdentifierFromContext(ctx)
 
 	msg := synchronizer.ServerConnectedMessage{
 		ClusterName:  id.Cluster,
@@ -57,8 +57,7 @@ func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
 	}
 	logger.L().Debug("sending server connected message to pulsar",
 		helpers.String("account", msg.CustomerGUID),
-		helpers.String("cluster", msg.ClusterName),
-		helpers.String("name", id.Name))
+		helpers.String("cluster", msg.ClusterName))
 
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -71,7 +70,7 @@ func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
 // FIXME no need to implement callPutOrPatch because we don't send patches from backend
 // so you just call c.callbacks.PutObject instead
 
-func (c *Client) callVerifyObject(ctx context.Context, id domain.ClusterKindName, object []byte) error {
+func (c *Client) callVerifyObject(ctx context.Context, id domain.KindName, object []byte) error {
 	// calculate checksum
 	checksum, err := utils.CanonicalHash(object)
 	if err != nil {
@@ -84,22 +83,22 @@ func (c *Client) callVerifyObject(ctx context.Context, id domain.ClusterKindName
 	return nil
 }
 
-func (c *Client) DeleteObject(ctx context.Context, id domain.ClusterKindName) error {
+func (c *Client) DeleteObject(ctx context.Context, id domain.KindName) error {
 	// deleting the object is delegated to the ingester
 	return c.sendDeleteObjectMessage(ctx, id)
 }
 
-func (c *Client) GetObject(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
+func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
 	// getting the object is delegated to the ingester, we will send it to cluster once we get a NewObject message from Pulsar
 	return c.sendGetObjectMessage(ctx, id, baseObject)
 }
 
-func (c *Client) PatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
+func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	// patching the object is delegated to the ingester, it might emit a GetObject message if the patching fails
 	return c.sendPatchObjectMessage(ctx, id, checksum, patch)
 }
 
-func (c *Client) PutObject(ctx context.Context, id domain.ClusterKindName, object []byte) error {
+func (c *Client) PutObject(ctx context.Context, id domain.KindName, object []byte) error {
 	// putting the object into the data store is delegated to the ingester
 	return c.sendPutObjectMessage(ctx, id, object)
 }
@@ -108,17 +107,19 @@ func (c *Client) RegisterCallbacks(mainCtx context.Context, callbacks domain.Cal
 	c.callbacks = callbacks
 }
 
-func (c *Client) VerifyObject(ctx context.Context, id domain.ClusterKindName, checksum string) error {
+func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, checksum string) error {
 	// verifying the object is delegated to the ingester, it might emit a GetObject message if the verification fails
 	return c.sendVerifyObjectMessage(ctx, id, checksum)
 }
 
-func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.ClusterKindName) error {
+func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName) error {
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	cId := domain.ClientIdentifierFromContext(ctx)
+
 	msg := synchronizer.DeleteObjectMessage{
-		ClusterName:  id.Cluster,
-		CustomerGUID: id.Account,
+		ClusterName:  cId.Cluster,
+		CustomerGUID: cId.Account,
 		Depth:        depth + 1,
 		Kind:         id.Kind.String(),
 		MsgId:        msgId,
@@ -134,16 +135,18 @@ func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.ClusterK
 		return fmt.Errorf("marshal delete object message: %w", err)
 	}
 
-	return c.producePulsarMessage(ctx, id, synchronizer.MsgPropEventValueDeleteObjectMessage, data)
+	return c.producePulsarMessage(ctx, cId, synchronizer.MsgPropEventValueDeleteObjectMessage, data)
 }
 
-func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
+func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, baseObject []byte) error {
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	cId := domain.ClientIdentifierFromContext(ctx)
+
 	msg := synchronizer.GetObjectMessage{
 		BaseObject:   baseObject,
-		ClusterName:  id.Cluster,
-		CustomerGUID: id.Account,
+		ClusterName:  cId.Cluster,
+		CustomerGUID: cId.Account,
 		Depth:        depth + 1,
 		Kind:         id.Kind.String(),
 		MsgId:        msgId,
@@ -160,16 +163,18 @@ func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.ClusterKind
 		return fmt.Errorf("marshal get object message: %w", err)
 	}
 
-	return c.producePulsarMessage(ctx, id, synchronizer.MsgPropEventValueGetObjectMessage, data)
+	return c.producePulsarMessage(ctx, cId, synchronizer.MsgPropEventValueGetObjectMessage, data)
 }
 
-func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
+func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	cId := domain.ClientIdentifierFromContext(ctx)
+
 	msg := synchronizer.PatchObjectMessage{
 		Checksum:     checksum,
-		ClusterName:  id.Cluster,
-		CustomerGUID: id.Account,
+		ClusterName:  cId.Cluster,
+		CustomerGUID: cId.Account,
 		Depth:        depth + 1,
 		Kind:         id.Kind.String(),
 		MsgId:        msgId,
@@ -188,15 +193,17 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.ClusterKi
 		return fmt.Errorf("marshal patch object message: %w", err)
 	}
 
-	return c.producePulsarMessage(ctx, id, synchronizer.MsgPropEventValuePatchObjectMessage, data)
+	return c.producePulsarMessage(ctx, cId, synchronizer.MsgPropEventValuePatchObjectMessage, data)
 }
 
-func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.ClusterKindName, object []byte) error {
+func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, object []byte) error {
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	cId := domain.ClientIdentifierFromContext(ctx)
+
 	msg := synchronizer.PutObjectMessage{
-		ClusterName:  id.Cluster,
-		CustomerGUID: id.Account,
+		ClusterName:  cId.Cluster,
+		CustomerGUID: cId.Account,
 		Depth:        depth + 1,
 		Kind:         id.Kind.String(),
 		MsgId:        msgId,
@@ -214,16 +221,18 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.ClusterKind
 		return fmt.Errorf("marshal put object message: %w", err)
 	}
 
-	return c.producePulsarMessage(ctx, id, synchronizer.MsgPropEventValuePutObjectMessage, data)
+	return c.producePulsarMessage(ctx, cId, synchronizer.MsgPropEventValuePutObjectMessage, data)
 }
 
-func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.ClusterKindName, checksum string) error {
+func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName, checksum string) error {
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	cId := domain.ClientIdentifierFromContext(ctx)
+
 	msg := synchronizer.VerifyObjectMessage{
 		Checksum:     checksum,
-		ClusterName:  id.Cluster,
-		CustomerGUID: id.Account,
+		ClusterName:  cId.Cluster,
+		CustomerGUID: cId.Account,
 		Depth:        depth + 1,
 		Kind:         id.Kind.String(),
 		MsgId:        msgId,
@@ -240,7 +249,7 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.ClusterK
 		return fmt.Errorf("marshal verify object message: %w", err)
 	}
 
-	return c.producePulsarMessage(ctx, id, synchronizer.MsgPropEventValueVerifyObjectMessage, data)
+	return c.producePulsarMessage(ctx, cId, synchronizer.MsgPropEventValueVerifyObjectMessage, data)
 }
 
 func logSendErrors(msgID pulsar.MessageID, message *pulsar.ProducerMessage, err error) {
@@ -251,7 +260,7 @@ func logSendErrors(msgID pulsar.MessageID, message *pulsar.ProducerMessage, err 
 	}
 }
 
-func (c *Client) producePulsarMessage(ctx context.Context, id domain.ClusterKindName, eventType string, payload []byte) error {
+func (c *Client) producePulsarMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte) error {
 	producerMessageProperties := map[string]string{
 		"timestamp":                       time.Now().Format(time.RFC3339Nano),
 		identifiers.AttributeCustomerGUID: id.Account,

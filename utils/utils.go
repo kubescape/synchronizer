@@ -189,10 +189,3 @@ func PulsarMessageIDtoString(msgID pulsar.MessageID) string {
 	msgIDstr := msgID.String() + ":" + batchStr
 	return msgIDstr
 }
-
-func ClusterKindNameFromContext(ctx context.Context) domain.ClusterKindName {
-	return domain.ClusterKindName{
-		Cluster: ctx.Value(domain.ContextKeyClusterName).(string),
-		Account: ctx.Value(domain.ContextKeyAccount).(string),
-	}
-}

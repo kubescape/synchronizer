@@ -2,23 +2,26 @@ package domain
 
 import "strings"
 
-type ClusterKindName struct {
-	Account string
-	Cluster string
-	Kind    *Kind
-	Name    string
+type KindName struct {
+	Kind *Kind
+	Name string
 }
 
-func (c ClusterKindName) String() string {
+func (c KindName) String() string {
 	var kind string
 	if c.Kind == nil {
 		kind = ""
 	} else {
 		kind = c.Kind.String()
 	}
-	return strings.Join([]string{c.Account, c.Cluster, kind, c.Name}, "/")
+	return strings.Join([]string{kind, c.Name}, "/")
 }
 
-func (c ClusterKindName) IdentifierKey() string {
+type ClientIdentifier struct {
+	Account string
+	Cluster string
+}
+
+func (c ClientIdentifier) String() string {
 	return strings.Join([]string{c.Account, c.Cluster}, "/")
 }

@@ -27,35 +27,48 @@ func NewInClusterAdapter(cfg config.Config, k8sclient dynamic.Interface) *Adapte
 
 var _ adapters.Adapter = (*Adapter)(nil)
 
-func (a *Adapter) DeleteObject(ctx context.Context, id domain.ClusterKindName) error {
+func (a *Adapter) DeleteObject(ctx context.Context, id domain.KindName) error {
+	if id.Kind == nil {
+		return fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
+	}
 	if client, ok := a.clients[id.Kind.String()]; ok {
 		return client.DeleteObject(ctx, id)
 	}
 	return fmt.Errorf("unknown resource %s", id.Kind.String())
 }
 
-func (a *Adapter) GetObject(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
+func (a *Adapter) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
+	if id.Kind == nil {
+		return fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
+	}
 	if client, ok := a.clients[id.Kind.String()]; ok {
 		return client.GetObject(ctx, id, baseObject)
 	}
 	return fmt.Errorf("unknown resource %s", id.Kind.String())
 }
 
-func (a *Adapter) PatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
+func (a *Adapter) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
+	if id.Kind == nil {
+		return fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
+	}
+
 	if client, ok := a.clients[id.Kind.String()]; ok {
 		return client.PatchObject(ctx, id, checksum, patch)
 	}
 	return fmt.Errorf("unknown resource %s", id.Kind.String())
 }
 
-func (a *Adapter) PutObject(ctx context.Context, id domain.ClusterKindName, object []byte) error {
+func (a *Adapter) PutObject(ctx context.Context, id domain.KindName, object []byte) error {
+	if id.Kind == nil {
+		return fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
+	}
 	if client, ok := a.clients[id.Kind.String()]; ok {
 		return client.PutObject(ctx, id, object)
 	}
 	return fmt.Errorf("unknown resource %s", id.Kind.String())
 }
 
-func (a *Adapter) RegisterCallbacks(mainCtx context.Context, callbacks domain.Callbacks) {
+func (a *Adapter) RegisterCallbacks(_ context.Context, callbacks domain.Callbacks) {
 	a.callbacks = callbacks
 }
 
@@ -71,7 +84,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	return nil
 }
 
-func (a *Adapter) VerifyObject(ctx context.Context, id domain.ClusterKindName, checksum string) error {
+func (a *Adapter) VerifyObject(ctx context.Context, id domain.KindName, checksum string) error {
 	if id.Kind == nil {
 		return fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
 	}

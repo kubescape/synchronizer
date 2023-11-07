@@ -27,12 +27,12 @@ func NewMockAdapter() *MockAdapter {
 
 var _ Adapter = (*MockAdapter)(nil)
 
-func (m *MockAdapter) DeleteObject(_ context.Context, id domain.ClusterKindName) error {
+func (m *MockAdapter) DeleteObject(_ context.Context, id domain.KindName) error {
 	delete(m.resources, id.String())
 	return nil
 }
 
-func (m *MockAdapter) GetObject(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
+func (m *MockAdapter) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
 	object, ok := m.resources[id.String()]
 	if !ok {
 		return fmt.Errorf("object not found")
@@ -62,7 +62,7 @@ func (m *MockAdapter) GetObject(ctx context.Context, id domain.ClusterKindName, 
 	}
 }
 
-func (m *MockAdapter) PatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
+func (m *MockAdapter) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	baseObject, err := m.patchObject(id, checksum, patch)
 	if err != nil {
 		logger.L().Warning("patch object, sending get object", helpers.Error(err))
@@ -71,7 +71,7 @@ func (m *MockAdapter) PatchObject(ctx context.Context, id domain.ClusterKindName
 	return nil
 }
 
-func (m *MockAdapter) patchObject(id domain.ClusterKindName, checksum string, patch []byte) ([]byte, error) {
+func (m *MockAdapter) patchObject(id domain.KindName, checksum string, patch []byte) ([]byte, error) {
 	object, ok := m.resources[id.String()]
 	if !ok {
 		return nil, fmt.Errorf("object not found")
@@ -92,7 +92,7 @@ func (m *MockAdapter) patchObject(id domain.ClusterKindName, checksum string, pa
 	return object, nil
 }
 
-func (m *MockAdapter) PutObject(_ context.Context, id domain.ClusterKindName, object []byte) error {
+func (m *MockAdapter) PutObject(_ context.Context, id domain.KindName, object []byte) error {
 	m.resources[id.String()] = object
 	return nil
 }
@@ -105,7 +105,7 @@ func (m *MockAdapter) Start(_ context.Context) error {
 	return nil
 }
 
-func (m *MockAdapter) VerifyObject(ctx context.Context, id domain.ClusterKindName, newChecksum string) error {
+func (m *MockAdapter) VerifyObject(ctx context.Context, id domain.KindName, newChecksum string) error {
 	baseObject, err := m.verifyObject(id, newChecksum)
 	if err != nil {
 		logger.L().Warning("verify object, sending get object", helpers.Error(err))
@@ -114,7 +114,7 @@ func (m *MockAdapter) VerifyObject(ctx context.Context, id domain.ClusterKindNam
 	return nil
 }
 
-func (m *MockAdapter) verifyObject(id domain.ClusterKindName, newChecksum string) ([]byte, error) {
+func (m *MockAdapter) verifyObject(id domain.KindName, newChecksum string) ([]byte, error) {
 	object, ok := m.resources[id.String()]
 	if !ok {
 		return nil, fmt.Errorf("object not found")

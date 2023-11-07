@@ -65,7 +65,7 @@ func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net
 	return s
 }
 
-func (s *Synchronizer) DeleteObjectCallback(ctx context.Context, id domain.ClusterKindName) error {
+func (s *Synchronizer) DeleteObjectCallback(ctx context.Context, id domain.KindName) error {
 	err := s.sendObjectDeleted(ctx, id)
 	if err != nil {
 		return fmt.Errorf("send delete: %w", err)
@@ -73,7 +73,7 @@ func (s *Synchronizer) DeleteObjectCallback(ctx context.Context, id domain.Clust
 	return nil
 }
 
-func (s *Synchronizer) GetObjectCallback(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
+func (s *Synchronizer) GetObjectCallback(ctx context.Context, id domain.KindName, baseObject []byte) error {
 	if s.isClient {
 		baseObject = nil
 	}
@@ -84,7 +84,7 @@ func (s *Synchronizer) GetObjectCallback(ctx context.Context, id domain.ClusterK
 	return nil
 }
 
-func (s *Synchronizer) PatchObjectCallback(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
+func (s *Synchronizer) PatchObjectCallback(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	err := s.sendPatchObject(ctx, id, checksum, patch)
 	if err != nil {
 		return fmt.Errorf("send patch: %w", err)
@@ -92,7 +92,7 @@ func (s *Synchronizer) PatchObjectCallback(ctx context.Context, id domain.Cluste
 	return nil
 }
 
-func (s *Synchronizer) PutObjectCallback(ctx context.Context, id domain.ClusterKindName, object []byte) error {
+func (s *Synchronizer) PutObjectCallback(ctx context.Context, id domain.KindName, object []byte) error {
 	err := s.sendPutObject(ctx, id, object)
 	if err != nil {
 		return fmt.Errorf("send put object: %w", err)
@@ -100,7 +100,7 @@ func (s *Synchronizer) PutObjectCallback(ctx context.Context, id domain.ClusterK
 	return nil
 }
 
-func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.ClusterKindName, checksum string) error {
+func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.KindName, checksum string) error {
 	err := s.sendNewChecksum(ctx, id, checksum)
 	if err != nil {
 		return fmt.Errorf("send checksum: %w", err)
@@ -109,7 +109,8 @@ func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.Clust
 }
 
 func (s *Synchronizer) Start(ctx context.Context) error {
-	logger.L().Info("starting sync")
+	identifiers := domain.ClientIdentifierFromContext(ctx)
+	logger.L().Info("starting sync", helpers.String("account", identifiers.Account), helpers.String("cluster", identifiers.Cluster))
 	// adapter events
 	err := s.adapter.Start(ctx)
 	if err != nil {
@@ -123,7 +124,7 @@ func (s *Synchronizer) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *Synchronizer) listenForSyncEvents(mainCtx context.Context) error {
+func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 	// process incoming messages
 	for {
 		data, err := s.readDataFunc(s.conn)
@@ -145,7 +146,7 @@ func (s *Synchronizer) listenForSyncEvents(mainCtx context.Context) error {
 			continue
 		}
 		// store in context
-		ctx := utils.ContextFromGeneric(mainCtx, generic)
+		ctx := utils.ContextFromGeneric(ctx, generic)
 		// handle message
 		switch *generic.Event {
 		case domain.EventGetObject:
@@ -156,11 +157,9 @@ func (s *Synchronizer) listenForSyncEvents(mainCtx context.Context) error {
 					helpers.Interface("event", generic.Event.Value()))
 				continue
 			}
-			id := domain.ClusterKindName{
-				Account: msg.Account,
-				Cluster: msg.Cluster,
-				Kind:    msg.Kind,
-				Name:    msg.Name,
+			id := domain.KindName{
+				Kind: msg.Kind,
+				Name: msg.Name,
 			}
 			err := s.handleSyncGetObject(ctx, id, []byte(msg.BaseObject))
 			if err != nil {
@@ -176,11 +175,9 @@ func (s *Synchronizer) listenForSyncEvents(mainCtx context.Context) error {
 					helpers.Interface("event", generic.Event.Value()))
 				continue
 			}
-			id := domain.ClusterKindName{
-				Account: msg.Account,
-				Cluster: msg.Cluster,
-				Kind:    msg.Kind,
-				Name:    msg.Name,
+			id := domain.KindName{
+				Kind: msg.Kind,
+				Name: msg.Name,
 			}
 			err := s.handleSyncNewChecksum(ctx, id, msg.Checksum)
 			if err != nil {
@@ -196,11 +193,9 @@ func (s *Synchronizer) listenForSyncEvents(mainCtx context.Context) error {
 					helpers.Interface("event", generic.Event.Value()))
 				continue
 			}
-			id := domain.ClusterKindName{
-				Account: msg.Account,
-				Cluster: msg.Cluster,
-				Kind:    msg.Kind,
-				Name:    msg.Name,
+			id := domain.KindName{
+				Kind: msg.Kind,
+				Name: msg.Name,
 			}
 			err := s.handleSyncObjectDeleted(ctx, id)
 			if err != nil {
@@ -216,11 +211,9 @@ func (s *Synchronizer) listenForSyncEvents(mainCtx context.Context) error {
 					helpers.Interface("event", generic.Event.Value()))
 				continue
 			}
-			id := domain.ClusterKindName{
-				Account: msg.Account,
-				Cluster: msg.Cluster,
-				Kind:    msg.Kind,
-				Name:    msg.Name,
+			id := domain.KindName{
+				Kind: msg.Kind,
+				Name: msg.Name,
 			}
 			err := s.handleSyncPatchObject(ctx, id, msg.Checksum, []byte(msg.Patch))
 			if err != nil {
@@ -236,11 +229,9 @@ func (s *Synchronizer) listenForSyncEvents(mainCtx context.Context) error {
 					helpers.Interface("event", generic.Event.Value()))
 				continue
 			}
-			id := domain.ClusterKindName{
-				Account: msg.Account,
-				Cluster: msg.Cluster,
-				Kind:    msg.Kind,
-				Name:    msg.Name,
+			id := domain.KindName{
+				Kind: msg.Kind,
+				Name: msg.Name,
 			}
 			err := s.handleSyncPutObject(ctx, id, []byte(msg.Object))
 			if err != nil {
@@ -252,7 +243,7 @@ func (s *Synchronizer) listenForSyncEvents(mainCtx context.Context) error {
 	}
 }
 
-func (s *Synchronizer) handleSyncGetObject(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
+func (s *Synchronizer) handleSyncGetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
 	err := s.adapter.GetObject(ctx, id, baseObject)
 	if err != nil {
 		return fmt.Errorf("get object: %w", err)
@@ -260,7 +251,7 @@ func (s *Synchronizer) handleSyncGetObject(ctx context.Context, id domain.Cluste
 	return nil
 }
 
-func (s *Synchronizer) handleSyncNewChecksum(ctx context.Context, id domain.ClusterKindName, newChecksum string) error {
+func (s *Synchronizer) handleSyncNewChecksum(ctx context.Context, id domain.KindName, newChecksum string) error {
 	err := s.adapter.VerifyObject(ctx, id, newChecksum)
 	if err != nil {
 		return fmt.Errorf("verify object: %w", err)
@@ -268,7 +259,7 @@ func (s *Synchronizer) handleSyncNewChecksum(ctx context.Context, id domain.Clus
 	return nil
 }
 
-func (s *Synchronizer) handleSyncObjectDeleted(ctx context.Context, id domain.ClusterKindName) error {
+func (s *Synchronizer) handleSyncObjectDeleted(ctx context.Context, id domain.KindName) error {
 	err := s.adapter.DeleteObject(ctx, id)
 	if err != nil {
 		return fmt.Errorf("delete object: %w", err)
@@ -276,7 +267,7 @@ func (s *Synchronizer) handleSyncObjectDeleted(ctx context.Context, id domain.Cl
 	return nil
 }
 
-func (s *Synchronizer) handleSyncPatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
+func (s *Synchronizer) handleSyncPatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	err := s.adapter.PatchObject(ctx, id, checksum, patch)
 	if err != nil {
 		return fmt.Errorf("patch object: %w", err)
@@ -284,7 +275,7 @@ func (s *Synchronizer) handleSyncPatchObject(ctx context.Context, id domain.Clus
 	return nil
 }
 
-func (s *Synchronizer) handleSyncPutObject(ctx context.Context, id domain.ClusterKindName, object []byte) error {
+func (s *Synchronizer) handleSyncPutObject(ctx context.Context, id domain.KindName, object []byte) error {
 	err := s.adapter.PutObject(ctx, id, object)
 	if err != nil {
 		return fmt.Errorf("put object: %w", err)
@@ -292,14 +283,12 @@ func (s *Synchronizer) handleSyncPutObject(ctx context.Context, id domain.Cluste
 	return nil
 }
 
-func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
+func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
 	event := domain.EventGetObject
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.GetObject{
 		BaseObject: string(baseObject),
-		Account:    id.Account,
-		Cluster:    id.Cluster,
 		Depth:      depth + 1,
 		Event:      &event,
 		Kind:       id.Kind,
@@ -314,23 +303,22 @@ func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.ClusterKindN
 	if err != nil {
 		return fmt.Errorf("invoke outPool on get object message: %w", err)
 	}
+	clientId := domain.ClientIdentifierFromContext(ctx)
 	logger.L().Debug("sent get object message",
-		helpers.String("account", msg.Account),
-		helpers.String("cluster", msg.Cluster),
+		helpers.String("account", clientId.Account),
+		helpers.String("cluster", clientId.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name),
 		helpers.Int("base object size", len(msg.BaseObject)))
 	return nil
 }
 
-func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.ClusterKindName, checksum string) error {
+func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.KindName, checksum string) error {
 	event := domain.EventNewChecksum
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.NewChecksum{
 		Checksum: checksum,
-		Account:  id.Account,
-		Cluster:  id.Cluster,
 		Depth:    depth + 1,
 		Event:    &event,
 		Kind:     id.Kind,
@@ -348,27 +336,26 @@ func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.ClusterKin
 	if msg.Kind == nil {
 		return fmt.Errorf("invalid resource kind. name: %s", msg.Name)
 	}
+	clientId := domain.ClientIdentifierFromContext(ctx)
 	logger.L().Debug("sent new checksum message",
-		helpers.String("account", msg.Account),
-		helpers.String("cluster", msg.Cluster),
+		helpers.String("account", clientId.Account),
+		helpers.String("cluster", clientId.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name),
 		helpers.String("checksum", msg.Checksum))
 	return nil
 }
 
-func (s *Synchronizer) sendObjectDeleted(ctx context.Context, id domain.ClusterKindName) error {
+func (s *Synchronizer) sendObjectDeleted(ctx context.Context, id domain.KindName) error {
 	event := domain.EventObjectDeleted
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.ObjectDeleted{
-		Cluster: id.Cluster,
-		Account: id.Account,
-		Depth:   depth + 1,
-		Event:   &event,
-		Kind:    id.Kind,
-		MsgId:   msgId,
-		Name:    id.Name,
+		Depth: depth + 1,
+		Event: &event,
+		Kind:  id.Kind,
+		MsgId: msgId,
+		Name:  id.Name,
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -378,22 +365,22 @@ func (s *Synchronizer) sendObjectDeleted(ctx context.Context, id domain.ClusterK
 	if err != nil {
 		return fmt.Errorf("invoke outPool on delete message: %w", err)
 	}
+	clientId := domain.ClientIdentifierFromContext(ctx)
 	logger.L().Debug("sent object deleted message",
-		helpers.String("account", msg.Account),
-		helpers.String("cluster", msg.Cluster),
+		helpers.String("account", clientId.Account),
+		helpers.String("cluster", clientId.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name))
 	return nil
 }
 
-func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
+func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	event := domain.EventPatchObject
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+
 	msg := domain.PatchObject{
 		Checksum: checksum,
-		Account:  id.Account,
-		Cluster:  id.Cluster,
 		Depth:    depth + 1,
 		Event:    &event,
 		Kind:     id.Kind,
@@ -409,9 +396,12 @@ func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.ClusterKin
 	if err != nil {
 		return fmt.Errorf("invoke outPool on patch message: %w", err)
 	}
+
+	clientId := domain.ClientIdentifierFromContext(ctx)
+
 	logger.L().Debug("sent patch object message",
-		helpers.String("account", msg.Account),
-		helpers.String("cluster", msg.Cluster),
+		helpers.String("account", clientId.Account),
+		helpers.String("cluster", clientId.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name),
 		helpers.String("checksum", msg.Checksum),
@@ -419,19 +409,17 @@ func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.ClusterKin
 	return nil
 }
 
-func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.ClusterKindName, object []byte) error {
+func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, object []byte) error {
 	event := domain.EventPutObject
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.PutObject{
-		Account: id.Account,
-		Cluster: id.Cluster,
-		Depth:   depth + 1,
-		Event:   &event,
-		Kind:    id.Kind,
-		MsgId:   msgId,
-		Name:    id.Name,
-		Object:  string(object),
+		Depth:  depth + 1,
+		Event:  &event,
+		Kind:   id.Kind,
+		MsgId:  msgId,
+		Name:   id.Name,
+		Object: string(object),
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -441,9 +429,11 @@ func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.ClusterKindN
 	if err != nil {
 		return fmt.Errorf("invoke outPool on put object message: %w", err)
 	}
+
+	clientId := domain.ClientIdentifierFromContext(ctx)
 	logger.L().Debug("sent put object message",
-		helpers.String("account", msg.Account),
-		helpers.String("cluster", msg.Cluster),
+		helpers.String("account", clientId.Account),
+		helpers.String("cluster", clientId.Cluster),
 		helpers.String("kind", msg.Kind.String()),
 		helpers.String("name", msg.Name),
 		helpers.Int("object size", len(msg.Object)))

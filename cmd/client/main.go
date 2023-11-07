@@ -14,6 +14,7 @@ import (
 	"github.com/kubescape/synchronizer/adapters/incluster/v1"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/core"
+	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
 )
 
@@ -77,6 +78,10 @@ func start(ctx context.Context, cfg config.Config, adapter adapters.Adapter, dia
 		return fmt.Errorf("unable to create websocket connection: %w", err)
 	}
 	defer conn.Close()
+
+	ctx = context.WithValue(ctx, domain.ContextKeyAccessKey, cfg.InCluster.AccessKey)     //nolint
+	ctx = context.WithValue(ctx, domain.ContextKeyAccount, cfg.InCluster.Account)         //nolint
+	ctx = context.WithValue(ctx, domain.ContextKeyClusterName, cfg.InCluster.ClusterName) //nolint
 
 	// synchronizer
 	synchronizer := core.NewSynchronizerClient(ctx, adapter, conn)

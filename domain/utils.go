@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"strings"
 
 	"github.com/kubescape/go-logger"
@@ -22,5 +23,12 @@ func KindFromString(kind string) *Kind {
 		Group:    parts[0],
 		Version:  parts[1],
 		Resource: parts[2],
+	}
+}
+
+func ClientIdentifierFromContext(ctx context.Context) ClientIdentifier {
+	return ClientIdentifier{
+		Cluster: ctx.Value(ContextKeyClusterName).(string),
+		Account: ctx.Value(ContextKeyAccount).(string),
 	}
 }

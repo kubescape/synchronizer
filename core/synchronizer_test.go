@@ -15,6 +15,6 @@ func TestSynchronizer_HandleSyncGetObject(t *testing.T) {
 		outPool: nil,
 	}
 
-	err := synchronizer.handleSyncGetObject(context.TODO(), domain.ClusterKindName{}, []byte("baseObject"))
+	err := synchronizer.handleSyncGetObject(context.TODO(), domain.KindName{}, []byte("baseObject"))
 	assert.ErrorContains(t, err, "object not found")
 }

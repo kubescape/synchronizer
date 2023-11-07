@@ -88,10 +88,6 @@ components:
       properties:
         checksum:
           $ref: '#/components/schemas/sum'
-        account:
-          $ref: '#/components/schemas/account'
-        cluster:
-          $ref: '#/components/schemas/cluster'
         depth:
           $ref: '#/components/schemas/depth'
         event:
@@ -107,10 +103,6 @@ components:
       properties:
         checksum:
           $ref: '#/components/schemas/sum'
-        account:
-          $ref: '#/components/schemas/account'
-        cluster:
-          $ref: '#/components/schemas/cluster'
         depth:
           $ref: '#/components/schemas/depth'
         event:
@@ -126,10 +118,6 @@ components:
     objectDeleted:
       type: object
       properties:
-        account:
-          $ref: '#/components/schemas/account'
-        cluster:
-          $ref: '#/components/schemas/cluster'
         depth:
           $ref: '#/components/schemas/depth'
         event:
@@ -145,10 +133,6 @@ components:
       properties:
         checksum:
           $ref: '#/components/schemas/sum'
-        account:
-          $ref: '#/components/schemas/account'
-        cluster:
-          $ref: '#/components/schemas/cluster'
         depth:
           $ref: '#/components/schemas/depth'
         event:
@@ -166,10 +150,6 @@ components:
       properties:
         baseObject:
           $ref: '#/components/schemas/object'
-        account:
-          $ref: '#/components/schemas/account'
-        cluster:
-          $ref: '#/components/schemas/cluster'
         depth:
           $ref: '#/components/schemas/depth'
         event:
@@ -185,10 +165,6 @@ components:
       properties:
         checksum:
           $ref: '#/components/schemas/sum'
-        account: 
-          $ref: '#/components/schemas/account'
-        cluster:
-          $ref: '#/components/schemas/cluster'
         depth:
           $ref: '#/components/schemas/depth'
         event:
@@ -204,10 +180,6 @@ components:
     putObject:
       type: object
       properties:
-        account:
-          $ref: '#/components/schemas/account'
-        cluster:
-          $ref: '#/components/schemas/cluster'
         depth:
           $ref: '#/components/schemas/depth'
         event:
@@ -220,12 +192,6 @@ components:
           $ref: '#/components/schemas/name'
         object:
           $ref: '#/components/schemas/object'
-    cluster:
-      type: string
-      description: name of the cluster
-    account:
-      type: string
-      description: name of the account
     depth:
       type: integer
       description: depth of the message exchange, used to break recursion

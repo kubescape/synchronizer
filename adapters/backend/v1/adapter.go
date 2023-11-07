@@ -42,55 +42,56 @@ func NewBackendAdapter(cfg config.Config, pulsarClient pulsarconnector.Client) *
 
 var _ adapters.Adapter = (*Adapter)(nil)
 
-func (b *Adapter) getClient(id domain.ClusterKindName) (adapters.Client, error) {
-	if client, ok := b.clientsMap.Load(id.IdentifierKey()); ok {
+func (b *Adapter) getClient(ctx context.Context) (adapters.Client, error) {
+	id := domain.ClientIdentifierFromContext(ctx)
+	if client, ok := b.clientsMap.Load(id.String()); ok {
 		return client.(adapters.Client), nil
 	}
-	return nil, fmt.Errorf("unknown resource %s", id.IdentifierKey())
+	return nil, fmt.Errorf("unknown resource %s", id.String())
 }
 
-func (b *Adapter) getCallbacks(id domain.ClusterKindName) (domain.Callbacks, error) {
-	if callbacks, ok := b.callbacksMap.Load(id.IdentifierKey()); ok {
+func (b *Adapter) getCallbacks(id domain.ClientIdentifier) (domain.Callbacks, error) {
+	if callbacks, ok := b.callbacksMap.Load(id.String()); ok {
 		return callbacks.(domain.Callbacks), nil
 	}
-	return domain.Callbacks{}, fmt.Errorf("unknown resource %s", id.IdentifierKey())
+	return domain.Callbacks{}, fmt.Errorf("unknown resource %s", id.String())
 }
 
-func (b *Adapter) DeleteObject(ctx context.Context, id domain.ClusterKindName) error {
-	client, err := b.getClient(id)
+func (b *Adapter) DeleteObject(ctx context.Context, id domain.KindName) error {
+	client, err := b.getClient(ctx)
 	if err != nil {
 		return err
 	}
 	return client.DeleteObject(ctx, id)
 }
 
-func (b *Adapter) GetObject(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error {
-	client, err := b.getClient(id)
+func (b *Adapter) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
+	client, err := b.getClient(ctx)
 	if err != nil {
 		return err
 	}
 	return client.GetObject(ctx, id, baseObject)
 }
 
-func (b *Adapter) PatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error {
-	client, err := b.getClient(id)
+func (b *Adapter) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
+	client, err := b.getClient(ctx)
 	if err != nil {
 		return err
 	}
 	return client.PatchObject(ctx, id, checksum, patch)
 }
 
-func (b *Adapter) PutObject(ctx context.Context, id domain.ClusterKindName, object []byte) error {
-	client, err := b.getClient(id)
+func (b *Adapter) PutObject(ctx context.Context, id domain.KindName, object []byte) error {
+	client, err := b.getClient(ctx)
 	if err != nil {
 		return err
 	}
 	return client.PutObject(ctx, id, object)
 }
 
-func (b *Adapter) RegisterCallbacks(mainCtx context.Context, callbacks domain.Callbacks) {
-	id := utils.ClusterKindNameFromContext(mainCtx)
-	b.callbacksMap.Store(id.IdentifierKey(), callbacks)
+func (b *Adapter) RegisterCallbacks(ctx context.Context, callbacks domain.Callbacks) {
+	id := domain.ClientIdentifierFromContext(ctx)
+	b.callbacksMap.Store(id.String(), callbacks)
 }
 
 func (b *Adapter) Start(ctx context.Context) error {
@@ -120,9 +121,8 @@ func (b *Adapter) Start(ctx context.Context) error {
 	}
 
 	client := NewClient(b.cfg, b.producer)
-	id := utils.ClusterKindNameFromContext(ctx)
-	b.clientsMap.Store(id.IdentifierKey(), client)
-
+	id := domain.ClientIdentifierFromContext(ctx)
+	b.clientsMap.Store(id.String(), client)
 	callbacks, err := b.getCallbacks(id)
 	if err != nil {
 		return err
@@ -136,8 +136,8 @@ func (b *Adapter) Start(ctx context.Context) error {
 	return nil
 }
 
-func (b *Adapter) VerifyObject(ctx context.Context, id domain.ClusterKindName, checksum string) error {
-	client, err := b.getClient(id)
+func (b *Adapter) VerifyObject(ctx context.Context, id domain.KindName, checksum string) error {
+	client, err := b.getClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -188,19 +188,17 @@ func (b *Adapter) handleSingleSynchronizerMessage(ctx context.Context, msg pulsa
 			Depth: data.Depth,
 			MsgId: data.MsgId,
 		})
-
-		callbacks, err := b.getCallbacks(domain.ClusterKindName{
+		cId := domain.ClientIdentifier{
 			Account: data.CustomerGUID,
 			Cluster: data.ClusterName,
-		})
+		}
+		callbacks, err := b.getCallbacks(cId)
 		if err != nil {
 			return err
 		}
-		if err := callbacks.GetObject(ctx, domain.ClusterKindName{
-			Account: data.CustomerGUID,
-			Cluster: data.ClusterName,
-			Kind:    domain.KindFromString(data.Kind),
-			Name:    data.Name,
+		if err := callbacks.GetObject(ctx, domain.KindName{
+			Kind: domain.KindFromString(data.Kind),
+			Name: data.Name,
 		}, data.BaseObject); err != nil {
 			return fmt.Errorf("failed to send GetObject message: %w", err)
 		}
@@ -213,19 +211,17 @@ func (b *Adapter) handleSingleSynchronizerMessage(ctx context.Context, msg pulsa
 			Depth: data.Depth,
 			MsgId: data.MsgId,
 		})
-
-		callbacks, err := b.getCallbacks(domain.ClusterKindName{
+		cId := domain.ClientIdentifier{
 			Account: data.CustomerGUID,
 			Cluster: data.ClusterName,
-		})
+		}
+		callbacks, err := b.getCallbacks(cId)
 		if err != nil {
 			return err
 		}
-		if err := callbacks.PatchObject(ctx, domain.ClusterKindName{
-			Account: data.CustomerGUID,
-			Cluster: data.ClusterName,
-			Kind:    domain.KindFromString(data.Kind),
-			Name:    data.Name,
+		if err := callbacks.PatchObject(ctx, domain.KindName{
+			Kind: domain.KindFromString(data.Kind),
+			Name: data.Name,
 		}, data.Checksum, data.Patch); err != nil {
 			return fmt.Errorf("failed to send PatchObject message: %w", err)
 		}
@@ -238,19 +234,17 @@ func (b *Adapter) handleSingleSynchronizerMessage(ctx context.Context, msg pulsa
 			Depth: data.Depth,
 			MsgId: data.MsgId,
 		})
-
-		callbacks, err := b.getCallbacks(domain.ClusterKindName{
+		cId := domain.ClientIdentifier{
 			Account: data.CustomerGUID,
 			Cluster: data.ClusterName,
-		})
+		}
+		callbacks, err := b.getCallbacks(cId)
 		if err != nil {
 			return err
 		}
-		if err := callbacks.VerifyObject(ctx, domain.ClusterKindName{
-			Account: data.CustomerGUID,
-			Cluster: data.ClusterName,
-			Kind:    domain.KindFromString(data.Kind),
-			Name:    data.Name,
+		if err := callbacks.VerifyObject(ctx, domain.KindName{
+			Kind: domain.KindFromString(data.Kind),
+			Name: data.Name,
 		}, data.Checksum); err != nil {
 			return fmt.Errorf("failed to send VerifyObject message: %w", err)
 		}
@@ -263,19 +257,17 @@ func (b *Adapter) handleSingleSynchronizerMessage(ctx context.Context, msg pulsa
 			Depth: data.Depth,
 			MsgId: data.MsgId,
 		})
-
-		callbacks, err := b.getCallbacks(domain.ClusterKindName{
+		cId := domain.ClientIdentifier{
 			Account: data.CustomerGUID,
 			Cluster: data.ClusterName,
-		})
+		}
+		callbacks, err := b.getCallbacks(cId)
 		if err != nil {
 			return err
 		}
-		if err := callbacks.PutObject(ctx, domain.ClusterKindName{
-			Account: data.CustomerGUID,
-			Cluster: data.ClusterName,
-			Kind:    domain.KindFromString(data.Kind),
-			Name:    data.Name,
+		if err := callbacks.PutObject(ctx, domain.KindName{
+			Kind: domain.KindFromString(data.Kind),
+			Name: data.Name,
 		}, data.Object); err != nil {
 			return fmt.Errorf("failed to send PutObject message: %w", err)
 		}
@@ -288,18 +280,17 @@ func (b *Adapter) handleSingleSynchronizerMessage(ctx context.Context, msg pulsa
 			Depth: data.Depth,
 			MsgId: data.MsgId,
 		})
-		callbacks, err := b.getCallbacks(domain.ClusterKindName{
+		cId := domain.ClientIdentifier{
 			Account: data.CustomerGUID,
 			Cluster: data.ClusterName,
-		})
+		}
+		callbacks, err := b.getCallbacks(cId)
 		if err != nil {
 			return err
 		}
-		if err := callbacks.DeleteObject(ctx, domain.ClusterKindName{
-			Account: data.CustomerGUID,
-			Cluster: data.ClusterName,
-			Kind:    domain.KindFromString(data.Kind),
-			Name:    data.Name,
+		if err := callbacks.DeleteObject(ctx, domain.KindName{
+			Kind: domain.KindFromString(data.Kind),
+			Name: data.Name,
 		}); err != nil {
 			return fmt.Errorf("failed to send DeleteObject message: %w", err)
 		}

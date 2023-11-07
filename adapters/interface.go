@@ -7,13 +7,13 @@ import (
 )
 
 type Adapter interface {
-	DeleteObject(ctx context.Context, id domain.ClusterKindName) error
-	GetObject(ctx context.Context, id domain.ClusterKindName, baseObject []byte) error
-	PatchObject(ctx context.Context, id domain.ClusterKindName, checksum string, patch []byte) error
-	PutObject(ctx context.Context, id domain.ClusterKindName, object []byte) error
-	RegisterCallbacks(ctx context.Context, callbacks domain.Callbacks)
 	Start(ctx context.Context) error
-	VerifyObject(ctx context.Context, id domain.ClusterKindName, checksum string) error
+	RegisterCallbacks(ctx context.Context, callbacks domain.Callbacks)
+	DeleteObject(ctx context.Context, id domain.KindName) error
+	GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error
+	PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error
+	PutObject(ctx context.Context, id domain.KindName, object []byte) error
+	VerifyObject(ctx context.Context, id domain.KindName, checksum string) error
 }
 
 type Client Adapter
