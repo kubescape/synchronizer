@@ -7,20 +7,20 @@ import (
 
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
-	"github.com/kubescape/messaging/pulsar/common/synchronizer"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
+	"github.com/kubescape/synchronizer/messaging"
 	"github.com/kubescape/synchronizer/utils"
 )
 
 type Client struct {
 	callbacks       domain.Callbacks
 	cfg             config.Config
-	messageProducer MessageProducer
+	messageProducer messaging.MessageProducer
 }
 
-func NewClient(cfg config.Config, producer MessageProducer) *Client {
+func NewClient(cfg config.Config, producer messaging.MessageProducer) *Client {
 	return &Client{
 		cfg:             cfg,
 		messageProducer: producer,
@@ -44,7 +44,7 @@ func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	id := domain.ClientIdentifierFromContext(ctx)
 
-	msg := synchronizer.ServerConnectedMessage{
+	msg := messaging.ServerConnectedMessage{
 		Cluster: id.Cluster,
 		Account: id.Account,
 		Depth:   depth + 1,
@@ -59,7 +59,7 @@ func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
 		return fmt.Errorf("marshal server connected message: %w", err)
 	}
 
-	return c.messageProducer.ProduceMessage(ctx, id, synchronizer.MsgPropEventValueServerConnectedMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, id, messaging.MsgPropEventValueServerConnectedMessage, data)
 }
 
 // FIXME no need to implement callPutOrPatch because we don't send patches from backend
@@ -116,7 +116,7 @@ func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	cId := domain.ClientIdentifierFromContext(ctx)
 
-	msg := synchronizer.DeleteObjectMessage{
+	msg := messaging.DeleteObjectMessage{
 		Cluster: cId.Cluster,
 		Account: cId.Account,
 		Depth:   depth + 1,
@@ -134,7 +134,7 @@ func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName
 		return fmt.Errorf("marshal delete object message: %w", err)
 	}
 
-	return c.messageProducer.ProduceMessage(ctx, cId, synchronizer.MsgPropEventValueDeleteObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValueDeleteObjectMessage, data)
 }
 
 func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, baseObject []byte) error {
@@ -142,7 +142,7 @@ func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, b
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	cId := domain.ClientIdentifierFromContext(ctx)
 
-	msg := synchronizer.GetObjectMessage{
+	msg := messaging.GetObjectMessage{
 		BaseObject: baseObject,
 		Cluster:    cId.Cluster,
 		Account:    cId.Account,
@@ -162,7 +162,7 @@ func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, b
 		return fmt.Errorf("marshal get object message: %w", err)
 	}
 
-	return c.messageProducer.ProduceMessage(ctx, cId, synchronizer.MsgPropEventValueGetObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValueGetObjectMessage, data)
 }
 
 func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
@@ -170,7 +170,7 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	cId := domain.ClientIdentifierFromContext(ctx)
 
-	msg := synchronizer.PatchObjectMessage{
+	msg := messaging.PatchObjectMessage{
 		Checksum: checksum,
 		Cluster:  cId.Cluster,
 		Account:  cId.Account,
@@ -192,7 +192,7 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 		return fmt.Errorf("marshal patch object message: %w", err)
 	}
 
-	return c.messageProducer.ProduceMessage(ctx, cId, synchronizer.MsgPropEventValuePatchObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValuePatchObjectMessage, data)
 }
 
 func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, object []byte) error {
@@ -200,7 +200,7 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, o
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	cId := domain.ClientIdentifierFromContext(ctx)
 
-	msg := synchronizer.PutObjectMessage{
+	msg := messaging.PutObjectMessage{
 		Cluster: cId.Cluster,
 		Account: cId.Account,
 		Depth:   depth + 1,
@@ -220,7 +220,7 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, o
 		return fmt.Errorf("marshal put object message: %w", err)
 	}
 
-	return c.messageProducer.ProduceMessage(ctx, cId, synchronizer.MsgPropEventValuePutObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValuePutObjectMessage, data)
 }
 
 func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName, checksum string) error {
@@ -228,7 +228,7 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	cId := domain.ClientIdentifierFromContext(ctx)
 
-	msg := synchronizer.VerifyObjectMessage{
+	msg := messaging.VerifyObjectMessage{
 		Checksum: checksum,
 		Cluster:  cId.Cluster,
 		Account:  cId.Account,
@@ -248,5 +248,5 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName
 		return fmt.Errorf("marshal verify object message: %w", err)
 	}
 
-	return c.messageProducer.ProduceMessage(ctx, cId, synchronizer.MsgPropEventValueVerifyObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValueVerifyObjectMessage, data)
 }

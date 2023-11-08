@@ -5,14 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
-	"github.com/kubescape/messaging/pulsar/common/synchronizer"
 	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
+	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
+	"github.com/kubescape/synchronizer/messaging"
 	"github.com/kubescape/synchronizer/utils"
 )
 
@@ -30,6 +32,8 @@ type PulsarMessageConsumer struct {
 	messageChannel chan pulsar.ConsumerMessage
 }
 
+var _ messaging.MessageConsumer = (*PulsarMessageConsumer)(nil)
+
 func NewPulsarMessageConsumer(cfg config.Config, pulsarClient pulsarconnector.Client) (*PulsarMessageConsumer, error) {
 	consumerMsgChannel := make(chan pulsar.ConsumerMessage)
 	consumer, err := pulsarClient.NewConsumer(pulsarconnector.WithTopic(cfg.Backend.Topic),
@@ -42,14 +46,14 @@ func NewPulsarMessageConsumer(cfg config.Config, pulsarClient pulsarconnector.Cl
 	return &PulsarMessageConsumer{consumer: consumer, messageChannel: consumerMsgChannel}, nil
 }
 
-func (c *PulsarMessageConsumer) Start(ctx context.Context, adapter *Adapter) {
+func (c *PulsarMessageConsumer) Start(ctx context.Context, adapter adapters.Adapter) {
 	go func() {
 		logger.L().Info("starting to consume messages from pulsar")
 		_ = c.startConsumingMessages(ctx, adapter)
 	}()
 }
 
-func (c *PulsarMessageConsumer) startConsumingMessages(ctx context.Context, adapter *Adapter) error {
+func (c *PulsarMessageConsumer) startConsumingMessages(ctx context.Context, adapter adapters.Adapter) error {
 	defer c.consumer.Close()
 	for {
 		select {
@@ -75,18 +79,18 @@ func (c *PulsarMessageConsumer) startConsumingMessages(ctx context.Context, adap
 	}
 }
 
-func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Context, adapter *Adapter, msg pulsar.ConsumerMessage) error {
+func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Context, adapter adapters.Adapter, msg pulsar.ConsumerMessage) error {
 	msgID := utils.PulsarMessageIDtoString(msg.ID())
 	msgProperties := msg.Properties()
 
 	logger.L().Debug("Received message from pulsar",
-		helpers.String("account", msgProperties[synchronizer.MsgPropAccount]),
-		helpers.String("cluster", msgProperties[synchronizer.MsgPropCluster]),
+		helpers.String("account", msgProperties[messaging.MsgPropAccount]),
+		helpers.String("cluster", msgProperties[messaging.MsgPropCluster]),
 		helpers.String("msgId", msgID))
 
-	switch msgProperties[synchronizer.MsgPropEvent] {
-	case synchronizer.MsgPropEventValueGetObjectMessage:
-		var data synchronizer.GetObjectMessage
+	switch msgProperties[messaging.MsgPropEvent] {
+	case messaging.MsgPropEventValueGetObjectMessage:
+		var data messaging.GetObjectMessage
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
 			return fmt.Errorf("failed to unmarshal message: %w", err)
 		}
@@ -108,8 +112,8 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 		}, data.BaseObject); err != nil {
 			return fmt.Errorf("failed to send GetObject message: %w", err)
 		}
-	case synchronizer.MsgPropEventValuePatchObjectMessage:
-		var data synchronizer.PatchObjectMessage
+	case messaging.MsgPropEventValuePatchObjectMessage:
+		var data messaging.PatchObjectMessage
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
 			return fmt.Errorf("failed to unmarshal message: %w", err)
 		}
@@ -131,8 +135,8 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 		}, data.Checksum, data.Patch); err != nil {
 			return fmt.Errorf("failed to send PatchObject message: %w", err)
 		}
-	case synchronizer.MsgPropEventValueVerifyObjectMessage:
-		var data synchronizer.VerifyObjectMessage
+	case messaging.MsgPropEventValueVerifyObjectMessage:
+		var data messaging.VerifyObjectMessage
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
 			return fmt.Errorf("failed to unmarshal message: %w", err)
 		}
@@ -154,8 +158,8 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 		}, data.Checksum); err != nil {
 			return fmt.Errorf("failed to send VerifyObject message: %w", err)
 		}
-	case synchronizer.MsgPropEventValuePutObjectMessage:
-		var data synchronizer.PutObjectMessage
+	case messaging.MsgPropEventValuePutObjectMessage:
+		var data messaging.PutObjectMessage
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
 			return fmt.Errorf("failed to unmarshal message: %w", err)
 		}
@@ -177,8 +181,8 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 		}, data.Object); err != nil {
 			return fmt.Errorf("failed to send PutObject message: %w", err)
 		}
-	case synchronizer.MsgPropEventValueDeleteObjectMessage:
-		var data synchronizer.DeleteObjectMessage
+	case messaging.MsgPropEventValueDeleteObjectMessage:
+		var data messaging.DeleteObjectMessage
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
 			return fmt.Errorf("failed to unmarshal message: %w", err)
 		}
@@ -237,7 +241,7 @@ func NewPulsarMessageProducer(cfg config.Config, pulsarClient pulsarconnector.Cl
 }
 
 func (p *PulsarMessageProducer) ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte) error {
-	producerMessage := synchronizer.CreateProducerMessage(SynchronizerServerProducerKey, id.Account, id.Cluster, eventType, payload)
+	producerMessage := NewProducerMessage(SynchronizerServerProducerKey, id.Account, id.Cluster, eventType, payload)
 	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
 	return nil
 }
@@ -247,5 +251,19 @@ func logPulsarSyncAsyncErrors(msgID pulsar.MessageID, message *pulsar.ProducerMe
 		logger.L().Error("failed to send message to pulsar", helpers.Error(err))
 	} else {
 		logger.L().Debug("successfully sent message to pulsar", helpers.String("messageID", msgID.String()), helpers.Interface("messageProperties", message.Properties))
+	}
+}
+
+func NewProducerMessage(producerMessageKey, account, cluster, eventType string, payload []byte) *pulsar.ProducerMessage {
+	producerMessageProperties := map[string]string{
+		messaging.MsgPropTimestamp: time.Now().Format(time.RFC3339Nano),
+		messaging.MsgPropAccount:   account,
+		messaging.MsgPropCluster:   cluster,
+		messaging.MsgPropEvent:     eventType,
+	}
+	return &pulsar.ProducerMessage{
+		Payload:    payload,
+		Properties: producerMessageProperties,
+		Key:        producerMessageKey,
 	}
 }

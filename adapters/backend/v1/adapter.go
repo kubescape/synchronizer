@@ -8,19 +8,20 @@ import (
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
+	"github.com/kubescape/synchronizer/messaging"
 )
 
 type Adapter struct {
 	callbacksMap sync.Map // <string>:<domain.Callbacks>
 	clientsMap   sync.Map // <string>:<adapters.Client>
 	cfg          config.Config
-	producer     MessageProducer
-	consumer     MessageConsumer
+	producer     messaging.MessageProducer
+	consumer     messaging.MessageConsumer
 	once         sync.Once
 	mainContext  context.Context
 }
 
-func NewBackendAdapter(mainContext context.Context, cfg config.Config, messageProducer MessageProducer, messageConsumer MessageConsumer) *Adapter {
+func NewBackendAdapter(mainContext context.Context, cfg config.Config, messageProducer messaging.MessageProducer, messageConsumer messaging.MessageConsumer) *Adapter {
 	adapter := &Adapter{
 		cfg:         cfg,
 		producer:    messageProducer,

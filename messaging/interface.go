@@ -1,8 +1,9 @@
-package backend
+package messaging
 
 import (
 	"context"
 
+	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/domain"
 )
 
@@ -13,5 +14,5 @@ type MessageProducer interface {
 
 type MessageConsumer interface {
 	// Start starts the message consumer and blocks until the context is done
-	Start(mainContext context.Context, adapter *Adapter)
+	Start(mainContext context.Context, adapter adapters.Adapter)
 }

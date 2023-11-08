@@ -5,14 +5,13 @@ go 1.20
 require (
 	github.com/SergJa/jsonhash v0.0.0-20210531165746-fc45f346aa74
 	github.com/apache/pulsar-client-go v0.11.0
-	github.com/armosec/armoapi-go v0.0.256
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/evanphx/json-patch v4.12.0+incompatible
 	github.com/gobwas/ws v1.3.0
 	github.com/google/uuid v1.3.1
 	github.com/kubescape/backend v0.0.13
 	github.com/kubescape/go-logger v0.0.21
-	github.com/kubescape/messaging v0.0.17-0.20231107113853-8a488bcea09d
+	github.com/kubescape/messaging v0.0.17
 	github.com/panjf2000/ants/v2 v2.8.2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/spf13/viper v1.17.0
@@ -27,8 +26,6 @@ require (
 	github.com/AthenZ/athenz v1.10.39 // indirect
 	github.com/DataDog/zstd v1.5.0 // indirect
 	github.com/ardielle/ardielle-go v1.5.2 // indirect
-	github.com/armosec/gojay v1.2.15 // indirect
-	github.com/armosec/utils-k8s-go v0.0.16 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.4.0 // indirect
