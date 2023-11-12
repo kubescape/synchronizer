@@ -79,9 +79,10 @@ func start(ctx context.Context, cfg config.Config, adapter adapters.Adapter, dia
 	}
 	defer conn.Close()
 
-	ctx = context.WithValue(ctx, domain.ContextKeyAccessKey, cfg.InCluster.AccessKey)     //nolint
-	ctx = context.WithValue(ctx, domain.ContextKeyAccount, cfg.InCluster.Account)         //nolint
-	ctx = context.WithValue(ctx, domain.ContextKeyClusterName, cfg.InCluster.ClusterName) //nolint
+	ctx = context.WithValue(ctx, domain.ContextKeyClientIdentifier, domain.ClientIdentifier{
+		Account: cfg.InCluster.Account,
+		Cluster: cfg.InCluster.ClusterName,
+	})
 
 	// synchronizer
 	synchronizer := core.NewSynchronizerClient(ctx, adapter, conn)

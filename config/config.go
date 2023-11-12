@@ -17,9 +17,10 @@ type Config struct {
 }
 
 type Backend struct {
-	Subscription string                     `mapstructure:"subscription"`
-	PulsarConfig *pulsarconfig.PulsarConfig `mapstructure:"pulsarConfig"`
-	Topic        pulsarconnector.TopicName  `mapstructure:"topic"`
+	AuthenticationServer *AuthenticationServerConfig `mapstructure:"authenticationServer"`
+	Subscription         string                      `mapstructure:"subscription"`
+	PulsarConfig         *pulsarconfig.PulsarConfig  `mapstructure:"pulsarConfig"`
+	Topic                pulsarconnector.TopicName   `mapstructure:"topic"`
 }
 
 type InCluster struct {
@@ -34,6 +35,12 @@ type Resource struct {
 	Version  string          `mapstructure:"version"`
 	Resource string          `mapstructure:"resource"`
 	Strategy domain.Strategy `mapstructure:"strategy"`
+}
+
+type AuthenticationServerConfig struct {
+	Url                       string            `mapstructure:"url"`
+	HeaderToQueryParamMapping map[string]string `mapstructure:"headerToQueryParamMapping"`
+	HeaderToHeaderMapping     map[string]string `mapstructure:"headerToHeaderMapping"`
 }
 
 // Kind returns group/version/resource as a string.

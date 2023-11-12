@@ -49,9 +49,10 @@ func ContextFromGeneric(parent context.Context, generic domain.Generic) context.
 }
 
 func ContextFromIdentifiers(parent context.Context, id domain.ClientIdentifier) context.Context {
-	ctx := context.WithValue(parent, domain.ContextKeyAccount, id.Account)
-	ctx = context.WithValue(ctx, domain.ContextKeyClusterName, id.Cluster)
-	return ctx
+	return context.WithValue(parent, domain.ContextKeyClientIdentifier, domain.ClientIdentifier{
+		Account: id.Account,
+		Cluster: id.Cluster,
+	})
 }
 
 func KeyToNsName(key string) (string, string) {

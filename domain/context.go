@@ -1,9 +1,9 @@
 package domain
 
+type contextKey string
+
 const (
-	ContextKeyAccount     = "account"
-	ContextKeyAccessKey   = "accessKey"
-	ContextKeyClusterName = "clusterName"
-	ContextKeyDepth       = "depth"
-	ContextKeyMsgId       = "msgId"
+	ContextKeyClientIdentifier contextKey = "clientIdentifier"
+	ContextKeyDepth            contextKey = "depth"
+	ContextKeyMsgId            contextKey = "msgId"
 )

@@ -1,5 +1,14 @@
 {
   "backend": {
+    "authenticationServer": {
+      "url": "https://api.armosec.io/api/v1",
+      "headerToHeaderMapping": {
+        "X-API-KEY": "X-API-KEY"
+      },
+      "headerToQueryParamMapping": {
+        "X-API-ACCOUNT": "customerGUID" 
+      }
+    },
     "subscription": "subscription",
     "topic": "synchronizer",
     "pulsarConfig": {

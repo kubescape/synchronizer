@@ -27,8 +27,5 @@ func KindFromString(kind string) *Kind {
 }
 
 func ClientIdentifierFromContext(ctx context.Context) ClientIdentifier {
-	return ClientIdentifier{
-		Cluster: ctx.Value(ContextKeyClusterName).(string),
-		Account: ctx.Value(ContextKeyAccount).(string),
-	}
+	return ctx.Value(ContextKeyClientIdentifier).(ClientIdentifier)
 }
