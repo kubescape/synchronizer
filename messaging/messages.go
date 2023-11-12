@@ -23,6 +23,9 @@ type DeleteObjectMessage struct {
 	Kind    string `json:"kind"`
 	MsgId   string `json:"msgId"`
 	Name    string `json:"name"`
+
+	// annotations - "kubescape.io/instance-id"
+	InstanceID string `json:"instanceId"`
 }
 
 type GetObjectMessage struct {
@@ -33,6 +36,9 @@ type GetObjectMessage struct {
 	Kind       string `json:"kind"`
 	MsgId      string `json:"msgId"`
 	Name       string `json:"name"`
+
+	// annotations - "kubescape.io/instance-id"
+	InstanceID string `json:"instanceId"`
 }
 
 type NewChecksumMessage struct {
@@ -52,7 +58,17 @@ type NewObjectMessage struct {
 	Kind    string `json:"kind"`
 	MsgId   string `json:"msgId"`
 	Name    string `json:"name"`
-	Object  []byte `json:"patch"`
+
+	// annotations - "kubescape.io/instance-id"
+	InstanceID string `json:"instanceId"`
+
+	// annotations - "kubescape.io/wlid"
+	WLID string `json:"wlid"`
+
+	// metadata - creationTimestamp
+	CreationTimestamp string `json:"creationTimestamp"`
+
+	Object []byte `json:"patch"`
 }
 
 type PatchObjectMessage struct {
@@ -63,7 +79,17 @@ type PatchObjectMessage struct {
 	Kind     string `json:"kind"`
 	MsgId    string `json:"msgId"`
 	Name     string `json:"name"`
-	Patch    []byte `json:"patch"`
+
+	// annotations - "kubescape.io/instance-id"
+	InstanceID string `json:"instanceId"`
+
+	//  annotations - "kubescape.io/wlid"
+	WLID string `json:"wlid"`
+
+	// metadata - creationTimestamp
+	CreationTimestamp string `json:"creationTimestamp"`
+
+	Patch []byte `json:"patch"`
 }
 
 type PutObjectMessage struct {
@@ -73,7 +99,17 @@ type PutObjectMessage struct {
 	Kind    string `json:"kind"`
 	MsgId   string `json:"msgId"`
 	Name    string `json:"name"`
-	Object  []byte `json:"patch"`
+
+	// annotations - "kubescape.io/instance-id"
+	InstanceID string `json:"instanceId"`
+
+	//  annotations - "kubescape.io/wlid"
+	WLID string `json:"wlid"`
+
+	// metadata - creationTimestamp
+	CreationTimestamp string `json:"creationTimestamp"`
+
+	Object []byte `json:"patch"`
 }
 
 type VerifyObjectMessage struct {
