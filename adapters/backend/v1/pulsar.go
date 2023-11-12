@@ -224,6 +224,8 @@ func NewPulsarMessageProducer(cfg config.Config, pulsarClient pulsarconnector.Cl
 	fullTopic := pulsarconnector.BuildPersistentTopic(pulsarClient.GetConfig().Tenant, pulsarClient.GetConfig().Namespace, pulsarconnector.TopicName(topic))
 
 	options := pulsar.ProducerOptions{
+		DisableBatching:  true,
+		EnableChunking:   true,
 		CompressionType:  pulsar.ZSTD,
 		CompressionLevel: 1,
 		Properties: map[string]string{

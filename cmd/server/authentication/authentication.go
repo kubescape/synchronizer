@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"sync"
 
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -12,8 +13,20 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 )
 
-func AuthenticationServerMiddleware(client *http.Client, cfg config.AuthenticationServerConfig, next http.Handler) http.Handler {
+var (
+	client *http.Client
+	once   sync.Once // used to initialize authHttpClient
+)
+
+func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		once.Do(func() {
+			if cfg == nil || cfg.Url == "" {
+				logger.L().Warning("authentication server is not set; Incoming connections will not be authenticated")
+			} else {
+				client = &http.Client{}
+			}
+		})
 
 		accessKey := r.Header.Get(core.AccessKeyHeader)
 		account := r.Header.Get(core.AccountHeader)

@@ -18,10 +18,6 @@ import (
 	"github.com/kubescape/synchronizer/core"
 )
 
-var (
-	authHttpClient *http.Client
-)
-
 func main() {
 	ctx := context.Background()
 
@@ -33,12 +29,6 @@ func main() {
 	cfg, err := config.LoadConfig("/etc/config")
 	if err != nil {
 		logger.L().Fatal("unable to load configuration", helpers.Error(err))
-	}
-
-	if cfg.Backend.AuthenticationServer == nil || cfg.Backend.AuthenticationServer.Url == "" {
-		logger.L().Warning("authentication server is not set; Incoming connections will not be authenticated")
-	} else {
-		authHttpClient = &http.Client{}
 	}
 
 	// backend adapter
@@ -75,7 +65,7 @@ func main() {
 
 	// websocket server
 	_ = http.ListenAndServe(":8080",
-		authentication.AuthenticationServerMiddleware(authHttpClient, *cfg.Backend.AuthenticationServer,
+		authentication.AuthenticationServerMiddleware(cfg.Backend.AuthenticationServer,
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				conn, _, _, err := ws.UpgradeHTTP(r, w)
 				if err != nil {
