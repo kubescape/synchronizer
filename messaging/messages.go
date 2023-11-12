@@ -49,6 +49,9 @@ type NewChecksumMessage struct {
 	Kind     string `json:"kind"`
 	MsgId    string `json:"msgId"`
 	Name     string `json:"name"`
+
+	// annotations - "kubescape.io/instance-id"
+	InstanceID string `json:"instanceId"`
 }
 
 type NewObjectMessage struct {
@@ -120,6 +123,9 @@ type VerifyObjectMessage struct {
 	Kind     string `json:"kind"`
 	MsgId    string `json:"msgId"`
 	Name     string `json:"name"`
+
+	// annotations - "kubescape.io/instance-id"
+	InstanceID string `json:"instanceId"`
 }
 
 type ServerConnectedMessage struct {
