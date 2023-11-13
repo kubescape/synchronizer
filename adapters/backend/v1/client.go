@@ -117,12 +117,13 @@ func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName
 	cId := domain.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.DeleteObjectMessage{
-		Cluster: cId.Cluster,
-		Account: cId.Account,
-		Depth:   depth + 1,
-		Kind:    id.Kind.String(),
-		MsgId:   msgId,
-		Name:    id.Name,
+		Cluster:   cId.Cluster,
+		Account:   cId.Account,
+		Depth:     depth + 1,
+		Kind:      id.Kind.String(),
+		MsgId:     msgId,
+		Name:      id.Name,
+		Namespace: id.Namespace,
 	}
 	logger.L().Debug("Sending delete object message to producer",
 		helpers.String("cluster", msg.Cluster),
@@ -150,6 +151,7 @@ func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, b
 		Kind:       id.Kind.String(),
 		MsgId:      msgId,
 		Name:       id.Name,
+		Namespace:  id.Namespace,
 	}
 	logger.L().Debug("Sending get object message to producer",
 		helpers.String("cluster", msg.Cluster),
@@ -171,14 +173,15 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 	cId := domain.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.PatchObjectMessage{
-		Checksum: checksum,
-		Cluster:  cId.Cluster,
-		Account:  cId.Account,
-		Depth:    depth + 1,
-		Kind:     id.Kind.String(),
-		MsgId:    msgId,
-		Name:     id.Name,
-		Patch:    patch,
+		Checksum:  checksum,
+		Cluster:   cId.Cluster,
+		Account:   cId.Account,
+		Depth:     depth + 1,
+		Kind:      id.Kind.String(),
+		MsgId:     msgId,
+		Name:      id.Name,
+		Namespace: id.Namespace,
+		Patch:     patch,
 	}
 	logger.L().Debug("Sending patch object message to producer",
 		helpers.String("cluster", msg.Cluster),
@@ -201,13 +204,14 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, o
 	cId := domain.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.PutObjectMessage{
-		Cluster: cId.Cluster,
-		Account: cId.Account,
-		Depth:   depth + 1,
-		Kind:    id.Kind.String(),
-		MsgId:   msgId,
-		Name:    id.Name,
-		Object:  object,
+		Cluster:   cId.Cluster,
+		Account:   cId.Account,
+		Depth:     depth + 1,
+		Kind:      id.Kind.String(),
+		MsgId:     msgId,
+		Name:      id.Name,
+		Namespace: id.Namespace,
+		Object:    object,
 	}
 	logger.L().Debug("Sending put object message to producer",
 		helpers.String("cluster", msg.Cluster),
@@ -229,13 +233,14 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName
 	cId := domain.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.VerifyObjectMessage{
-		Checksum: checksum,
-		Cluster:  cId.Cluster,
-		Account:  cId.Account,
-		Depth:    depth + 1,
-		Kind:     id.Kind.String(),
-		MsgId:    msgId,
-		Name:     id.Name,
+		Checksum:  checksum,
+		Cluster:   cId.Cluster,
+		Account:   cId.Account,
+		Depth:     depth + 1,
+		Kind:      id.Kind.String(),
+		MsgId:     msgId,
+		Name:      id.Name,
+		Namespace: id.Namespace,
 	}
 	logger.L().Debug("Sending verify object message to producer",
 		helpers.String("cluster", msg.Cluster),

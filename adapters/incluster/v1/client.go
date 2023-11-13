@@ -61,8 +61,9 @@ func (c *Client) Start(ctx context.Context) error {
 		for _, d := range list.Items {
 			ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
 			id := domain.KindName{
-				Kind: c.kind,
-				Name: utils.NsNameToKey(d.GetNamespace(), d.GetName()),
+				Kind:      c.kind,
+				Name:      d.GetName(),
+				Namespace: d.GetNamespace(),
 			}
 			obj, err := c.client.Resource(c.res).Namespace(d.GetNamespace()).Get(context.Background(), d.GetName(), metav1.GetOptions{})
 			if err != nil {
@@ -104,14 +105,14 @@ func (c *Client) Start(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		key := utils.NsNameToKey(d.GetNamespace(), d.GetName())
 		id := domain.KindName{
-			Kind: c.kind,
-			Name: key,
+			Kind:      c.kind,
+			Name:      d.GetName(),
+			Namespace: d.GetNamespace(),
 		}
 		newObject, err := d.MarshalJSON()
 		if err != nil {
-			logger.L().Error("cannot marshal object", helpers.Error(err), helpers.String("resource", c.res.Resource), helpers.String("key", key))
+			logger.L().Error("cannot marshal object", helpers.Error(err), helpers.String("resource", c.res.Resource), helpers.String("key", id.String()))
 			continue
 		}
 		switch {
@@ -196,15 +197,13 @@ func (c *Client) callVerifyObject(ctx context.Context, id domain.KindName, objec
 func (c *Client) DeleteObject(_ context.Context, id domain.KindName) error {
 	if c.Strategy == domain.PatchStrategy {
 		// remove from known resources
-		delete(c.shadowObjects, id.Name)
+		delete(c.shadowObjects, id.String())
 	}
-	ns, name := utils.KeyToNsName(id.Name)
-	return c.client.Resource(c.res).Namespace(ns).Delete(context.Background(), name, metav1.DeleteOptions{})
+	return c.client.Resource(c.res).Namespace(id.Namespace).Delete(context.Background(), id.Name, metav1.DeleteOptions{})
 }
 
 func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
-	ns, name := utils.KeyToNsName(id.Name)
-	obj, err := c.client.Resource(c.res).Namespace(ns).Get(context.Background(), name, metav1.GetOptions{})
+	obj, err := c.client.Resource(c.res).Namespace(id.Namespace).Get(context.Background(), id.Name, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("get resource: %w", err)
 	}
@@ -228,8 +227,7 @@ func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum s
 	if c.Strategy != domain.PatchStrategy {
 		return nil, fmt.Errorf("patch strategy not enabled for resource %s", id.Kind.String())
 	}
-	ns, name := utils.KeyToNsName(id.Name)
-	obj, err := c.client.Resource(c.res).Namespace(ns).Get(context.Background(), name, metav1.GetOptions{})
+	obj, err := c.client.Resource(c.res).Namespace(id.Namespace).Get(context.Background(), id.Name, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get resource: %w", err)
 	}
@@ -287,8 +285,7 @@ func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, newChecks
 }
 
 func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, error) {
-	ns, name := utils.KeyToNsName(id.Name)
-	obj, err := c.client.Resource(c.res).Namespace(ns).Get(context.Background(), name, metav1.GetOptions{})
+	obj, err := c.client.Resource(c.res).Namespace(id.Namespace).Get(context.Background(), id.Name, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get resource: %w", err)
 	}

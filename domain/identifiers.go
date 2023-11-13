@@ -3,8 +3,9 @@ package domain
 import "strings"
 
 type KindName struct {
-	Kind *Kind
-	Name string
+	Kind      *Kind
+	Name      string
+	Namespace string
 }
 
 func (c KindName) String() string {

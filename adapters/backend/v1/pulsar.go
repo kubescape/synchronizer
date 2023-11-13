@@ -107,8 +107,9 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 			return err
 		}
 		if err := callbacks.GetObject(ctx, domain.KindName{
-			Kind: domain.KindFromString(data.Kind),
-			Name: data.Name,
+			Kind:      domain.KindFromString(data.Kind),
+			Name:      data.Name,
+			Namespace: data.Namespace,
 		}, data.BaseObject); err != nil {
 			return fmt.Errorf("failed to send GetObject message: %w", err)
 		}
@@ -130,8 +131,9 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 			return err
 		}
 		if err := callbacks.PatchObject(ctx, domain.KindName{
-			Kind: domain.KindFromString(data.Kind),
-			Name: data.Name,
+			Kind:      domain.KindFromString(data.Kind),
+			Name:      data.Name,
+			Namespace: data.Namespace,
 		}, data.Checksum, data.Patch); err != nil {
 			return fmt.Errorf("failed to send PatchObject message: %w", err)
 		}
@@ -153,8 +155,9 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 			return err
 		}
 		if err := callbacks.VerifyObject(ctx, domain.KindName{
-			Kind: domain.KindFromString(data.Kind),
-			Name: data.Name,
+			Kind:      domain.KindFromString(data.Kind),
+			Name:      data.Name,
+			Namespace: data.Namespace,
 		}, data.Checksum); err != nil {
 			return fmt.Errorf("failed to send VerifyObject message: %w", err)
 		}
@@ -176,8 +179,9 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 			return err
 		}
 		if err := callbacks.PutObject(ctx, domain.KindName{
-			Kind: domain.KindFromString(data.Kind),
-			Name: data.Name,
+			Kind:      domain.KindFromString(data.Kind),
+			Name:      data.Name,
+			Namespace: data.Namespace,
 		}, data.Object); err != nil {
 			return fmt.Errorf("failed to send PutObject message: %w", err)
 		}
@@ -199,8 +203,9 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 			return err
 		}
 		if err := callbacks.DeleteObject(ctx, domain.KindName{
-			Kind: domain.KindFromString(data.Kind),
-			Name: data.Name,
+			Kind:      domain.KindFromString(data.Kind),
+			Name:      data.Name,
+			Namespace: data.Namespace,
 		}); err != nil {
 			return fmt.Errorf("failed to send DeleteObject message: %w", err)
 		}
