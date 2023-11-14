@@ -4,6 +4,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/armosec/utils-k8s-go/armometadata"
+	"github.com/kubescape/backend/pkg/servicediscovery"
+	"github.com/kubescape/backend/pkg/servicediscovery/schema"
+	v2 "github.com/kubescape/backend/pkg/servicediscovery/v2"
+	"github.com/kubescape/go-logger"
 	pulsarconfig "github.com/kubescape/messaging/pulsar/config"
 	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
 	"github.com/kubescape/synchronizer/domain"
@@ -11,9 +16,8 @@ import (
 )
 
 type Config struct {
-	Backend   Backend    `mapstructure:"backend"`
-	InCluster InCluster  `mapstructure:"inCluster"`
-	Resources []Resource `mapstructure:"resources"`
+	Backend   Backend   `mapstructure:"backend"`
+	InCluster InCluster `mapstructure:"inCluster"`
 }
 
 type Backend struct {
@@ -24,10 +28,11 @@ type Backend struct {
 }
 
 type InCluster struct {
-	BackendUrl  string `mapstructure:"backendUrl"`
-	ClusterName string `mapstructure:"clusterName"`
-	Account     string `mapstructure:"account"`
-	AccessKey   string `mapstructure:"accessKey"`
+	ServerUrl   string     `mapstructure:"serverUrl"`
+	ClusterName string     `mapstructure:"clusterName"`
+	Account     string     `mapstructure:"account"`
+	AccessKey   string     `mapstructure:"accessKey"`
+	Resources   []Resource `mapstructure:"resources"`
 }
 
 type Resource struct {
@@ -50,7 +55,7 @@ func (r Resource) String() string {
 
 // LoadConfig reads configuration from file or environment variables.
 func LoadConfig(path string) (Config, error) {
-	if configPathFromEnv := os.Getenv("CONFIG_PATH"); configPathFromEnv != "" {
+	if configPathFromEnv := os.Getenv("CONFIG"); configPathFromEnv != "" {
 		viper.AddConfigPath(configPathFromEnv)
 	}
 	viper.AddConfigPath(path)
@@ -67,4 +72,46 @@ func LoadConfig(path string) (Config, error) {
 	var config Config
 	err = viper.Unmarshal(&config)
 	return config, err
+}
+
+func LoadClusterConfig() (armometadata.ClusterConfig, error) {
+	pathAndFileName, present := os.LookupEnv("CLUSTER_CONFIG")
+	if !present {
+		pathAndFileName = "/etc/config/clusterData.json"
+	}
+
+	clusterConfig, err := armometadata.LoadConfig(pathAndFileName)
+	if err != nil {
+		return armometadata.ClusterConfig{}, err
+	}
+
+	return *clusterConfig, err
+}
+
+func LoadServiceURLs(filePath string) (schema.IBackendServices, error) {
+	pathAndFileName, present := os.LookupEnv("SERVICES")
+	if !present {
+		pathAndFileName = filePath
+	}
+	return servicediscovery.GetServices(
+		v2.NewServiceDiscoveryFileV2(pathAndFileName),
+	)
+}
+
+func (c *InCluster) ValidateConfig() {
+	if c.AccessKey == "" {
+		logger.L().Fatal("access key is missing")
+	}
+	if c.Account == "" {
+		logger.L().Fatal("account is missing")
+	}
+	if c.ClusterName == "" {
+		logger.L().Fatal("cluster name is missing")
+	}
+	if c.ServerUrl == "" {
+		logger.L().Fatal("server url is missing")
+	}
+	if len(c.Resources) == 0 {
+		logger.L().Fatal("resources are missing")
+	}
 }

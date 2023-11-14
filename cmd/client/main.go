@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gobwas/ws"
+	backendUtils "github.com/kubescape/backend/pkg/utils"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/adapters"
@@ -26,11 +27,40 @@ func main() {
 		logger.L().Fatal("unable to set log level", helpers.Error(err))
 	}
 
-	// load config
+	// load service config
 	cfg, err := config.LoadConfig("/etc/config")
 	if err != nil {
-		logger.L().Fatal("unable to load configuration", helpers.Error(err))
+		logger.L().Fatal("load config error", helpers.Error(err))
 	}
+
+	// load common ClusterConfig
+	if clusterConfig, err := config.LoadClusterConfig(); err != nil {
+		logger.L().Warning("failed to load cluster config", helpers.Error(err))
+	} else {
+		logger.L().Debug("cluster config loaded", helpers.String("clusterName", clusterConfig.ClusterName))
+		cfg.InCluster.ClusterName = clusterConfig.ClusterName
+	}
+
+	// load credentials (access key & account)
+	if credentials, err := backendUtils.LoadCredentialsFromFile("/etc/credentials"); err != nil {
+		logger.L().Warning("failed to load credentials", helpers.Error(err))
+	} else {
+		logger.L().Debug("credentials loaded",
+			helpers.Int("accessKeyLength", len(credentials.AccessKey)),
+			helpers.Int("accountLength", len(credentials.Account)))
+		cfg.InCluster.AccessKey = credentials.AccessKey
+		cfg.InCluster.Account = credentials.Account
+	}
+
+	// synchronizer server URL using service discovery
+	if services, err := config.LoadServiceURLs("/etc/config/services.json"); err != nil {
+		logger.L().Warning("failed discovering urls", helpers.Error(err))
+	} else {
+		logger.L().Debug("synchronizer server URL", helpers.String("synchronizer", services.GetSynchronizerUrl()))
+		cfg.InCluster.ServerUrl = services.GetSynchronizerUrl()
+	}
+
+	cfg.InCluster.ValidateConfig()
 
 	// to enable otel, set OTEL_COLLECTOR_SVC=otel-collector:4317
 	if otelHost, present := os.LookupEnv("OTEL_COLLECTOR_SVC"); present {
@@ -48,7 +78,7 @@ func main() {
 		logger.L().Fatal("unable to create k8s client", helpers.Error(err))
 	}
 	// in-cluster adapter
-	adapter := incluster.NewInClusterAdapter(cfg, k8sclient)
+	adapter := incluster.NewInClusterAdapter(cfg.InCluster, k8sclient)
 
 	// authentication headers
 	dialer := ws.Dialer{
@@ -60,7 +90,7 @@ func main() {
 	}
 
 	for {
-		if err := start(ctx, cfg, adapter, dialer); err != nil {
+		if err := start(ctx, cfg.InCluster, adapter, dialer); err != nil {
 			d := 5 * time.Second // TODO: use exponential backoff for retries
 			logger.L().Error("connection error", helpers.Error(err), helpers.String("retry in", d.String()))
 			time.Sleep(d)
@@ -71,17 +101,17 @@ func main() {
 	logger.L().Info("exiting")
 }
 
-func start(ctx context.Context, cfg config.Config, adapter adapters.Adapter, dialer ws.Dialer) error {
+func start(ctx context.Context, cfg config.InCluster, adapter adapters.Adapter, dialer ws.Dialer) error {
 	// websocket client
-	conn, _, _, err := dialer.Dial(ctx, cfg.InCluster.BackendUrl)
+	conn, _, _, err := dialer.Dial(ctx, cfg.ServerUrl)
 	if err != nil {
 		return fmt.Errorf("unable to create websocket connection: %w", err)
 	}
 	defer conn.Close()
 
 	ctx = context.WithValue(ctx, domain.ContextKeyClientIdentifier, domain.ClientIdentifier{
-		Account: cfg.InCluster.Account,
-		Cluster: cfg.InCluster.ClusterName,
+		Account: cfg.Account,
+		Cluster: cfg.ClusterName,
 	})
 
 	// synchronizer

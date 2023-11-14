@@ -40,11 +40,11 @@ flowchart LR
 2. Start synchronizer server:
 
     ```sh
-    CONFIG_PATH=./configuration/server go run cmd/server/main.go
+    CONFIG=./configuration/server go run cmd/server/main.go
     ```
 
 3. Start synchronizer client:
 
     ```sh
-    CONFIG_PATH=./configuration/client go run cmd/client/main.go
+    CONFIG=./configuration/client go run cmd/client/main.go
     ```

@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/kubescape/synchronizer/adapters"
-	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
 )
@@ -14,16 +13,14 @@ import (
 type Adapter struct {
 	callbacksMap sync.Map // <string>:<domain.Callbacks>
 	clientsMap   sync.Map // <string>:<adapters.Client>
-	cfg          config.Config
 	producer     messaging.MessageProducer
 	consumer     messaging.MessageConsumer
 	once         sync.Once
 	mainContext  context.Context
 }
 
-func NewBackendAdapter(mainContext context.Context, cfg config.Config, messageProducer messaging.MessageProducer, messageConsumer messaging.MessageConsumer) *Adapter {
+func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, messageConsumer messaging.MessageConsumer) *Adapter {
 	adapter := &Adapter{
-		cfg:         cfg,
 		producer:    messageProducer,
 		consumer:    messageConsumer,
 		mainContext: mainContext,
@@ -91,7 +88,7 @@ func (b *Adapter) Start(ctx context.Context) error {
 		b.consumer.Start(b.mainContext, b)
 	})
 
-	client := NewClient(b.cfg, b.producer)
+	client := NewClient(b.producer)
 	id := domain.ClientIdentifierFromContext(ctx)
 	b.clientsMap.Store(id.String(), client)
 	callbacks, err := b.Callbacks(ctx)

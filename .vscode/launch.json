@@ -7,7 +7,7 @@
             "mode": "debug",
             "program": "${workspaceFolder}/cmd/server/main.go",
             "env": {
-                "CONFIG_PATH": "${workspaceFolder}/configuration/server"
+                "CONFIG": "${workspaceFolder}/configuration/server"
             }
         },
         {
@@ -17,7 +17,7 @@
             "mode": "debug",
             "program": "${workspaceFolder}/cmd/client/main.go",
             "env": {
-                "CONFIG_PATH": "${workspaceFolder}/configuration/client"
+                "CONFIG": "${workspaceFolder}/configuration/client"
             }
         }
     ]

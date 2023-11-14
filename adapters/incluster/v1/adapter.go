@@ -12,12 +12,12 @@ import (
 
 type Adapter struct {
 	callbacks domain.Callbacks
-	cfg       config.Config
+	cfg       config.InCluster
 	clients   map[string]adapters.Client
 	k8sclient dynamic.Interface
 }
 
-func NewInClusterAdapter(cfg config.Config, k8sclient dynamic.Interface) *Adapter {
+func NewInClusterAdapter(cfg config.InCluster, k8sclient dynamic.Interface) *Adapter {
 	return &Adapter{
 		cfg:       cfg,
 		clients:   map[string]adapters.Client{},
@@ -78,7 +78,7 @@ func (a *Adapter) Callbacks(_ context.Context) (domain.Callbacks, error) {
 
 func (a *Adapter) Start(ctx context.Context) error {
 	for _, r := range a.cfg.Resources {
-		client := NewClient(a.k8sclient, a.cfg.InCluster.Account, a.cfg.InCluster.ClusterName, r)
+		client := NewClient(a.k8sclient, a.cfg.Account, a.cfg.ClusterName, r)
 		client.RegisterCallbacks(ctx, a.callbacks)
 		a.clients[r.String()] = client
 		go func() {

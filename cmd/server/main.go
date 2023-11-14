@@ -56,7 +56,7 @@ func main() {
 			logger.L().Fatal("failed to create pulsar consumer", helpers.Error(err), helpers.String("config", fmt.Sprintf("%+v", cfg.Backend.PulsarConfig)))
 		}
 
-		adapter = backend.NewBackendAdapter(ctx, cfg, pulsarProducer, pulsarConsumer)
+		adapter = backend.NewBackendAdapter(ctx, pulsarProducer, pulsarConsumer)
 	} else {
 		// mock adapter
 		logger.L().Info("initializing mock adapter")

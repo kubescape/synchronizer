@@ -5,11 +5,12 @@ go 1.20
 require (
 	github.com/SergJa/jsonhash v0.0.0-20210531165746-fc45f346aa74
 	github.com/apache/pulsar-client-go v0.11.0
+	github.com/armosec/utils-k8s-go v0.0.16
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/evanphx/json-patch v4.12.0+incompatible
 	github.com/gobwas/ws v1.3.0
 	github.com/google/uuid v1.3.1
-	github.com/kubescape/backend v0.0.13
+	github.com/kubescape/backend v0.0.12-0.20231108114302-f08509d35566
 	github.com/kubescape/go-logger v0.0.21
 	github.com/kubescape/messaging v0.0.17
 	github.com/panjf2000/ants/v2 v2.8.2
@@ -26,6 +27,8 @@ require (
 	github.com/AthenZ/athenz v1.10.39 // indirect
 	github.com/DataDog/zstd v1.5.0 // indirect
 	github.com/ardielle/ardielle-go v1.5.2 // indirect
+	github.com/armosec/armoapi-go v0.0.254 // indirect
+	github.com/armosec/gojay v1.2.15 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.4.0 // indirect
@@ -76,6 +79,7 @@ require (
 	github.com/spf13/afero v1.10.0 // indirect
 	github.com/spf13/cast v1.5.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/stripe/stripe-go/v74 v74.28.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/uptrace/opentelemetry-go-extra/otelutil v0.2.2 // indirect
 	github.com/uptrace/opentelemetry-go-extra/otelzap v0.2.2 // indirect
@@ -112,6 +116,7 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	k8s.io/api v0.28.2 // indirect
 	k8s.io/klog/v2 v2.100.1 // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect

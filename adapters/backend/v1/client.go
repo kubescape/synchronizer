@@ -8,7 +8,6 @@ import (
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/adapters"
-	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
 	"github.com/kubescape/synchronizer/utils"
@@ -16,13 +15,11 @@ import (
 
 type Client struct {
 	callbacks       domain.Callbacks
-	cfg             config.Config
 	messageProducer messaging.MessageProducer
 }
 
-func NewClient(cfg config.Config, producer messaging.MessageProducer) *Client {
+func NewClient(producer messaging.MessageProducer) *Client {
 	return &Client{
-		cfg:             cfg,
 		messageProducer: producer,
 	}
 }
