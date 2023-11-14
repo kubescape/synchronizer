@@ -17,12 +17,13 @@ const (
 )
 
 type DeleteObjectMessage struct {
-	Cluster string `json:"cluster"`
-	Account string `json:"account"`
-	Depth   int    `json:"depth"`
-	Kind    string `json:"kind"`
-	MsgId   string `json:"msgId"`
-	Name    string `json:"name"`
+	Cluster   string `json:"cluster"`
+	Account   string `json:"account"`
+	Depth     int    `json:"depth"`
+	Kind      string `json:"kind"`
+	MsgId     string `json:"msgId"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
 }
 
 type GetObjectMessage struct {
@@ -33,57 +34,63 @@ type GetObjectMessage struct {
 	Kind       string `json:"kind"`
 	MsgId      string `json:"msgId"`
 	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
 }
 
 type NewChecksumMessage struct {
-	Checksum string `json:"checksum"`
-	Cluster  string `json:"cluster"`
-	Account  string `json:"account"`
-	Depth    int    `json:"depth"`
-	Kind     string `json:"kind"`
-	MsgId    string `json:"msgId"`
-	Name     string `json:"name"`
+	Checksum  string `json:"checksum"`
+	Cluster   string `json:"cluster"`
+	Account   string `json:"account"`
+	Depth     int    `json:"depth"`
+	Kind      string `json:"kind"`
+	MsgId     string `json:"msgId"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
 }
 
 type NewObjectMessage struct {
-	Cluster string `json:"cluster"`
-	Account string `json:"account"`
-	Depth   int    `json:"depth"`
-	Kind    string `json:"kind"`
-	MsgId   string `json:"msgId"`
-	Name    string `json:"name"`
-	Object  []byte `json:"patch"`
+	Cluster   string `json:"cluster"`
+	Account   string `json:"account"`
+	Depth     int    `json:"depth"`
+	Kind      string `json:"kind"`
+	MsgId     string `json:"msgId"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	Object    []byte `json:"patch"`
 }
 
 type PatchObjectMessage struct {
-	Checksum string `json:"checksum"`
-	Cluster  string `json:"cluster"`
-	Account  string `json:"account"`
-	Depth    int    `json:"depth"`
-	Kind     string `json:"kind"`
-	MsgId    string `json:"msgId"`
-	Name     string `json:"name"`
-	Patch    []byte `json:"patch"`
+	Checksum  string `json:"checksum"`
+	Cluster   string `json:"cluster"`
+	Account   string `json:"account"`
+	Depth     int    `json:"depth"`
+	Kind      string `json:"kind"`
+	MsgId     string `json:"msgId"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	Patch     []byte `json:"patch"`
 }
 
 type PutObjectMessage struct {
-	Cluster string `json:"cluster"`
-	Account string `json:"account"`
-	Depth   int    `json:"depth"`
-	Kind    string `json:"kind"`
-	MsgId   string `json:"msgId"`
-	Name    string `json:"name"`
-	Object  []byte `json:"patch"`
+	Cluster   string `json:"cluster"`
+	Account   string `json:"account"`
+	Depth     int    `json:"depth"`
+	Kind      string `json:"kind"`
+	MsgId     string `json:"msgId"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	Object    []byte `json:"patch"`
 }
 
 type VerifyObjectMessage struct {
-	Checksum string `json:"checksum"`
-	Cluster  string `json:"cluster"`
-	Account  string `json:"account"`
-	Depth    int    `json:"depth"`
-	Kind     string `json:"kind"`
-	MsgId    string `json:"msgId"`
-	Name     string `json:"name"`
+	Checksum  string `json:"checksum"`
+	Cluster   string `json:"cluster"`
+	Account   string `json:"account"`
+	Depth     int    `json:"depth"`
+	Kind      string `json:"kind"`
+	MsgId     string `json:"msgId"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
 }
 
 type ServerConnectedMessage struct {

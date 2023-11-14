@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/SergJa/jsonhash"
@@ -53,15 +52,6 @@ func ContextFromIdentifiers(parent context.Context, id domain.ClientIdentifier) 
 		Account: id.Account,
 		Cluster: id.Cluster,
 	})
-}
-
-func KeyToNsName(key string) (string, string) {
-	split := strings.Split(key, "/")
-	return split[0], split[1]
-}
-
-func NsNameToKey(ns, name string) string {
-	return strings.Join([]string{ns, name}, "/")
 }
 
 //goland:noinspection GoUnusedExportedFunction
