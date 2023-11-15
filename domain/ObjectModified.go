@@ -8,6 +8,7 @@ type ObjectModified struct {
 	Kind                 *Kind
 	MsgId                string
 	Name                 string
+	Namespace            string
 	Object               string
 	AdditionalProperties map[string]interface{}
 }

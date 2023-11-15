@@ -158,13 +158,15 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				continue
 			}
 			id := domain.KindName{
-				Kind: msg.Kind,
-				Name: msg.Name,
+				Kind:      msg.Kind,
+				Name:      msg.Name,
+				Namespace: msg.Namespace,
 			}
 			err := s.handleSyncGetObject(ctx, id, []byte(msg.BaseObject))
 			if err != nil {
 				logger.L().Error("error handling message", helpers.Error(err),
-					helpers.Interface("event", generic.Event.Value()))
+					helpers.Interface("event", msg.Event.Value()),
+					helpers.String("id", id.String()))
 				continue
 			}
 		case domain.EventNewChecksum:
@@ -176,13 +178,15 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				continue
 			}
 			id := domain.KindName{
-				Kind: msg.Kind,
-				Name: msg.Name,
+				Kind:      msg.Kind,
+				Name:      msg.Name,
+				Namespace: msg.Namespace,
 			}
 			err := s.handleSyncNewChecksum(ctx, id, msg.Checksum)
 			if err != nil {
 				logger.L().Error("error handling message", helpers.Error(err),
-					helpers.Interface("event", generic.Event.Value()))
+					helpers.Interface("event", msg.Event.Value()),
+					helpers.String("id", id.String()))
 				continue
 			}
 		case domain.EventObjectDeleted:
@@ -194,13 +198,15 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				continue
 			}
 			id := domain.KindName{
-				Kind: msg.Kind,
-				Name: msg.Name,
+				Kind:      msg.Kind,
+				Name:      msg.Name,
+				Namespace: msg.Namespace,
 			}
 			err := s.handleSyncObjectDeleted(ctx, id)
 			if err != nil {
 				logger.L().Error("error handling message", helpers.Error(err),
-					helpers.Interface("event", generic.Event.Value()))
+					helpers.Interface("event", msg.Event.Value()),
+					helpers.String("id", id.String()))
 				continue
 			}
 		case domain.EventPatchObject:
@@ -212,13 +218,15 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				continue
 			}
 			id := domain.KindName{
-				Kind: msg.Kind,
-				Name: msg.Name,
+				Kind:      msg.Kind,
+				Name:      msg.Name,
+				Namespace: msg.Namespace,
 			}
 			err := s.handleSyncPatchObject(ctx, id, msg.Checksum, []byte(msg.Patch))
 			if err != nil {
 				logger.L().Error("error handling message", helpers.Error(err),
-					helpers.Interface("event", generic.Event.Value()))
+					helpers.Interface("event", msg.Event.Value()),
+					helpers.String("id", id.String()))
 				continue
 			}
 		case domain.EventPutObject:
@@ -230,13 +238,15 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				continue
 			}
 			id := domain.KindName{
-				Kind: msg.Kind,
-				Name: msg.Name,
+				Kind:      msg.Kind,
+				Name:      msg.Name,
+				Namespace: msg.Namespace,
 			}
 			err := s.handleSyncPutObject(ctx, id, []byte(msg.Object))
 			if err != nil {
 				logger.L().Error("error handling message", helpers.Error(err),
-					helpers.Interface("event", generic.Event.Value()))
+					helpers.Interface("event", msg.Event.Value()),
+					helpers.String("id", id.String()))
 				continue
 			}
 		}
@@ -294,6 +304,7 @@ func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.KindName, ba
 		Kind:       id.Kind,
 		MsgId:      msgId,
 		Name:       id.Name,
+		Namespace:  id.Namespace,
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -308,6 +319,7 @@ func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.KindName, ba
 		helpers.String("account", clientId.Account),
 		helpers.String("cluster", clientId.Cluster),
 		helpers.String("kind", msg.Kind.String()),
+		helpers.String("namespace", msg.Namespace),
 		helpers.String("name", msg.Name),
 		helpers.Int("base object size", len(msg.BaseObject)))
 	return nil
@@ -318,12 +330,13 @@ func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.KindName, 
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.NewChecksum{
-		Checksum: checksum,
-		Depth:    depth + 1,
-		Event:    &event,
-		Kind:     id.Kind,
-		MsgId:    msgId,
-		Name:     id.Name,
+		Checksum:  checksum,
+		Depth:     depth + 1,
+		Event:     &event,
+		Kind:      id.Kind,
+		MsgId:     msgId,
+		Name:      id.Name,
+		Namespace: id.Namespace,
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -341,6 +354,7 @@ func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.KindName, 
 		helpers.String("account", clientId.Account),
 		helpers.String("cluster", clientId.Cluster),
 		helpers.String("kind", msg.Kind.String()),
+		helpers.String("namespace", msg.Namespace),
 		helpers.String("name", msg.Name),
 		helpers.String("checksum", msg.Checksum))
 	return nil
@@ -351,11 +365,12 @@ func (s *Synchronizer) sendObjectDeleted(ctx context.Context, id domain.KindName
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.ObjectDeleted{
-		Depth: depth + 1,
-		Event: &event,
-		Kind:  id.Kind,
-		MsgId: msgId,
-		Name:  id.Name,
+		Depth:     depth + 1,
+		Event:     &event,
+		Kind:      id.Kind,
+		MsgId:     msgId,
+		Name:      id.Name,
+		Namespace: id.Namespace,
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -370,6 +385,7 @@ func (s *Synchronizer) sendObjectDeleted(ctx context.Context, id domain.KindName
 		helpers.String("account", clientId.Account),
 		helpers.String("cluster", clientId.Cluster),
 		helpers.String("kind", msg.Kind.String()),
+		helpers.String("namespace", msg.Namespace),
 		helpers.String("name", msg.Name))
 	return nil
 }
@@ -380,13 +396,14 @@ func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.KindName, 
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 
 	msg := domain.PatchObject{
-		Checksum: checksum,
-		Depth:    depth + 1,
-		Event:    &event,
-		Kind:     id.Kind,
-		MsgId:    msgId,
-		Name:     id.Name,
-		Patch:    string(patch),
+		Checksum:  checksum,
+		Depth:     depth + 1,
+		Event:     &event,
+		Kind:      id.Kind,
+		MsgId:     msgId,
+		Name:      id.Name,
+		Namespace: id.Namespace,
+		Patch:     string(patch),
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -403,6 +420,7 @@ func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.KindName, 
 		helpers.String("account", clientId.Account),
 		helpers.String("cluster", clientId.Cluster),
 		helpers.String("kind", msg.Kind.String()),
+		helpers.String("namespace", msg.Namespace),
 		helpers.String("name", msg.Name),
 		helpers.String("checksum", msg.Checksum),
 		helpers.Int("patch size", len(msg.Patch)))
@@ -414,12 +432,13 @@ func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, ob
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.PutObject{
-		Depth:  depth + 1,
-		Event:  &event,
-		Kind:   id.Kind,
-		MsgId:  msgId,
-		Name:   id.Name,
-		Object: string(object),
+		Depth:     depth + 1,
+		Event:     &event,
+		Kind:      id.Kind,
+		MsgId:     msgId,
+		Name:      id.Name,
+		Namespace: id.Namespace,
+		Object:    string(object),
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -435,6 +454,7 @@ func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, ob
 		helpers.String("account", clientId.Account),
 		helpers.String("cluster", clientId.Cluster),
 		helpers.String("kind", msg.Kind.String()),
+		helpers.String("namespace", msg.Namespace),
 		helpers.String("name", msg.Name),
 		helpers.Int("object size", len(msg.Object)))
 	return nil

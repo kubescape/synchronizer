@@ -7,5 +7,6 @@ type ObjectDeleted struct {
 	Kind                 *Kind
 	MsgId                string
 	Name                 string
+	Namespace            string
 	AdditionalProperties map[string]interface{}
 }
