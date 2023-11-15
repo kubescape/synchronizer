@@ -8,6 +8,7 @@ type PatchObject struct {
 	Kind                 *Kind
 	MsgId                string
 	Name                 string
+	Namespace            string
 	Patch                string
 	AdditionalProperties map[string]interface{}
 }

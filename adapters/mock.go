@@ -65,7 +65,7 @@ func (m *MockAdapter) GetObject(ctx context.Context, id domain.KindName, baseObj
 func (m *MockAdapter) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	baseObject, err := m.patchObject(id, checksum, patch)
 	if err != nil {
-		logger.L().Warning("patch object, sending get object", helpers.Error(err))
+		logger.L().Warning("patch object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
 		return m.callbacks.GetObject(ctx, id, baseObject)
 	}
 	return nil
@@ -112,7 +112,7 @@ func (m *MockAdapter) Start(_ context.Context) error {
 func (m *MockAdapter) VerifyObject(ctx context.Context, id domain.KindName, newChecksum string) error {
 	baseObject, err := m.verifyObject(id, newChecksum)
 	if err != nil {
-		logger.L().Warning("verify object, sending get object", helpers.Error(err))
+		logger.L().Warning("verify object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
 		return m.callbacks.GetObject(ctx, id, baseObject)
 	}
 	return nil
