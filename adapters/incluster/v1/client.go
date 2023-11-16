@@ -89,13 +89,20 @@ func (c *Client) Start(ctx context.Context) error {
 	if err != nil {
 		logger.L().Fatal("unable to watch for resources", helpers.String("resource", c.res.Resource), helpers.Error(err))
 	}
-	for {
-		ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
-		event, chanActive := <-watcher.ResultChan()
-		if !chanActive {
-			watcher.Stop()
-			break
+	eventQueue := utils.NewCooldownQueue(utils.DefaultQueueSize, utils.DefaultTTL)
+	go func() {
+		for {
+			event, chanActive := <-watcher.ResultChan()
+			if !chanActive {
+				watcher.Stop()
+				eventQueue.Stop()
+				break
+			}
+			eventQueue.Enqueue(event)
 		}
+	}()
+	for event := range eventQueue.ResultChan {
+		ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
 		if event.Type == watch.Error {
 			logger.L().Error("watch event failed", helpers.String("resource", c.res.Resource), helpers.Interface("event", event))
 			watcher.Stop()
