@@ -89,13 +89,20 @@ func (c *Client) Start(ctx context.Context) error {
 	if err != nil {
 		logger.L().Fatal("unable to watch for resources", helpers.String("resource", c.res.Resource), helpers.Error(err))
 	}
-	for {
-		ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
-		event, chanActive := <-watcher.ResultChan()
-		if !chanActive {
-			watcher.Stop()
-			break
+	eventQueue := utils.NewCooldownQueue(utils.DefaultQueueSize, utils.DefaultTTL)
+	go func() {
+		for {
+			event, chanActive := <-watcher.ResultChan()
+			if !chanActive {
+				watcher.Stop()
+				eventQueue.Stop()
+				break
+			}
+			eventQueue.Enqueue(event)
 		}
+	}()
+	for event := range eventQueue.ResultChan {
+		ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
 		if event.Type == watch.Error {
 			logger.L().Error("watch event failed", helpers.String("resource", c.res.Resource), helpers.Interface("event", event))
 			watcher.Stop()
@@ -112,7 +119,7 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 		newObject, err := d.MarshalJSON()
 		if err != nil {
-			logger.L().Error("cannot marshal object", helpers.Error(err), helpers.String("resource", c.res.Resource), helpers.String("key", id.String()))
+			logger.L().Error("cannot marshal object", helpers.Error(err), helpers.String("resource", c.res.Resource), helpers.String("id", id.String()))
 			continue
 		}
 		switch {
@@ -217,7 +224,7 @@ func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject [
 func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	baseObject, err := c.patchObject(ctx, id, checksum, patch)
 	if err != nil {
-		logger.L().Warning("patch object, sending get object", helpers.Error(err))
+		logger.L().Warning("patch object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
 		return c.callbacks.GetObject(ctx, id, baseObject)
 	}
 	return nil
@@ -278,7 +285,7 @@ func (c *Client) Callbacks(_ context.Context) (domain.Callbacks, error) {
 func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, newChecksum string) error {
 	baseObject, err := c.verifyObject(id, newChecksum)
 	if err != nil {
-		logger.L().Warning("verify object, sending get object", helpers.Error(err))
+		logger.L().Warning("verify object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
 		return c.callbacks.GetObject(ctx, id, baseObject)
 	}
 	return nil

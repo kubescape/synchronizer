@@ -98,6 +98,8 @@ components:
           $ref: '#/components/schemas/msgID'
         name:
           $ref: '#/components/schemas/name'
+        namespace:
+          $ref: '#/components/schemas/namespace'
     objectAdded:
       type: object
       properties:
@@ -113,6 +115,8 @@ components:
           $ref: '#/components/schemas/msgID'
         name:
           $ref: '#/components/schemas/name'
+        namespace:
+          $ref: '#/components/schemas/namespace'
         object:
           $ref: '#/components/schemas/object'
     objectDeleted:
@@ -128,6 +132,8 @@ components:
           $ref: '#/components/schemas/msgID'
         name:
           $ref: '#/components/schemas/name'
+        namespace:
+          $ref: '#/components/schemas/namespace'
     objectModified:
       type: object
       properties:
@@ -143,6 +149,8 @@ components:
           $ref: '#/components/schemas/msgID'
         name:
           $ref: '#/components/schemas/name'
+        namespace:
+          $ref: '#/components/schemas/namespace'
         object:
           $ref: '#/components/schemas/object'
     getObject:
@@ -160,6 +168,8 @@ components:
           $ref: '#/components/schemas/msgID'
         name:
           $ref: '#/components/schemas/name'
+        namespace:
+          $ref: '#/components/schemas/namespace'
     patchObject:
       type: object
       properties:
@@ -175,6 +185,8 @@ components:
           $ref: '#/components/schemas/msgID'
         name:
           $ref: '#/components/schemas/name'
+        namespace:
+          $ref: '#/components/schemas/namespace'
         patch:
           $ref: '#/components/schemas/object'
     putObject:
@@ -190,6 +202,8 @@ components:
           $ref: '#/components/schemas/msgID'
         name:
           $ref: '#/components/schemas/name'
+        namespace:
+          $ref: '#/components/schemas/namespace'
         object:
           $ref: '#/components/schemas/object'
     depth:
@@ -222,6 +236,9 @@ components:
     name:
       type: string
       description: name of the object
+    namespace:
+      type: string
+      description: namespace of the object
     object:
       type: string
       description: The object is encoded in JSON

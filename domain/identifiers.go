@@ -15,7 +15,7 @@ func (c KindName) String() string {
 	} else {
 		kind = c.Kind.String()
 	}
-	return strings.Join([]string{kind, c.Name}, "/")
+	return strings.Join([]string{kind, c.Namespace, c.Name}, "/")
 }
 
 type ClientIdentifier struct {
