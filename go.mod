@@ -10,7 +10,7 @@ require (
 	github.com/evanphx/json-patch v4.12.0+incompatible
 	github.com/gobwas/ws v1.3.0
 	github.com/google/uuid v1.3.1
-	github.com/kubescape/backend v0.0.12-0.20231108114302-f08509d35566
+	github.com/kubescape/backend v0.0.14
 	github.com/kubescape/go-logger v0.0.21
 	github.com/kubescape/messaging v0.0.17
 	github.com/panjf2000/ants/v2 v2.8.2
