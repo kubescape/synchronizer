@@ -89,6 +89,9 @@ func main() {
 		}),
 	}
 
+	// start liveness probe
+	utils.StartLivenessProbe()
+
 	for {
 		if err := start(ctx, cfg.InCluster, adapter, dialer); err != nil {
 			d := 5 * time.Second // TODO: use exponential backoff for retries
