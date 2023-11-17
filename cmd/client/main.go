@@ -55,9 +55,9 @@ func main() {
 	// synchronizer server URL using service discovery
 	if services, err := config.LoadServiceURLs("/etc/config/services.json"); err != nil {
 		logger.L().Warning("failed discovering urls", helpers.Error(err))
-	} else {
-		logger.L().Debug("synchronizer server URL", helpers.String("synchronizer", services.GetSynchronizerUrl()))
-		cfg.InCluster.ServerUrl = services.GetSynchronizerUrl()
+	} else if serverUrl := services.GetSynchronizerUrl(); serverUrl != "" {
+		logger.L().Debug("synchronizer server URL", helpers.String("synchronizer", serverUrl))
+		cfg.InCluster.ServerUrl = serverUrl
 	}
 
 	cfg.InCluster.ValidateConfig()
