@@ -55,22 +55,23 @@ func (r Resource) String() string {
 
 // LoadConfig reads configuration from file or environment variables.
 func LoadConfig(path string) (Config, error) {
+	v := viper.New() // singleton prevents running tests in parallel
 	if configPathFromEnv := os.Getenv("CONFIG"); configPathFromEnv != "" {
-		viper.AddConfigPath(configPathFromEnv)
+		v.AddConfigPath(configPathFromEnv)
 	}
-	viper.AddConfigPath(path)
-	viper.SetConfigName("config")
-	viper.SetConfigType("json")
+	v.AddConfigPath(path)
+	v.SetConfigName("config")
+	v.SetConfigType("json")
 
-	viper.AutomaticEnv()
+	v.AutomaticEnv()
 
-	err := viper.ReadInConfig()
+	err := v.ReadInConfig()
 	if err != nil {
 		return Config{}, err
 	}
 
 	var config Config
-	err = viper.Unmarshal(&config)
+	err = v.Unmarshal(&config)
 	return config, err
 }
 

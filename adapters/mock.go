@@ -120,7 +120,7 @@ func (m *MockAdapter) saveIfNewer(id domain.KindName, newObject []byte) {
 	m.Resources[id.String()] = newObject
 }
 
-func (m *MockAdapter) RegisterCallbacks(mainCtx context.Context, callbacks domain.Callbacks) {
+func (m *MockAdapter) RegisterCallbacks(_ context.Context, callbacks domain.Callbacks) {
 	m.callbacks = callbacks
 }
 
@@ -148,7 +148,7 @@ func (m *MockAdapter) verifyObject(id domain.KindName, newChecksum string) ([]by
 	}
 	checksum, err := utils.CanonicalHash(object)
 	if err != nil {
-		return object, fmt.Errorf("calculate checksum: %w", err)
+		return nil, fmt.Errorf("calculate checksum: %w", err)
 	}
 	if checksum != newChecksum {
 		return object, fmt.Errorf("checksum mismatch: %s != %s", newChecksum, checksum)
