@@ -7,6 +7,7 @@ import (
 
 	"github.com/gobwas/ws"
 	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
+	"github.com/kubescape/synchronizer/utils"
 
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -62,6 +63,9 @@ func main() {
 		logger.L().Info("initializing mock adapter")
 		adapter = adapters.NewMockAdapter(false)
 	}
+
+	// start liveness probe
+	utils.StartLivenessProbe()
 
 	// websocket server
 	_ = http.ListenAndServe(":8080",

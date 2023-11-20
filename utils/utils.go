@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -185,4 +186,15 @@ func PulsarMessageIDtoString(msgID pulsar.MessageID) string {
 	batchStr := strconv.Itoa(int(msgID.BatchIdx()))
 	msgIDstr := msgID.String() + ":" + batchStr
 	return msgIDstr
+}
+
+func StartLivenessProbe() {
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	go func() {
+		if err := http.ListenAndServe(":7888", nil); err != nil {
+			logger.L().Error("failed to start liveness probe", helpers.Error(err))
+		}
+	}()
 }
