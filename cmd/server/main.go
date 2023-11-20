@@ -60,7 +60,7 @@ func main() {
 	} else {
 		// mock adapter
 		logger.L().Info("initializing mock adapter")
-		adapter = adapters.NewMockAdapter()
+		adapter = adapters.NewMockAdapter(false)
 	}
 
 	// websocket server
