@@ -13,14 +13,15 @@ import (
 
 type MockAdapter struct {
 	callbacks     domain.Callbacks
-	patchStrategy bool
-	resources     map[string][]byte
+	patchStrategy bool // true for client, false for server
+	Resources     map[string][]byte
 	shadowObjects map[string][]byte
 }
 
-func NewMockAdapter() *MockAdapter {
+func NewMockAdapter(patchStrategy bool) *MockAdapter {
 	return &MockAdapter{
-		resources:     map[string][]byte{},
+		patchStrategy: patchStrategy,
+		Resources:     map[string][]byte{},
 		shadowObjects: map[string][]byte{},
 	}
 }
@@ -28,12 +29,12 @@ func NewMockAdapter() *MockAdapter {
 var _ Adapter = (*MockAdapter)(nil)
 
 func (m *MockAdapter) DeleteObject(_ context.Context, id domain.KindName) error {
-	delete(m.resources, id.String())
+	delete(m.Resources, id.String())
 	return nil
 }
 
 func (m *MockAdapter) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
-	object, ok := m.resources[id.String()]
+	object, ok := m.Resources[id.String()]
 	if !ok {
 		return fmt.Errorf("object not found")
 	}
@@ -72,7 +73,7 @@ func (m *MockAdapter) PatchObject(ctx context.Context, id domain.KindName, check
 }
 
 func (m *MockAdapter) patchObject(id domain.KindName, checksum string, patch []byte) ([]byte, error) {
-	object, ok := m.resources[id.String()]
+	object, ok := m.Resources[id.String()]
 	if !ok {
 		return nil, fmt.Errorf("object not found")
 	}
@@ -87,13 +88,13 @@ func (m *MockAdapter) patchObject(id domain.KindName, checksum string, patch []b
 	if newChecksum != checksum {
 		return object, fmt.Errorf("checksum mismatch: %s != %s", newChecksum, checksum)
 	}
-	m.resources[id.String()] = modified
+	m.Resources[id.String()] = modified
 	m.shadowObjects[id.String()] = modified
 	return object, nil
 }
 
 func (m *MockAdapter) PutObject(_ context.Context, id domain.KindName, object []byte) error {
-	m.resources[id.String()] = object
+	m.Resources[id.String()] = object
 	return nil
 }
 
@@ -119,7 +120,7 @@ func (m *MockAdapter) VerifyObject(ctx context.Context, id domain.KindName, newC
 }
 
 func (m *MockAdapter) verifyObject(id domain.KindName, newChecksum string) ([]byte, error) {
-	object, ok := m.resources[id.String()]
+	object, ok := m.Resources[id.String()]
 	if !ok {
 		return nil, fmt.Errorf("object not found")
 	}
@@ -131,4 +132,82 @@ func (m *MockAdapter) verifyObject(id domain.KindName, newChecksum string) ([]by
 		return object, fmt.Errorf("checksum mismatch: %s != %s", newChecksum, checksum)
 	}
 	return object, nil
+}
+
+// TestCallDeleteObject is used for testing purposes only, it is similar to incluster.client response to watch.Deleted event
+func (m *MockAdapter) TestCallDeleteObject(ctx context.Context, id domain.KindName) error {
+	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
+	// delete local object - this is only for testing purposes
+	delete(m.Resources, id.String())
+	// send delete
+	err := m.callbacks.DeleteObject(ctx, id)
+	if err != nil {
+		return fmt.Errorf("send delete: %w", err)
+	}
+	if m.patchStrategy {
+		// remove from known resources
+		delete(m.shadowObjects, id.String())
+	}
+	return nil
+}
+
+// TestCallPutOrPatch is used for testing purposes only, it is similar to incluster.client.callPutOrPatch
+func (m *MockAdapter) TestCallPutOrPatch(ctx context.Context, id domain.KindName, baseObject []byte, newObject []byte) error {
+	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
+	// store object locally - this is only for testing purposes
+	m.Resources[id.String()] = newObject
+	// send put/patch
+	if m.patchStrategy {
+		if len(baseObject) > 0 {
+			// update reference object
+			m.shadowObjects[id.Name] = baseObject
+		}
+		if oldObject, ok := m.shadowObjects[id.Name]; ok {
+			// calculate checksum
+			checksum, err := utils.CanonicalHash(newObject)
+			if err != nil {
+				return fmt.Errorf("calculate checksum: %w", err)
+			}
+			// calculate patch
+			patch, err := jsonpatch.CreateMergePatch(oldObject, newObject)
+			if err != nil {
+				return fmt.Errorf("create merge patch: %w", err)
+			}
+			err = m.callbacks.PatchObject(ctx, id, checksum, patch)
+			if err != nil {
+				return fmt.Errorf("send patch object: %w", err)
+			}
+		} else {
+			err := m.callbacks.PutObject(ctx, id, newObject)
+			if err != nil {
+				return fmt.Errorf("send put object: %w", err)
+			}
+		}
+		// add/update known resources
+		m.shadowObjects[id.Name] = newObject
+	} else {
+		err := m.callbacks.PutObject(ctx, id, newObject)
+		if err != nil {
+			return fmt.Errorf("send put object: %w", err)
+		}
+	}
+	return nil
+}
+
+// TestCallVerifyObject is used for testing purposes only, it is similar to incluster.client.callVerifyObject
+func (m *MockAdapter) TestCallVerifyObject(ctx context.Context, id domain.KindName, object []byte) error {
+	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
+	// store object locally - this is only for testing purposes
+	m.Resources[id.String()] = object
+	// calculate checksum
+	checksum, err := utils.CanonicalHash(object)
+	if err != nil {
+		return fmt.Errorf("calculate checksum: %w", err)
+	}
+	// send verify
+	err = m.callbacks.VerifyObject(ctx, id, checksum)
+	if err != nil {
+		return fmt.Errorf("send checksum: %w", err)
+	}
+	return nil
 }
