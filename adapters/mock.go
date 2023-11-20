@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/armosec/utils-k8s-go/armometadata"
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -12,17 +13,19 @@ import (
 )
 
 type MockAdapter struct {
-	callbacks     domain.Callbacks
-	patchStrategy bool // true for client, false for server
-	Resources     map[string][]byte
-	shadowObjects map[string][]byte
+	callbacks            domain.Callbacks
+	checkResourceVersion bool // false for client, true for server
+	patchStrategy        bool // true for client, false for server
+	Resources            map[string][]byte
+	shadowObjects        map[string][]byte
 }
 
-func NewMockAdapter(patchStrategy bool) *MockAdapter {
+func NewMockAdapter(isClient bool) *MockAdapter {
 	return &MockAdapter{
-		patchStrategy: patchStrategy,
-		Resources:     map[string][]byte{},
-		shadowObjects: map[string][]byte{},
+		checkResourceVersion: !isClient,
+		patchStrategy:        isClient,
+		Resources:            map[string][]byte{},
+		shadowObjects:        map[string][]byte{},
 	}
 }
 
@@ -88,14 +91,33 @@ func (m *MockAdapter) patchObject(id domain.KindName, checksum string, patch []b
 	if newChecksum != checksum {
 		return object, fmt.Errorf("checksum mismatch: %s != %s", newChecksum, checksum)
 	}
-	m.Resources[id.String()] = modified
+	m.saveIfNewer(id, modified)
 	m.shadowObjects[id.String()] = modified
-	return object, nil
+	return nil, nil
 }
 
 func (m *MockAdapter) PutObject(_ context.Context, id domain.KindName, object []byte) error {
-	m.Resources[id.String()] = object
+	m.saveIfNewer(id, object)
 	return nil
+}
+
+// saveIfNewer saves the object only if it is newer than the existing one
+// this reference implementation should be implemented in the ingester on the backend side
+func (m *MockAdapter) saveIfNewer(id domain.KindName, newObject []byte) {
+	if m.checkResourceVersion {
+		err, _, _, _, _, resourceVersion := armometadata.ExtractMetadataFromJsonBytes(newObject)
+		if err == nil {
+			if oldObject, ok := m.Resources[id.String()]; ok {
+				err, _, _, _, _, oldResourceVersion := armometadata.ExtractMetadataFromJsonBytes(oldObject)
+				if err == nil {
+					if !utils.StringValueBigger(resourceVersion, oldResourceVersion) {
+						return
+					}
+				}
+			}
+		}
+	}
+	m.Resources[id.String()] = newObject
 }
 
 func (m *MockAdapter) RegisterCallbacks(mainCtx context.Context, callbacks domain.Callbacks) {

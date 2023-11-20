@@ -24,7 +24,9 @@ var (
 		Name:      "name",
 		Namespace: "namespace",
 	}
-	object = []byte(`{"kind":"kind","metadata":{"name":"name"}}`)
+	object         = []byte(`{"kind":"kind","metadata":{"name":"name","resourceVersion":"1"}}`)
+	objectClientV2 = []byte(`{"kind":"kind","metadata":{"name":"client","resourceVersion":"2"}}`)
+	objectServerV2 = []byte(`{"kind":"kind","metadata":{"name":"server","resourceVersion":"2"}}`)
 )
 
 func initTest(t *testing.T) (context.Context, *adapters.MockAdapter, *adapters.MockAdapter) {
@@ -80,12 +82,35 @@ func TestSynchronizer_ObjectModified(t *testing.T) {
 	clientAdapter.Resources[kindDeployment.String()] = object
 	serverAdapter.Resources[kindDeployment.String()] = object
 	// modify object
-	objectV2 := []byte(`{"kind":"kind","metadata":{"name":"name","version":"2"}}`)
-	err := clientAdapter.TestCallPutOrPatch(ctx, kindDeployment, object, objectV2)
+	err := clientAdapter.TestCallPutOrPatch(ctx, kindDeployment, object, objectClientV2)
 	assert.NoError(t, err)
 	time.Sleep(1 * time.Second)
 	// check object modified
 	serverObj, ok := serverAdapter.Resources[kindDeployment.String()]
 	assert.True(t, ok)
-	assert.Equal(t, objectV2, serverObj)
+	assert.Equal(t, objectClientV2, serverObj)
+}
+
+func TestSynchronizer_ObjectModifiedOnBothSides(t *testing.T) {
+	ctx, clientAdapter, serverAdapter := initTest(t)
+	// pre: add object
+	clientAdapter.Resources[kindKnownServers.String()] = object
+	serverAdapter.Resources[kindKnownServers.String()] = object
+	// manually modify object on server (PutObject message will be sent later)
+	serverAdapter.Resources[kindKnownServers.String()] = objectServerV2
+	// we create a race condition here
+	// object is modified on client, but we don't know about server modification
+	err := clientAdapter.TestCallPutOrPatch(ctx, kindKnownServers, object, objectClientV2)
+	assert.NoError(t, err)
+	// server message arrives just now on client
+	err = clientAdapter.PutObject(ctx, kindKnownServers, objectServerV2)
+	assert.NoError(t, err)
+	time.Sleep(1 * time.Second)
+	// check both sides have the one from the server
+	clientObj, ok := clientAdapter.Resources[kindKnownServers.String()]
+	assert.True(t, ok)
+	assert.Equal(t, objectServerV2, clientObj)
+	serverObj, ok := clientAdapter.Resources[kindKnownServers.String()]
+	assert.True(t, ok)
+	assert.Equal(t, objectServerV2, serverObj)
 }
