@@ -39,12 +39,11 @@ func TestSynchronizer_ObjectModifiedOnServer(t *testing.T) {
 	clientAdapter.Resources[kindKnownServers.String()] = object
 	serverAdapter.Resources[kindKnownServers.String()] = object
 	// modify object
-	objectV2 := []byte(`{"kind":"kind","metadata":{"name":"name","version":"2"}}`)
-	err := serverAdapter.TestCallPutOrPatch(ctx, kindKnownServers, nil, objectV2)
+	err := serverAdapter.TestCallPutOrPatch(ctx, kindKnownServers, nil, objectServerV2)
 	assert.NoError(t, err)
 	time.Sleep(1 * time.Second)
 	// check object modified
 	clientObj, ok := clientAdapter.Resources[kindKnownServers.String()]
 	assert.True(t, ok)
-	assert.Equal(t, objectV2, clientObj)
+	assert.Equal(t, objectServerV2, clientObj)
 }

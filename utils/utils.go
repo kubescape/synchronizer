@@ -198,3 +198,15 @@ func StartLivenessProbe() {
 		}
 	}()
 }
+
+func StringValueBigger(s1, s2 string) bool {
+	i1, err := strconv.Atoi(s1)
+	if err != nil {
+		return false
+	}
+	i2, err := strconv.Atoi(s2)
+	if err != nil {
+		return false
+	}
+	return i1 > i2
+}
