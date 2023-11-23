@@ -109,7 +109,7 @@ func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.KindN
 }
 
 func (s *Synchronizer) Start(ctx context.Context) error {
-	identifiers := domain.ClientIdentifierFromContext(ctx)
+	identifiers := utils.ClientIdentifierFromContext(ctx)
 	logger.L().Info("starting sync", helpers.String("account", identifiers.Account), helpers.String("cluster", identifiers.Cluster))
 	// adapter events
 	err := s.adapter.Start(ctx)
@@ -314,7 +314,7 @@ func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.KindName, ba
 	if err != nil {
 		return fmt.Errorf("invoke outPool on get object message: %w", err)
 	}
-	clientId := domain.ClientIdentifierFromContext(ctx)
+	clientId := utils.ClientIdentifierFromContext(ctx)
 	logger.L().Debug("sent get object message",
 		helpers.String("account", clientId.Account),
 		helpers.String("cluster", clientId.Cluster),
@@ -349,7 +349,7 @@ func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.KindName, 
 	if msg.Kind == nil {
 		return fmt.Errorf("invalid resource kind. name: %s", msg.Name)
 	}
-	clientId := domain.ClientIdentifierFromContext(ctx)
+	clientId := utils.ClientIdentifierFromContext(ctx)
 	logger.L().Debug("sent new checksum message",
 		helpers.String("account", clientId.Account),
 		helpers.String("cluster", clientId.Cluster),
@@ -380,7 +380,7 @@ func (s *Synchronizer) sendObjectDeleted(ctx context.Context, id domain.KindName
 	if err != nil {
 		return fmt.Errorf("invoke outPool on delete message: %w", err)
 	}
-	clientId := domain.ClientIdentifierFromContext(ctx)
+	clientId := utils.ClientIdentifierFromContext(ctx)
 	logger.L().Debug("sent object deleted message",
 		helpers.String("account", clientId.Account),
 		helpers.String("cluster", clientId.Cluster),
@@ -414,7 +414,7 @@ func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.KindName, 
 		return fmt.Errorf("invoke outPool on patch message: %w", err)
 	}
 
-	clientId := domain.ClientIdentifierFromContext(ctx)
+	clientId := utils.ClientIdentifierFromContext(ctx)
 
 	logger.L().Debug("sent patch object message",
 		helpers.String("account", clientId.Account),
@@ -449,7 +449,7 @@ func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, ob
 		return fmt.Errorf("invoke outPool on put object message: %w", err)
 	}
 
-	clientId := domain.ClientIdentifierFromContext(ctx)
+	clientId := utils.ClientIdentifierFromContext(ctx)
 	logger.L().Debug("sent put object message",
 		helpers.String("account", clientId.Account),
 		helpers.String("cluster", clientId.Cluster),

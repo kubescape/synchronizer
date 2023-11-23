@@ -55,6 +55,10 @@ func ContextFromIdentifiers(parent context.Context, id domain.ClientIdentifier) 
 	})
 }
 
+func ClientIdentifierFromContext(ctx context.Context) domain.ClientIdentifier {
+	return ctx.Value(domain.ContextKeyClientIdentifier).(domain.ClientIdentifier)
+}
+
 //goland:noinspection GoUnusedExportedFunction
 func CompareJson(a, b []byte) bool {
 	var aData interface{}

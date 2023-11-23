@@ -8,6 +8,7 @@ import (
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
+	"github.com/kubescape/synchronizer/utils"
 )
 
 type Adapter struct {
@@ -31,7 +32,7 @@ func NewBackendAdapter(mainContext context.Context, messageProducer messaging.Me
 var _ adapters.Adapter = (*Adapter)(nil)
 
 func (b *Adapter) getClient(ctx context.Context) (adapters.Client, error) {
-	id := domain.ClientIdentifierFromContext(ctx)
+	id := utils.ClientIdentifierFromContext(ctx)
 	if client, ok := b.clientsMap.Load(id.String()); ok {
 		return client.(adapters.Client), nil
 	}
@@ -39,7 +40,7 @@ func (b *Adapter) getClient(ctx context.Context) (adapters.Client, error) {
 }
 
 func (b *Adapter) Callbacks(ctx context.Context) (domain.Callbacks, error) {
-	id := domain.ClientIdentifierFromContext(ctx)
+	id := utils.ClientIdentifierFromContext(ctx)
 	if callbacks, ok := b.callbacksMap.Load(id.String()); ok {
 		return callbacks.(domain.Callbacks), nil
 	}
@@ -79,7 +80,7 @@ func (b *Adapter) PutObject(ctx context.Context, id domain.KindName, object []by
 }
 
 func (b *Adapter) RegisterCallbacks(ctx context.Context, callbacks domain.Callbacks) {
-	id := domain.ClientIdentifierFromContext(ctx)
+	id := utils.ClientIdentifierFromContext(ctx)
 	b.callbacksMap.Store(id.String(), callbacks)
 }
 
@@ -89,7 +90,7 @@ func (b *Adapter) Start(ctx context.Context) error {
 	})
 
 	client := NewClient(b.producer)
-	id := domain.ClientIdentifierFromContext(ctx)
+	id := utils.ClientIdentifierFromContext(ctx)
 	b.clientsMap.Store(id.String(), client)
 	callbacks, err := b.Callbacks(ctx)
 	if err != nil {

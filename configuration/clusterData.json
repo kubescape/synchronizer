@@ -1,0 +1,23 @@
+{
+  "serviceDiscovery": true,
+  "gatewayWebsocketURL": "gateway:8001",
+  "gatewayRestURL": "gateway:8002",
+  "vulnScanURL": "kubevuln:8080",
+  "kubevulnURL": "kubevuln:8080",
+  "kubescapeURL": "kubescape:8080",
+  "triggerNewImageScan": "false",
+  "clusterName": "kind",
+  "storage": true,
+  "relevantImageVulnerabilitiesEnabled": false,
+  "namespace": "kubescape",
+  "imageVulnerabilitiesScanningEnabled": false,
+  "postureScanEnabled": false,
+  "otelCollector": true,
+  "nodeAgent": "false",
+  "maxImageSize": 5.36870912e+09,
+  "keepLocal": false,
+  "scanTimeout": "5m",
+  "vexGeneration": false,
+  "continuousPostureScan": false,
+  "relevantImageVulnerabilitiesConfiguration": "disable"
+}

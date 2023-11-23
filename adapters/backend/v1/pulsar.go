@@ -226,7 +226,7 @@ type PulsarMessageProducer struct {
 
 func NewPulsarMessageProducer(cfg config.Config, pulsarClient pulsarconnector.Client) (*PulsarMessageProducer, error) {
 	topic := cfg.Backend.Topic
-	fullTopic := pulsarconnector.BuildPersistentTopic(pulsarClient.GetConfig().Tenant, pulsarClient.GetConfig().Namespace, pulsarconnector.TopicName(topic))
+	fullTopic := pulsarconnector.BuildPersistentTopic(pulsarClient.GetConfig().Tenant, pulsarClient.GetConfig().Namespace, topic)
 
 	options := pulsar.ProducerOptions{
 		DisableBatching:  true,

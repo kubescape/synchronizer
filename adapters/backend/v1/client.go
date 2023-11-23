@@ -39,7 +39,7 @@ func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
 
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
-	id := domain.ClientIdentifierFromContext(ctx)
+	id := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.ServerConnectedMessage{
 		Cluster: id.Cluster,
@@ -95,7 +95,7 @@ func (c *Client) PutObject(ctx context.Context, id domain.KindName, object []byt
 	return c.sendPutObjectMessage(ctx, id, object)
 }
 
-func (c *Client) RegisterCallbacks(mainCtx context.Context, callbacks domain.Callbacks) {
+func (c *Client) RegisterCallbacks(_ context.Context, callbacks domain.Callbacks) {
 	c.callbacks = callbacks
 }
 
@@ -111,7 +111,7 @@ func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, checksum 
 func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName) error {
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
-	cId := domain.ClientIdentifierFromContext(ctx)
+	cId := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.DeleteObjectMessage{
 		Cluster:   cId.Cluster,
@@ -138,7 +138,7 @@ func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName
 func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, baseObject []byte) error {
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
-	cId := domain.ClientIdentifierFromContext(ctx)
+	cId := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.GetObjectMessage{
 		BaseObject: baseObject,
@@ -167,7 +167,7 @@ func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, b
 func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
-	cId := domain.ClientIdentifierFromContext(ctx)
+	cId := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.PatchObjectMessage{
 		Checksum:  checksum,
@@ -198,7 +198,7 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, object []byte) error {
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
-	cId := domain.ClientIdentifierFromContext(ctx)
+	cId := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.PutObjectMessage{
 		Cluster:   cId.Cluster,
@@ -227,7 +227,7 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, o
 func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName, checksum string) error {
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
-	cId := domain.ClientIdentifierFromContext(ctx)
+	cId := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.VerifyObjectMessage{
 		Checksum:  checksum,
