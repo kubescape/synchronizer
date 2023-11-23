@@ -4,22 +4,22 @@ go 1.20
 
 require (
 	github.com/SergJa/jsonhash v0.0.0-20210531165746-fc45f346aa74
-	github.com/apache/pulsar-client-go v0.11.0
+	github.com/apache/pulsar-client-go v0.11.1
 	github.com/armosec/utils-k8s-go v0.0.21
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
-	github.com/evanphx/json-patch v4.12.0+incompatible
-	github.com/gobwas/ws v1.3.0
-	github.com/google/uuid v1.3.1
+	github.com/evanphx/json-patch v5.7.0+incompatible
+	github.com/gobwas/ws v1.3.1
+	github.com/google/uuid v1.4.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/kubescape/backend v0.0.14
-	github.com/kubescape/go-logger v0.0.21
-	github.com/kubescape/messaging v0.0.17
+	github.com/kubescape/go-logger v0.0.22
+	github.com/kubescape/messaging v0.0.19
 	github.com/panjf2000/ants/v2 v2.8.2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/spf13/viper v1.17.0
 	github.com/stretchr/testify v1.8.4
-	k8s.io/apimachinery v0.28.2
-	k8s.io/client-go v0.28.2
+	k8s.io/apimachinery v0.28.4
+	k8s.io/client-go v0.28.4
 )
 
 require (
@@ -103,22 +103,22 @@ require (
 	go.uber.org/zap v1.26.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 	golang.org/x/mod v0.12.0 // indirect
-	golang.org/x/net v0.15.0 // indirect
+	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/oauth2 v0.12.0 // indirect
-	golang.org/x/sys v0.12.0 // indirect
-	golang.org/x/term v0.12.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/term v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230913181813-007df8e322eb // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230920204549-e6e6cdab5c13 // indirect
-	google.golang.org/grpc v1.58.2 // indirect
+	google.golang.org/grpc v1.58.3 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/api v0.28.2 // indirect
+	k8s.io/api v0.28.4 // indirect
 	k8s.io/klog/v2 v2.100.1 // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
