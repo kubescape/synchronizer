@@ -95,7 +95,7 @@ func main() {
 	for {
 		if err := start(ctx, cfg.InCluster, adapter, dialer); err != nil {
 			d := 5 * time.Second // TODO: use exponential backoff for retries
-			logger.L().Error("connection error", helpers.Error(err), helpers.String("retry in", d.String()))
+			logger.L().Ctx(ctx).Error("connection error", helpers.Error(err), helpers.String("retry in", d.String()))
 			time.Sleep(d)
 		} else {
 			break

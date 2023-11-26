@@ -40,12 +40,12 @@ func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net
 		data := i.([]byte)
 		err := writeDataFunc(conn, data)
 		if err != nil {
-			logger.L().Error("cannot send message", helpers.Error(err))
+			logger.L().Ctx(mainCtx).Error("cannot send message", helpers.Error(err))
 			return
 		}
 	})
 	if err != nil {
-		logger.L().Fatal("unable to create outgoing message pool", helpers.Error(err))
+		logger.L().Ctx(mainCtx).Fatal("unable to create outgoing message pool", helpers.Error(err))
 	}
 	s := &Synchronizer{
 		adapter:      adapter,
@@ -110,7 +110,7 @@ func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.KindN
 
 func (s *Synchronizer) Start(ctx context.Context) error {
 	identifiers := utils.ClientIdentifierFromContext(ctx)
-	logger.L().Info("starting sync", helpers.String("account", identifiers.Account), helpers.String("cluster", identifiers.Cluster))
+	logger.L().Ctx(ctx).Info("starting sync", helpers.String("account", identifiers.Account), helpers.String("cluster", identifiers.Cluster))
 	// adapter events
 	err := s.adapter.Start(ctx)
 	if err != nil {
@@ -135,14 +135,14 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 		var generic domain.Generic
 		err = json.Unmarshal(data, &generic)
 		if err != nil {
-			logger.L().Error("cannot unmarshal message", helpers.Error(err))
+			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err))
 			continue
 		}
 		logger.L().Debug("received message", helpers.Interface("event", generic.Event.Value()),
 			helpers.String("msgid", generic.MsgId), helpers.Int("depth", generic.Depth))
 		// check message depth and ID
 		if generic.Depth > maxMessageDepth {
-			logger.L().Error("message depth too high", helpers.Int("depth", generic.Depth))
+			logger.L().Ctx(ctx).Error("message depth too high", helpers.Int("depth", generic.Depth))
 			continue
 		}
 		// store in context
@@ -153,7 +153,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			var msg domain.GetObject
 			err = json.Unmarshal(data, &msg)
 			if err != nil {
-				logger.L().Error("cannot unmarshal message", helpers.Error(err),
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
 					helpers.Interface("event", generic.Event.Value()))
 				continue
 			}
@@ -164,7 +164,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			}
 			err := s.handleSyncGetObject(ctx, id, []byte(msg.BaseObject))
 			if err != nil {
-				logger.L().Error("error handling message", helpers.Error(err),
+				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
 					helpers.Interface("event", msg.Event.Value()),
 					helpers.String("id", id.String()))
 				continue
@@ -173,7 +173,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			var msg domain.NewChecksum
 			err = json.Unmarshal(data, &msg)
 			if err != nil {
-				logger.L().Error("cannot unmarshal message", helpers.Error(err),
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
 					helpers.Interface("event", generic.Event.Value()))
 				continue
 			}
@@ -184,7 +184,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			}
 			err := s.handleSyncNewChecksum(ctx, id, msg.Checksum)
 			if err != nil {
-				logger.L().Error("error handling message", helpers.Error(err),
+				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
 					helpers.Interface("event", msg.Event.Value()),
 					helpers.String("id", id.String()))
 				continue
@@ -193,7 +193,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			var msg domain.ObjectDeleted
 			err = json.Unmarshal(data, &msg)
 			if err != nil {
-				logger.L().Error("cannot unmarshal message", helpers.Error(err),
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
 					helpers.Interface("event", generic.Event.Value()))
 				continue
 			}
@@ -204,7 +204,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			}
 			err := s.handleSyncObjectDeleted(ctx, id)
 			if err != nil {
-				logger.L().Error("error handling message", helpers.Error(err),
+				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
 					helpers.Interface("event", msg.Event.Value()),
 					helpers.String("id", id.String()))
 				continue
@@ -213,7 +213,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			var msg domain.PatchObject
 			err = json.Unmarshal(data, &msg)
 			if err != nil {
-				logger.L().Error("cannot unmarshal message", helpers.Error(err),
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
 					helpers.Interface("event", generic.Event.Value()))
 				continue
 			}
@@ -224,7 +224,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			}
 			err := s.handleSyncPatchObject(ctx, id, msg.Checksum, []byte(msg.Patch))
 			if err != nil {
-				logger.L().Error("error handling message", helpers.Error(err),
+				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
 					helpers.Interface("event", msg.Event.Value()),
 					helpers.String("id", id.String()))
 				continue
@@ -233,7 +233,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			var msg domain.PutObject
 			err = json.Unmarshal(data, &msg)
 			if err != nil {
-				logger.L().Error("cannot unmarshal message", helpers.Error(err),
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
 					helpers.Interface("event", generic.Event.Value()))
 				continue
 			}
@@ -244,7 +244,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			}
 			err := s.handleSyncPutObject(ctx, id, []byte(msg.Object))
 			if err != nil {
-				logger.L().Error("error handling message", helpers.Error(err),
+				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
 					helpers.Interface("event", msg.Event.Value()),
 					helpers.String("id", id.String()))
 				continue

@@ -67,17 +67,17 @@ func (c *Client) Start(ctx context.Context) error {
 			}
 			obj, err := c.client.Resource(c.res).Namespace(d.GetNamespace()).Get(context.Background(), d.GetName(), metav1.GetOptions{})
 			if err != nil {
-				logger.L().Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
+				logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
 				continue
 			}
 			newObject, err := obj.MarshalJSON()
 			if err != nil {
-				logger.L().Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
+				logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
 				continue
 			}
 			err = c.callVerifyObject(ctx, id, newObject)
 			if err != nil {
-				logger.L().Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
+				logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
 				continue
 			}
 		}
@@ -87,7 +87,7 @@ func (c *Client) Start(ctx context.Context) error {
 	// begin watch
 	watcher, err := c.client.Resource(c.res).Namespace("").Watch(context.Background(), watchOpts)
 	if err != nil {
-		logger.L().Fatal("unable to watch for resources", helpers.String("resource", c.res.Resource), helpers.Error(err))
+		logger.L().Ctx(ctx).Fatal("unable to watch for resources", helpers.String("resource", c.res.Resource), helpers.Error(err))
 	}
 	eventQueue := utils.NewCooldownQueue(utils.DefaultQueueSize, utils.DefaultTTL)
 	go func() {
@@ -104,7 +104,7 @@ func (c *Client) Start(ctx context.Context) error {
 	for event := range eventQueue.ResultChan {
 		ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
 		if event.Type == watch.Error {
-			logger.L().Error("watch event failed", helpers.String("resource", c.res.Resource), helpers.Interface("event", event))
+			logger.L().Ctx(ctx).Error("watch event failed", helpers.String("resource", c.res.Resource), helpers.Interface("event", event))
 			watcher.Stop()
 			break
 		}
@@ -119,7 +119,7 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 		newObject, err := d.MarshalJSON()
 		if err != nil {
-			logger.L().Error("cannot marshal object", helpers.Error(err), helpers.String("resource", c.res.Resource), helpers.String("id", id.String()))
+			logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("resource", c.res.Resource), helpers.String("id", id.String()))
 			continue
 		}
 		switch {
@@ -127,13 +127,13 @@ func (c *Client) Start(ctx context.Context) error {
 			logger.L().Debug("added resource", helpers.String("id", id.String()))
 			err := c.callVerifyObject(ctx, id, newObject)
 			if err != nil {
-				logger.L().Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
+				logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
 		case event.Type == watch.Deleted:
 			logger.L().Debug("deleted resource", helpers.String("id", id.String()))
 			err := c.callbacks.DeleteObject(ctx, id)
 			if err != nil {
-				logger.L().Error("cannot handle deleted resource", helpers.Error(err), helpers.String("id", id.String()))
+				logger.L().Ctx(ctx).Error("cannot handle deleted resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
 			if c.Strategy == domain.PatchStrategy {
 				// remove from known resources
@@ -143,7 +143,7 @@ func (c *Client) Start(ctx context.Context) error {
 			logger.L().Debug("modified resource", helpers.String("id", id.String()))
 			err := c.callPutOrPatch(ctx, id, nil, newObject)
 			if err != nil {
-				logger.L().Error("cannot handle modified resource", helpers.Error(err), helpers.String("id", id.String()))
+				logger.L().Ctx(ctx).Error("cannot handle modified resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
 		}
 	}
