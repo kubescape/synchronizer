@@ -11,6 +11,7 @@ const (
 	EventGetObject
 	EventPatchObject
 	EventPutObject
+	EventPing
 )
 
 // Value returns the value of the enum.
@@ -21,7 +22,7 @@ func (op Event) Value() any {
 	return EventValues[op]
 }
 
-var EventValues = []any{"newChecksum", "objectAdded", "objectDeleted", "objectModified", "getObject", "patchObject", "putObject"}
+var EventValues = []any{"newChecksum", "objectAdded", "objectDeleted", "objectModified", "getObject", "patchObject", "putObject", "ping"}
 var ValuesToEvent = map[any]Event{
 	EventValues[EventNewChecksum]:    EventNewChecksum,
 	EventValues[EventObjectAdded]:    EventObjectAdded,
@@ -30,4 +31,5 @@ var ValuesToEvent = map[any]Event{
 	EventValues[EventGetObject]:      EventGetObject,
 	EventValues[EventPatchObject]:    EventPatchObject,
 	EventValues[EventPutObject]:      EventPutObject,
+	EventValues[EventPing]:           EventPing,
 }

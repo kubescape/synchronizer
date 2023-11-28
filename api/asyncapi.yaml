@@ -211,7 +211,7 @@ components:
       description: depth of the message exchange, used to break recursion
     event:
       type: string
-      description: type of event
+      description: type of event, always append new types to not break compatibility
       enum:
         - newChecksum
         - objectAdded
@@ -220,6 +220,7 @@ components:
         - getObject
         - patchObject
         - putObject
+        - ping
     kind:
       type: object
       description: unambiguously identifies a resource
