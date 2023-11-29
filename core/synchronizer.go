@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"github.com/gobwas/ws/wsutil"
 	"github.com/kubescape/go-logger"
@@ -111,6 +112,10 @@ func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.KindN
 func (s *Synchronizer) Start(ctx context.Context) error {
 	identifiers := utils.ClientIdentifierFromContext(ctx)
 	logger.L().Ctx(ctx).Info("starting sync", helpers.String("account", identifiers.Account), helpers.String("cluster", identifiers.Cluster))
+	if s.isClient {
+		// send ping
+		go s.sendPing(ctx)
+	}
 	// adapter events
 	err := s.adapter.Start(ctx)
 	if err != nil {
@@ -425,6 +430,24 @@ func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.KindName, 
 		helpers.String("checksum", msg.Checksum),
 		helpers.Int("patch size", len(msg.Patch)))
 	return nil
+}
+
+func (s *Synchronizer) sendPing(ctx context.Context) {
+	event := domain.EventPing
+	msg := domain.Generic{
+		Event: &event,
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		logger.L().Fatal("marshal ping message", helpers.Error(err))
+	}
+	for {
+		err = s.outPool.Invoke(data)
+		if err != nil {
+			logger.L().Ctx(ctx).Error("invoke outPool on ping message", helpers.Error(err))
+		}
+		time.Sleep(50 * time.Second)
+	}
 }
 
 func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, object []byte) error {
