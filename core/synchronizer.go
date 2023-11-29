@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/gobwas/ws/wsutil"
@@ -41,6 +42,11 @@ func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net
 		data := i.([]byte)
 		err := writeDataFunc(conn, data)
 		if err != nil {
+			// ErrNetClosing is hidden in an internal golang package:
+			// https://golang.org/src/internal/poll/fd.go
+			if strings.Contains(err.Error(), "use of closed network connection") {
+				logger.L().Fatal("connection closed", helpers.Error(err))
+			}
 			logger.L().Ctx(mainCtx).Error("cannot send message", helpers.Error(err))
 			return
 		}
