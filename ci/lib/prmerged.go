@@ -1,4 +1,4 @@
-package main
+package lib
 
 import (
 	"context"
@@ -17,14 +17,14 @@ func SystemTest(ctx context.Context, client *dagger.Client, imageDigest string) 
 	return nil
 }
 
-func DockerBuild(ctx context.Context, client *dagger.Client, src *dagger.Directory) (string, error) {
+func DockerBuild(ctx context.Context, client *dagger.Client, src *dagger.Directory, platforms []dagger.Platform, imageRepo string) (string, error) {
 	// TODO prerelease image tag
 	// run unit tests
 	if err := UnitTest(ctx, client, src); err != nil {
 		return "", err
 	}
 	// build and push the multi-platform image
-	imageDigest, err := BuildPush(ctx, client, src)
+	imageDigest, err := BuildPush(ctx, client, src, platforms, imageRepo)
 	if err != nil {
 		return "", err
 	}
@@ -53,7 +53,7 @@ func UnitTest(ctx context.Context, client *dagger.Client, src *dagger.Directory)
 	return nil
 }
 
-func BuildPush(ctx context.Context, client *dagger.Client, src *dagger.Directory) (string, error) {
+func BuildPush(ctx context.Context, client *dagger.Client, src *dagger.Directory, platforms []dagger.Platform, imageRepo string) (string, error) {
 	fmt.Println("Building multi-platform image...")
 	platformVariants := make([]*dagger.Container, 0, len(platforms))
 	for _, platform := range platforms {
