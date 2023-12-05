@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"dagger.io/dagger"
+	"github.com/kubescape/synchronizer/ci/lib"
 )
 
 // the platforms to build for and push in a multi-platform image
@@ -52,19 +53,19 @@ func InitDagger(ctx context.Context) (*dagger.Client, *dagger.Directory, error) 
 
 func PrMerged(ctx context.Context, client *dagger.Client, src *dagger.Directory) error {
 	// Build image
-	imagePrerelease, err := DockerBuild(ctx, client, src)
+	imagePrerelease, err := lib.DockerBuild(ctx, client, src, platforms, imageRepo)
 	if err != nil {
 		return err
 	}
 	fmt.Println(imagePrerelease)
 
 	// run system tests
-	if err := SystemTest(ctx, client, imagePrerelease); err != nil {
+	if err := lib.SystemTest(ctx, client, imagePrerelease); err != nil {
 		return err
 	}
 
 	// create release and retag image
-	imageRelease, err := ReleaseRetag(ctx, client, imagePrerelease)
+	imageRelease, err := lib.ReleaseRetag(ctx, client, imagePrerelease)
 	if err != nil {
 		return err
 	}
