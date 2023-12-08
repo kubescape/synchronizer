@@ -32,27 +32,6 @@ func DockerBuild(ctx context.Context, client *dagger.Client, src *dagger.Directo
 	return imageDigest, nil
 }
 
-func UnitTest(ctx context.Context, client *dagger.Client, src *dagger.Directory) error {
-	fmt.Println("Running unit tests...")
-	// create a cache volume
-	goBuildCache := client.CacheVolume("goBuild")
-	goPkgCache := client.CacheVolume("goPkg")
-	// run tests
-	out, err := client.Container().
-		From("golang:1.20-bullseye").
-		WithDirectory("/src", src).
-		WithMountedCache("/go/pkg", goPkgCache).
-		WithMountedCache("/root/.cache/go-build", goBuildCache).
-		WithWorkdir("/src").
-		WithExec([]string{"go", "test", "./..."}).
-		Stderr(ctx)
-	if err != nil {
-		return err
-	}
-	fmt.Println(out)
-	return nil
-}
-
 func BuildPush(ctx context.Context, client *dagger.Client, src *dagger.Directory, platforms []dagger.Platform, imageRepo string) (string, error) {
 	fmt.Println("Building multi-platform image...")
 	platformVariants := make([]*dagger.Container, 0, len(platforms))
@@ -78,4 +57,27 @@ func BuildPush(ctx context.Context, client *dagger.Client, src *dagger.Directory
 	}
 	fmt.Println("Pushed multi-platform image w/ digest: ", imageDigest)
 	return imageDigest, nil
+}
+
+func PrMerged(ctx context.Context, client *dagger.Client, src *dagger.Directory) error {
+	// Build image
+	imagePrerelease, err := DockerBuild(ctx, client, src, platforms, imageRepo)
+	if err != nil {
+		return err
+	}
+	fmt.Println(imagePrerelease)
+
+	// run system tests
+	if err := SystemTest(ctx, client, imagePrerelease); err != nil {
+		return err
+	}
+
+	// create release and retag image
+	imageRelease, err := ReleaseRetag(ctx, client, imagePrerelease)
+	if err != nil {
+		return err
+	}
+	fmt.Println(imageRelease)
+
+	return nil
 }
