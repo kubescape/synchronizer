@@ -6,20 +6,20 @@
         "X-API-KEY": "X-API-KEY"
       },
       "headerToQueryParamMapping": {
-        "X-API-ACCOUNT": "customerGUID" 
+        "X-API-ACCOUNT": "customerGUID"
       }
     },
-    "subscription": "subscription",
-    "topic": "synchronizer",
+    "subscription": "synchronizer-server",
+    "topic": "synchronizer-topic",
     "pulsarConfig": {
       "url": "pulsar://localhost:6650",
-        "tenant": "kubescape",
-        "namespace": "kubescape",
-        "adminUrl": "http://localhost:8081",
-        "clusters": [
-            "standalone"
-        ],
-        "maxDeliveryAttempts": 2
+      "tenant": "armo",
+      "namespace": "event-sourcing",
+      "adminUrl": "http://localhost:8081",
+      "clusters": [
+        "standalone"
+      ],
+      "maxDeliveryAttempts": 2
     }
   },
   "resources": [
