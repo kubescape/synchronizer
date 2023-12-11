@@ -49,7 +49,8 @@ func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
 	}
 	logger.L().Debug("sending server connected message to producer",
 		helpers.String("account", msg.Account),
-		helpers.String("cluster", msg.Cluster))
+		helpers.String("cluster", msg.Cluster),
+		helpers.String("msgid", msg.MsgId))
 
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -123,8 +124,10 @@ func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName
 		Namespace: id.Namespace,
 	}
 	logger.L().Debug("Sending delete object message to producer",
+		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
+		helpers.String("msgid", msg.MsgId),
 		helpers.String("name", id.Name))
 
 	data, err := json.Marshal(msg)
@@ -151,8 +154,10 @@ func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, b
 		Namespace:  id.Namespace,
 	}
 	logger.L().Debug("Sending get object message to producer",
+		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
+		helpers.String("msgid", msg.MsgId),
 		helpers.String("name", id.Name),
 		helpers.Int("base object size", len(msg.BaseObject)))
 
@@ -181,8 +186,10 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 		Patch:     patch,
 	}
 	logger.L().Debug("Sending patch object message to producer",
+		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
+		helpers.String("msgid", msg.MsgId),
 		helpers.String("name", id.Name),
 		helpers.String("checksum", msg.Checksum),
 		helpers.Int("patch size", len(msg.Patch)))
@@ -211,8 +218,10 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, o
 		Object:    object,
 	}
 	logger.L().Debug("Sending put object message to producer",
+		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
+		helpers.String("msgid", msg.MsgId),
 		helpers.String("name", id.Name),
 		helpers.Int("object size", len(msg.Object)))
 
@@ -240,8 +249,10 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName
 		Namespace: id.Namespace,
 	}
 	logger.L().Debug("Sending verify object message to producer",
+		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
+		helpers.String("msgid", msg.MsgId),
 		helpers.String("name", id.Name),
 		helpers.String("checksum", msg.Checksum))
 
