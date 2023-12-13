@@ -105,10 +105,10 @@ func (m *MockAdapter) PutObject(_ context.Context, id domain.KindName, object []
 // this reference implementation should be implemented in the ingester on the backend side
 func (m *MockAdapter) saveIfNewer(id domain.KindName, newObject []byte) {
 	if m.checkResourceVersion {
-		err, _, _, _, _, resourceVersion := armometadata.ExtractMetadataFromJsonBytes(newObject)
+		err, _, _, _, _, resourceVersion, _, _ := armometadata.ExtractMetadataFromJsonBytes(newObject)
 		if err == nil {
 			if oldObject, ok := m.Resources[id.String()]; ok {
-				err, _, _, _, _, oldResourceVersion := armometadata.ExtractMetadataFromJsonBytes(oldObject)
+				err, _, _, _, _, oldResourceVersion, _, _ := armometadata.ExtractMetadataFromJsonBytes(oldObject)
 				if err == nil {
 					if !utils.StringValueBigger(resourceVersion, oldResourceVersion) {
 						return

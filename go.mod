@@ -5,7 +5,8 @@ go 1.20
 require (
 	github.com/SergJa/jsonhash v0.0.0-20210531165746-fc45f346aa74
 	github.com/apache/pulsar-client-go v0.11.1
-	github.com/armosec/utils-k8s-go v0.0.21
+	github.com/armosec/armoapi-go v0.0.254
+	github.com/armosec/utils-k8s-go v0.0.22
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/evanphx/json-patch v5.7.0+incompatible
 	github.com/gobwas/ws v1.3.1
@@ -20,6 +21,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	k8s.io/apimachinery v0.28.4
 	k8s.io/client-go v0.28.4
+	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
 )
 
 require (
@@ -28,7 +30,6 @@ require (
 	github.com/AthenZ/athenz v1.10.39 // indirect
 	github.com/DataDog/zstd v1.5.0 // indirect
 	github.com/ardielle/ardielle-go v1.5.2 // indirect
-	github.com/armosec/armoapi-go v0.0.254 // indirect
 	github.com/armosec/gojay v1.2.15 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -120,7 +121,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/api v0.28.4 // indirect
 	k8s.io/klog/v2 v2.100.1 // indirect
-	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.3.0 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect

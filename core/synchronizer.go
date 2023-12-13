@@ -143,11 +143,15 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err))
 			return
 		}
+		var kind string
+		if generic.Kind != nil {
+			kind = generic.Kind.String()
+		}
 		logger.L().Debug("received message",
 			helpers.String("account", clientId.Account),
 			helpers.String("cluster", clientId.Cluster),
 			helpers.Interface("event", generic.Event.Value()),
-			helpers.String("kind", generic.Kind.String()),
+			helpers.String("kind", kind),
 			helpers.String("msgid", generic.MsgId),
 			helpers.Int("depth", generic.Depth))
 		// check message depth and ID

@@ -65,8 +65,8 @@ github.com/armosec/armoapi-go v0.0.254 h1:+4fnVHbVTwSQW99t7/XlkQAT2yJ5bPr4HAYIIg
 github.com/armosec/armoapi-go v0.0.254/go.mod h1:CJT5iH5VF30zjdQYXaQhsAm8IEHtM1T87HcFVXeLX54=
 github.com/armosec/gojay v1.2.15 h1:sSB2vnAvacUNkw9nzUYZKcPzhJOyk6/5LK2JCNdmoZY=
 github.com/armosec/gojay v1.2.15/go.mod h1:vzVAaay2TWJAngOpxu8aqLbye9jMgoKleuAOK+xsOts=
-github.com/armosec/utils-k8s-go v0.0.21 h1:/3k+TOssKgYMaYKJY4dhvHmPnrzmVAKW9PjNirRSGrY=
-github.com/armosec/utils-k8s-go v0.0.21/go.mod h1:CXgkHFgY8xlKN+wiQ8TyjwNj0+VSgj6NolB3itZ2lY8=
+github.com/armosec/utils-k8s-go v0.0.22 h1:uK84kVfdV1snbskS7G91hafqSlKyjU1JYjAju6fHUv0=
+github.com/armosec/utils-k8s-go v0.0.22/go.mod h1:CXgkHFgY8xlKN+wiQ8TyjwNj0+VSgj6NolB3itZ2lY8=
 github.com/avast/retry-go v3.0.0+incompatible h1:4SOWQ7Qs+oroOTQOYnAHqelpCO0biHSxpiH9JdtuBj0=
 github.com/avast/retry-go v3.0.0+incompatible/go.mod h1:XtSnn+n/sHqQIpZ10K1qAevBhOOCWBLXXy3hyiqqBrY=
 github.com/aws/aws-sdk-go v1.32.6/go.mod h1:5zCpMtNQVjRREroY7sYe8lOMRSxkhG6MZveU8YkpAk0=
