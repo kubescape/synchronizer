@@ -3,6 +3,7 @@ package incluster
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/kubescape/go-logger"
@@ -112,6 +113,10 @@ func (c *Client) Start(ctx context.Context) error {
 		if !ok {
 			continue
 		}
+		// skip non-standalone resources
+		if hasParent(d) {
+			continue
+		}
 		id := domain.KindName{
 			Kind:      c.kind,
 			Name:      d.GetName(),
@@ -148,6 +153,32 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// hasParent returns true if workload has a parent
+// based on https://github.com/kubescape/k8s-interface/blob/2855cc94bd7666b227ad9e5db5ca25cb895e6cee/k8sinterface/k8sdynamic.go#L219
+func hasParent(workload *unstructured.Unstructured) bool {
+	if workload == nil {
+		return false
+	}
+	// filter out non-controller workloads
+	if !slices.Contains([]string{"Pod", "Job", "ReplicaSet"}, workload.GetKind()) {
+		return false
+	}
+	// check if workload has owner
+	ownerReferences := workload.GetOwnerReferences() // OwnerReferences in workload
+	if len(ownerReferences) > 0 {
+		return slices.Contains([]string{"apps/v1", "batch/v1", "batch/v1beta1"}, ownerReferences[0].APIVersion)
+	}
+	// check if workload is Pod with pod-template-hash label
+	if workload.GetKind() == "Pod" {
+		if podLabels := workload.GetLabels(); podLabels != nil {
+			if podHash, ok := podLabels["pod-template-hash"]; ok && podHash != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObject []byte, newObject []byte) error {
