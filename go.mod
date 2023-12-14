@@ -1,6 +1,6 @@
 module github.com/kubescape/synchronizer
 
-go 1.20
+go 1.21
 
 require (
 	github.com/SergJa/jsonhash v0.0.0-20210531165746-fc45f346aa74
