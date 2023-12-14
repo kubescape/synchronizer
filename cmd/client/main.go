@@ -22,11 +22,6 @@ import (
 func main() {
 	ctx := context.Background()
 
-	err := logger.L().SetLevel(helpers.DebugLevel.String())
-	if err != nil {
-		logger.L().Fatal("unable to set log level", helpers.Error(err))
-	}
-
 	// load service config
 	cfg, err := config.LoadConfig("/etc/config")
 	if err != nil {
