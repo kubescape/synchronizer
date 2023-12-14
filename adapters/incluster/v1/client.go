@@ -261,13 +261,13 @@ func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum s
 	return object, c.PutObject(ctx, id, modified)
 }
 
-func (c *Client) PutObject(_ context.Context, _ domain.KindName, object []byte) error {
+func (c *Client) PutObject(_ context.Context, id domain.KindName, object []byte) error {
 	var obj unstructured.Unstructured
 	err := obj.UnmarshalJSON(object)
 	if err != nil {
 		return fmt.Errorf("unmarshal object: %w", err)
 	}
-	_, err = c.client.Resource(c.res).Namespace("").Create(context.Background(), &obj, metav1.CreateOptions{})
+	_, err = c.client.Resource(c.res).Namespace(id.Namespace).Create(context.Background(), &obj, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("create resource: %w", err)
 	}
