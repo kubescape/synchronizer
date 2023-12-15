@@ -27,7 +27,7 @@ func NewInClusterAdapter(cfg config.InCluster, k8sclient dynamic.Interface) *Ada
 
 var _ adapters.Adapter = (*Adapter)(nil)
 
-func (a *Adapter) getClient(id domain.KindName) (adapters.Client, error) {
+func (a *Adapter) GetClient(id domain.KindName) (adapters.Client, error) {
 	if id.Kind == nil {
 		return nil, fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
 	}
@@ -45,7 +45,7 @@ func (a *Adapter) getClient(id domain.KindName) (adapters.Client, error) {
 }
 
 func (a *Adapter) DeleteObject(ctx context.Context, id domain.KindName) error {
-	client, err := a.getClient(id)
+	client, err := a.GetClient(id)
 	if err != nil {
 		return fmt.Errorf("failed to get client for resource %s: %w", id.Kind, err)
 	}
@@ -53,7 +53,7 @@ func (a *Adapter) DeleteObject(ctx context.Context, id domain.KindName) error {
 }
 
 func (a *Adapter) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
-	client, err := a.getClient(id)
+	client, err := a.GetClient(id)
 	if err != nil {
 		return fmt.Errorf("failed to get client for resource %s: %w", id.Kind, err)
 	}
@@ -61,7 +61,7 @@ func (a *Adapter) GetObject(ctx context.Context, id domain.KindName, baseObject 
 }
 
 func (a *Adapter) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
-	client, err := a.getClient(id)
+	client, err := a.GetClient(id)
 	if err != nil {
 		return fmt.Errorf("failed to get client for resource %s: %w", id.Kind, err)
 	}
@@ -69,7 +69,7 @@ func (a *Adapter) PatchObject(ctx context.Context, id domain.KindName, checksum 
 }
 
 func (a *Adapter) PutObject(ctx context.Context, id domain.KindName, object []byte) error {
-	client, err := a.getClient(id)
+	client, err := a.GetClient(id)
 	if err != nil {
 		return fmt.Errorf("failed to get client for resource %s: %w", id.Kind, err)
 	}
@@ -77,7 +77,7 @@ func (a *Adapter) PutObject(ctx context.Context, id domain.KindName, object []by
 }
 
 func (a *Adapter) VerifyObject(ctx context.Context, id domain.KindName, checksum string) error {
-	client, err := a.getClient(id)
+	client, err := a.GetClient(id)
 	if err != nil {
 		return fmt.Errorf("failed to get client for resource %s: %w", id.Kind, err)
 	}

@@ -26,7 +26,7 @@ type Client struct {
 	kind          *domain.Kind
 	callbacks     domain.Callbacks
 	res           schema.GroupVersionResource
-	shadowObjects map[string][]byte
+	ShadowObjects map[string][]byte
 	Strategy      domain.Strategy
 }
 
@@ -42,7 +42,7 @@ func NewClient(client dynamic.Interface, account, cluster string, r config.Resou
 			Resource: res.Resource,
 		},
 		res:           res,
-		shadowObjects: map[string][]byte{},
+		ShadowObjects: map[string][]byte{},
 		Strategy:      r.Strategy,
 	}
 }
@@ -142,7 +142,7 @@ func (c *Client) Start(ctx context.Context) error {
 			}
 			if c.Strategy == domain.PatchStrategy {
 				// remove from known resources
-				delete(c.shadowObjects, id.Name)
+				delete(c.ShadowObjects, id.Name)
 			}
 		case event.Type == watch.Modified:
 			logger.L().Debug("modified resource", helpers.String("id", id.String()))
@@ -185,9 +185,9 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObj
 	if c.Strategy == domain.PatchStrategy {
 		if len(baseObject) > 0 {
 			// update reference object
-			c.shadowObjects[id.Name] = baseObject
+			c.ShadowObjects[id.Name] = baseObject
 		}
-		if oldObject, ok := c.shadowObjects[id.Name]; ok {
+		if oldObject, ok := c.ShadowObjects[id.Name]; ok {
 			// calculate checksum
 			checksum, err := utils.CanonicalHash(newObject)
 			if err != nil {
@@ -209,7 +209,7 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObj
 			}
 		}
 		// add/update known resources
-		c.shadowObjects[id.Name] = newObject
+		c.ShadowObjects[id.Name] = newObject
 	} else {
 		err := c.callbacks.PutObject(ctx, id, newObject)
 		if err != nil {
@@ -235,7 +235,7 @@ func (c *Client) callVerifyObject(ctx context.Context, id domain.KindName, objec
 func (c *Client) DeleteObject(_ context.Context, id domain.KindName) error {
 	if c.Strategy == domain.PatchStrategy {
 		// remove from known resources
-		delete(c.shadowObjects, id.String())
+		delete(c.ShadowObjects, id.String())
 	}
 	return c.client.Resource(c.res).Namespace(id.Namespace).Delete(context.Background(), id.Name, metav1.DeleteOptions{})
 }
@@ -287,7 +287,7 @@ func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum s
 		return object, fmt.Errorf("checksum mismatch: %s != %s", newChecksum, checksum)
 	}
 	// update known resources
-	c.shadowObjects[id.Name] = modified
+	c.ShadowObjects[id.Name] = modified
 	// save object
 	return object, c.PutObject(ctx, id, modified)
 }
