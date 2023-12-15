@@ -298,9 +298,10 @@ func (c *Client) PutObject(_ context.Context, id domain.KindName, object []byte)
 	if err != nil {
 		return fmt.Errorf("unmarshal object: %w", err)
 	}
-	_, err = c.client.Resource(c.res).Namespace(id.Namespace).Create(context.Background(), &obj, metav1.CreateOptions{})
+	// use apply to create or update object, we want to overwrite existing objects
+	_, err = c.client.Resource(c.res).Namespace(id.Namespace).Apply(context.Background(), id.Name, &obj, metav1.ApplyOptions{FieldManager: "application/apply-patch"})
 	if err != nil {
-		return fmt.Errorf("create resource: %w", err)
+		return fmt.Errorf("apply resource: %w", err)
 	}
 	return nil
 }
