@@ -20,15 +20,19 @@ import (
 const maxMessageDepth = 8
 
 type Synchronizer struct {
-	adapter      adapters.Adapter
-	isClient     bool // which side of the connection is this?
-	conn         net.Conn
-	outPool      *ants.PoolWithFunc
-	readDataFunc func(rw io.ReadWriter) ([]byte, error)
+	adapter       adapters.Adapter
+	isClient      bool // which side of the connection is this?
+	Conn          *net.Conn
+	newConn       func() (net.Conn, error)
+	outPool       *ants.PoolWithFunc
+	readDataFunc  func(rw io.ReadWriter) ([]byte, error)
+	writeDataFunc func(w io.Writer, p []byte) error
 }
 
-func NewSynchronizerClient(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn) *Synchronizer {
-	return newSynchronizer(mainCtx, adapter, conn, true, wsutil.ReadServerBinary, wsutil.WriteClientBinary)
+func NewSynchronizerClient(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn, newConn func() (net.Conn, error)) *Synchronizer {
+	s := newSynchronizer(mainCtx, adapter, conn, true, wsutil.ReadServerBinary, wsutil.WriteClientBinary)
+	s.newConn = newConn
+	return s
 }
 
 func NewSynchronizerServer(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn) *Synchronizer {
@@ -36,24 +40,21 @@ func NewSynchronizerServer(mainCtx context.Context, adapter adapters.Adapter, co
 }
 
 func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn, isClient bool, readDataFunc func(rw io.ReadWriter) ([]byte, error), writeDataFunc func(w io.Writer, p []byte) error) *Synchronizer {
+	s := &Synchronizer{
+		adapter:       adapter,
+		isClient:      isClient,
+		Conn:          &conn,
+		readDataFunc:  readDataFunc,
+		writeDataFunc: writeDataFunc,
+	}
 	// outgoing message pool
-	outPool, err := ants.NewPoolWithFunc(10, func(i interface{}) {
+	var err error
+	s.outPool, err = ants.NewPoolWithFunc(1, func(i interface{}) {
 		data := i.([]byte)
-		err := writeDataFunc(conn, data)
-		if err != nil {
-			logger.L().Ctx(mainCtx).Error("cannot send message", helpers.Error(err))
-			return
-		}
+		s.sendData(mainCtx, data)
 	})
 	if err != nil {
 		logger.L().Ctx(mainCtx).Fatal("unable to create outgoing message pool", helpers.Error(err))
-	}
-	s := &Synchronizer{
-		adapter:      adapter,
-		isClient:     isClient,
-		conn:         conn,
-		outPool:      outPool,
-		readDataFunc: readDataFunc,
 	}
 	callbacks := domain.Callbacks{
 		DeleteObject: s.DeleteObjectCallback,
@@ -64,6 +65,26 @@ func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net
 	}
 	adapter.RegisterCallbacks(mainCtx, callbacks)
 	return s
+}
+
+func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
+	err := s.writeDataFunc(*s.Conn, data)
+	if err != nil {
+		if s.isClient {
+			// try to reconnect
+			logger.L().Ctx(ctx).Warning("connection closed, trying to reconnect")
+			conn, err := s.newConn()
+			if err != nil {
+				logger.L().Ctx(ctx).Error("refreshing connection", helpers.Error(err))
+				return
+			}
+			logger.L().Ctx(ctx).Info("connection refreshed, synchronization will resume")
+			s.Conn = &conn
+		} else {
+			logger.L().Ctx(ctx).Error("cannot send message", helpers.Error(err))
+			return
+		}
+	}
 }
 
 func (s *Synchronizer) DeleteObjectCallback(ctx context.Context, id domain.KindName) error {
@@ -111,7 +132,7 @@ func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.KindN
 
 func (s *Synchronizer) Start(ctx context.Context) error {
 	identifiers := utils.ClientIdentifierFromContext(ctx)
-	logger.L().Info("starting sync",
+	logger.L().Info("starting synchronization",
 		helpers.String("account", identifiers.Account),
 		helpers.String("cluster", identifiers.Cluster))
 	if s.isClient {
@@ -134,7 +155,7 @@ func (s *Synchronizer) Start(ctx context.Context) error {
 func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 	clientId := utils.ClientIdentifierFromContext(ctx)
 	// incoming message pool
-	inPool, err := ants.NewPoolWithFunc(10, func(i interface{}) {
+	inPool, err := ants.NewPoolWithFunc(1, func(i interface{}) {
 		data := i.([]byte)
 		// unmarshal message
 		var generic domain.Generic
@@ -305,9 +326,15 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 	}
 	// process incoming messages
 	for {
-		data, err := s.readDataFunc(s.conn)
+		data, err := s.readDataFunc(*s.Conn)
 		if err != nil {
-			return fmt.Errorf("cannot read server data: %w", err)
+			if s.isClient {
+				logger.L().Ctx(ctx).Error("cannot read data, sleeping 1 minute before retrying", helpers.Error(err))
+				time.Sleep(1 * time.Minute)
+				continue
+			} else {
+				return fmt.Errorf("cannot read data: %w", err)
+			}
 		}
 		err = inPool.Invoke(data)
 		if err != nil {

@@ -77,7 +77,7 @@ func main() {
 					synchronizer := core.NewSynchronizerServer(r.Context(), adapter, conn)
 					err = synchronizer.Start(r.Context())
 					if err != nil {
-						logger.L().Error("error during sync", helpers.Error(err))
+						logger.L().Error("error during sync, closing listener", helpers.Error(err))
 						return
 					}
 				}()
