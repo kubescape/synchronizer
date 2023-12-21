@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"time"
@@ -11,7 +12,6 @@ import (
 	backendUtils "github.com/kubescape/backend/pkg/utils"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
-	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/adapters/incluster/v1"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/core"
@@ -67,6 +67,11 @@ func main() {
 		defer logger.ShutdownOtel(ctx)
 	}
 
+	ctx = context.WithValue(ctx, domain.ContextKeyClientIdentifier, domain.ClientIdentifier{
+		Account: cfg.InCluster.Account,
+		Cluster: cfg.InCluster.ClusterName,
+	})
+
 	// k8s client
 	k8sclient, err := utils.NewClient()
 	if err != nil {
@@ -87,8 +92,18 @@ func main() {
 	// start liveness probe
 	utils.StartLivenessProbe()
 
+	// websocket client
+	newConn := func() (net.Conn, error) {
+		conn, _, _, err := dialer.Dial(ctx, cfg.InCluster.ServerUrl)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create websocket connection: %w", err)
+		}
+		return conn, nil
+	}
+
+	var conn net.Conn
 	for {
-		if err := start(ctx, cfg.InCluster, adapter, dialer); err != nil {
+		if conn, err = newConn(); err != nil {
 			d := 5 * time.Second // TODO: use exponential backoff for retries
 			logger.L().Ctx(ctx).Error("connection error", helpers.Error(err), helpers.String("retry in", d.String()))
 			time.Sleep(d)
@@ -96,27 +111,11 @@ func main() {
 			break
 		}
 	}
-	logger.L().Info("exiting")
-}
-
-func start(ctx context.Context, cfg config.InCluster, adapter adapters.Adapter, dialer ws.Dialer) error {
-	// websocket client
-	conn, _, _, err := dialer.Dial(ctx, cfg.ServerUrl)
-	if err != nil {
-		return fmt.Errorf("unable to create websocket connection: %w", err)
-	}
-	defer conn.Close()
-
-	ctx = context.WithValue(ctx, domain.ContextKeyClientIdentifier, domain.ClientIdentifier{
-		Account: cfg.Account,
-		Cluster: cfg.ClusterName,
-	})
 
 	// synchronizer
-	synchronizer := core.NewSynchronizerClient(ctx, adapter, conn)
+	synchronizer := core.NewSynchronizerClient(ctx, adapter, conn, newConn)
 	err = synchronizer.Start(ctx)
 	if err != nil {
-		return fmt.Errorf("error during sync: %w", err)
+		logger.L().Fatal("error during sync, exiting", helpers.Error(err))
 	}
-	return nil
 }

@@ -27,45 +27,61 @@ func NewInClusterAdapter(cfg config.InCluster, k8sclient dynamic.Interface) *Ada
 
 var _ adapters.Adapter = (*Adapter)(nil)
 
-func (a *Adapter) DeleteObject(ctx context.Context, id domain.KindName) error {
+func (a *Adapter) GetClient(id domain.KindName) (adapters.Client, error) {
 	if id.Kind == nil {
-		return fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
+		return nil, fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
 	}
-	if client, ok := a.clients[id.Kind.String()]; ok {
-		return client.DeleteObject(ctx, id)
+	client, ok := a.clients[id.Kind.String()]
+	if !ok {
+		client = NewClient(a.k8sclient, a.cfg.Account, a.cfg.ClusterName, config.Resource{
+			Group:    id.Kind.Group,
+			Version:  id.Kind.Version,
+			Resource: id.Kind.Resource,
+			Strategy: "copy",
+		})
+		a.clients[id.Kind.String()] = client
 	}
-	return fmt.Errorf("unknown resource %s", id.Kind.String())
+	return client, nil
+}
+
+func (a *Adapter) DeleteObject(ctx context.Context, id domain.KindName) error {
+	client, err := a.GetClient(id)
+	if err != nil {
+		return fmt.Errorf("failed to get client for resource %s: %w", id.Kind, err)
+	}
+	return client.DeleteObject(ctx, id)
 }
 
 func (a *Adapter) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
-	if id.Kind == nil {
-		return fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
+	client, err := a.GetClient(id)
+	if err != nil {
+		return fmt.Errorf("failed to get client for resource %s: %w", id.Kind, err)
 	}
-	if client, ok := a.clients[id.Kind.String()]; ok {
-		return client.GetObject(ctx, id, baseObject)
-	}
-	return fmt.Errorf("unknown resource %s", id.Kind.String())
+	return client.GetObject(ctx, id, baseObject)
 }
 
 func (a *Adapter) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
-	if id.Kind == nil {
-		return fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
+	client, err := a.GetClient(id)
+	if err != nil {
+		return fmt.Errorf("failed to get client for resource %s: %w", id.Kind, err)
 	}
-
-	if client, ok := a.clients[id.Kind.String()]; ok {
-		return client.PatchObject(ctx, id, checksum, patch)
-	}
-	return fmt.Errorf("unknown resource %s", id.Kind.String())
+	return client.PatchObject(ctx, id, checksum, patch)
 }
 
 func (a *Adapter) PutObject(ctx context.Context, id domain.KindName, object []byte) error {
-	if id.Kind == nil {
-		return fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
+	client, err := a.GetClient(id)
+	if err != nil {
+		return fmt.Errorf("failed to get client for resource %s: %w", id.Kind, err)
 	}
-	if client, ok := a.clients[id.Kind.String()]; ok {
-		return client.PutObject(ctx, id, object)
+	return client.PutObject(ctx, id, object)
+}
+
+func (a *Adapter) VerifyObject(ctx context.Context, id domain.KindName, checksum string) error {
+	client, err := a.GetClient(id)
+	if err != nil {
+		return fmt.Errorf("failed to get client for resource %s: %w", id.Kind, err)
 	}
-	return fmt.Errorf("unknown resource %s", id.Kind.String())
+	return client.VerifyObject(ctx, id, checksum)
 }
 
 func (a *Adapter) RegisterCallbacks(_ context.Context, callbacks domain.Callbacks) {
@@ -86,14 +102,4 @@ func (a *Adapter) Start(ctx context.Context) error {
 		}()
 	}
 	return nil
-}
-
-func (a *Adapter) VerifyObject(ctx context.Context, id domain.KindName, checksum string) error {
-	if id.Kind == nil {
-		return fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
-	}
-	if client, ok := a.clients[id.Kind.String()]; ok {
-		return client.VerifyObject(ctx, id, checksum)
-	}
-	return fmt.Errorf("unknown resource %s", id.Kind.String())
 }

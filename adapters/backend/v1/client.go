@@ -123,7 +123,7 @@ func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName
 		Name:      id.Name,
 		Namespace: id.Namespace,
 	}
-	logger.L().Debug("Sending delete object message to producer",
+	logger.L().Debug("sending delete object message to producer",
 		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
@@ -153,7 +153,7 @@ func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, b
 		Name:       id.Name,
 		Namespace:  id.Namespace,
 	}
-	logger.L().Debug("Sending get object message to producer",
+	logger.L().Debug("sending get object message to producer",
 		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
@@ -185,7 +185,7 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 		Namespace: id.Namespace,
 		Patch:     patch,
 	}
-	logger.L().Debug("Sending patch object message to producer",
+	logger.L().Debug("sending patch object message to producer",
 		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
@@ -217,7 +217,7 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, o
 		Namespace: id.Namespace,
 		Object:    object,
 	}
-	logger.L().Debug("Sending put object message to producer",
+	logger.L().Debug("sending put object message to producer",
 		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
@@ -248,7 +248,7 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName
 		Name:      id.Name,
 		Namespace: id.Namespace,
 	}
-	logger.L().Debug("Sending verify object message to producer",
+	logger.L().Debug("sending verify object message to producer",
 		helpers.String("account", msg.Account),
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
