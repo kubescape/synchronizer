@@ -23,6 +23,7 @@ const (
 // will silently drop the event. When the cooldown resets and a client puts the
 // same event into the queue, it will be forwarded to the output channel
 type CooldownQueue struct {
+	closed     bool
 	seenEvents *lru.LRU[string, bool]
 	// inner channel for producing events
 	innerChan chan watch.Event
@@ -53,6 +54,9 @@ func makeEventKey(e watch.Event) string {
 
 // Enqueue enqueues an event in the Cooldown Queue
 func (q *CooldownQueue) Enqueue(e watch.Event) {
+	if q.closed {
+		return
+	}
 	eventKey := makeEventKey(e)
 	_, exists := q.seenEvents.Get(eventKey)
 	if exists {
@@ -65,5 +69,6 @@ func (q *CooldownQueue) Enqueue(e watch.Event) {
 }
 
 func (q *CooldownQueue) Stop() {
+	q.closed = true
 	close(q.innerChan)
 }
