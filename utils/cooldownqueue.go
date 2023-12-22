@@ -52,6 +52,10 @@ func makeEventKey(e watch.Event) string {
 	return eventKey
 }
 
+func (q *CooldownQueue) Closed() bool {
+	return q.closed
+}
+
 // Enqueue enqueues an event in the Cooldown Queue
 func (q *CooldownQueue) Enqueue(e watch.Event) {
 	if q.closed {

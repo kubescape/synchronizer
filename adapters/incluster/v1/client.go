@@ -2,8 +2,10 @@ package incluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/kubescape/go-logger"
@@ -18,6 +20,11 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
 )
+
+// resourceVersionGetter is an interface used to get resource version from events.
+type resourceVersionGetter interface {
+	GetResourceVersion() string
+}
 
 type Client struct {
 	client        dynamic.Interface
@@ -86,28 +93,38 @@ func (c *Client) Start(ctx context.Context) error {
 		watchOpts.ResourceVersion = list.GetResourceVersion()
 	}
 	// begin watch
-	watcher, err := c.client.Resource(c.res).Namespace("").Watch(context.Background(), watchOpts)
-	if err != nil {
-		logger.L().Ctx(ctx).Fatal("unable to watch for resources", helpers.String("resource", c.res.Resource), helpers.Error(err))
-	}
 	eventQueue := utils.NewCooldownQueue(utils.DefaultQueueSize, utils.DefaultTTL)
 	go func() {
 		for {
-			event, chanActive := <-watcher.ResultChan()
-			if !chanActive {
-				watcher.Stop()
-				eventQueue.Stop()
-				break
+			watcher, err := c.client.Resource(c.res).Namespace("").Watch(context.Background(), watchOpts)
+			if err != nil {
+				logger.L().Ctx(ctx).Fatal("unable to watch for resources", helpers.String("resource", c.res.Resource), helpers.Error(err))
 			}
-			eventQueue.Enqueue(event)
+			for {
+				event, chanActive := <-watcher.ResultChan()
+				if eventQueue.Closed() {
+					watcher.Stop()
+					return
+				}
+				if !chanActive {
+					logger.L().Debug("watcher channel closed, restarting in 10s", helpers.String("resource", c.res.Resource))
+					time.Sleep(10 * time.Second)
+					break
+				}
+				// set resource version to resume watch from
+				metaObject, ok := event.Object.(resourceVersionGetter)
+				if ok {
+					watchOpts.ResourceVersion = metaObject.GetResourceVersion()
+				}
+				eventQueue.Enqueue(event)
+			}
 		}
 	}()
 	for event := range eventQueue.ResultChan {
 		ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
 		if event.Type == watch.Error {
-			logger.L().Ctx(ctx).Error("watch event failed", helpers.String("resource", c.res.Resource), helpers.Interface("event", event))
-			watcher.Stop()
-			break
+			eventQueue.Stop()
+			return errors.New("watch event failed")
 		}
 		d, ok := event.Object.(*unstructured.Unstructured)
 		if !ok {
