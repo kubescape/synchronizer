@@ -2,16 +2,25 @@ package utils
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 
+	"github.com/kinbiko/jsonassert"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func fileContent(path string) []byte {
 	b, _ := os.ReadFile(path)
 	return b
+}
+func fileToUnstructured(path string) *unstructured.Unstructured {
+	b, _ := os.ReadFile(path)
+	u := &unstructured.Unstructured{}
+	_ = u.UnmarshalJSON(b)
+	return u
 }
 
 func TestCanonicalHash(t *testing.T) {
@@ -94,6 +103,34 @@ func TestClientIdentifier_RoundTrip(t *testing.T) {
 			ctx := ContextFromIdentifiers(context.TODO(), tt.id)
 			got := ClientIdentifierFromContext(ctx)
 			assert.Equal(t, tt.id, got)
+		})
+	}
+}
+
+func TestRemoveManagedFields(t *testing.T) {
+	tests := []struct {
+		name string
+		obj  *unstructured.Unstructured
+		want []byte
+	}{
+		{
+			name: "Remove fields from networkPolicy",
+			obj:  fileToUnstructured("testdata/networkPolicy.json"),
+			want: fileContent("testdata/networkPolicyCleaned.json"),
+		},
+		{
+			name: "Do nothing if no managedFields",
+			obj:  fileToUnstructured("testdata/pod.json"),
+			want: fileContent("testdata/pod.json"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			RemoveManagedFields(tt.obj)
+			ja := jsonassert.New(t)
+			b, err := json.Marshal(tt.obj.Object)
+			assert.NoError(t, err)
+			ja.Assertf(string(b), string(tt.want))
 		})
 	}
 }

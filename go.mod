@@ -12,6 +12,7 @@ require (
 	github.com/gobwas/ws v1.3.1
 	github.com/google/uuid v1.4.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
+	github.com/kinbiko/jsonassert v1.1.1
 	github.com/kubescape/backend v0.0.14
 	github.com/kubescape/go-logger v0.0.22
 	github.com/kubescape/messaging v0.0.19

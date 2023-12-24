@@ -22,6 +22,7 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/pmezard/go-difflib/difflib"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -213,4 +214,15 @@ func StringValueBigger(s1, s2 string) bool {
 		return false
 	}
 	return i1 > i2
+}
+
+func RemoveManagedFields(d *unstructured.Unstructured) {
+
+	// Remove managed fields
+	d.SetManagedFields(nil)
+
+	// Remove last-applied-configuration annotation
+	ann := d.GetAnnotations()
+	delete(ann, "kubectl.kubernetes.io/last-applied-configuration")
+	d.SetAnnotations(ann)
 }
