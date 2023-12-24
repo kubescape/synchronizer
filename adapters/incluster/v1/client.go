@@ -130,6 +130,7 @@ func (c *Client) Start(ctx context.Context) error {
 		if !ok {
 			continue
 		}
+
 		// skip non-standalone resources
 		if hasParent(d) {
 			continue
@@ -139,6 +140,8 @@ func (c *Client) Start(ctx context.Context) error {
 			Name:      d.GetName(),
 			Namespace: d.GetNamespace(),
 		}
+		utils.RemoveManagedFields(d)
+
 		newObject, err := d.MarshalJSON()
 		if err != nil {
 			logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("resource", c.res.Resource), helpers.String("id", id.String()))
