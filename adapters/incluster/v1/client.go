@@ -95,6 +95,7 @@ func (c *Client) Start(ctx context.Context) error {
 	// begin watch
 	eventQueue := utils.NewCooldownQueue(utils.DefaultQueueSize, utils.DefaultTTL)
 	go func() {
+		logger.L().Ctx(ctx).Info("starting watch", helpers.String("resource", c.res.Resource))
 		for {
 			watcher, err := c.client.Resource(c.res).Namespace("").Watch(context.Background(), watchOpts)
 			if err != nil {
