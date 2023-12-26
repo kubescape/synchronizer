@@ -3,7 +3,9 @@ package incluster
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/kubescape/go-logger"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
@@ -97,8 +99,15 @@ func (a *Adapter) Start(ctx context.Context) error {
 		client := NewClient(a.k8sclient, a.cfg.Account, a.cfg.ClusterName, r)
 		client.RegisterCallbacks(ctx, a.callbacks)
 		a.clients[r.String()] = client
+
 		go func() {
-			_ = client.Start(ctx)
+			// FIXME: Call the client.Start() method only once the storage is ready
+			for i := 0; i < 10; i++ {
+				if err := client.Start(ctx); err != nil {
+					time.Sleep(5 * time.Second)
+				}
+			}
+			logger.L().Ctx(ctx).Fatal("failed to start client")
 		}()
 	}
 	return nil
