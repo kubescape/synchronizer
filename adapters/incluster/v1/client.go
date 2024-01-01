@@ -62,35 +62,18 @@ func (c *Client) Start(ctx context.Context) error {
 	// as list returns objects with empty spec
 	// and watch does not return existing objects
 	if c.res.Group == "spdx.softwarecomposition.kubescape.io" {
-		list, err := c.client.Resource(c.res).Namespace("").List(context.Background(), metav1.ListOptions{})
-		if err != nil {
-			return fmt.Errorf("list resources: %w", err)
+		i := 3 // initial wait time
+		for {
+			// FIXME: List the storage objects only once the storage is ready
+			if resourceVersion, err := c.startStorageObjects(ctx); err == nil {
+				// set resource version to watch from
+				watchOpts.ResourceVersion = resourceVersion
+				i = 3 // initial wait time
+				break
+			}
+			time.Sleep(time.Duration(i) * time.Second)
+			i++ // wait a second more each time
 		}
-		for _, d := range list.Items {
-			ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
-			id := domain.KindName{
-				Kind:      c.kind,
-				Name:      d.GetName(),
-				Namespace: d.GetNamespace(),
-			}
-			obj, err := c.client.Resource(c.res).Namespace(d.GetNamespace()).Get(context.Background(), d.GetName(), metav1.GetOptions{})
-			if err != nil {
-				logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
-				continue
-			}
-			newObject, err := obj.MarshalJSON()
-			if err != nil {
-				logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
-				continue
-			}
-			err = c.callVerifyObject(ctx, id, newObject)
-			if err != nil {
-				logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
-				continue
-			}
-		}
-		// set resource version to watch from
-		watchOpts.ResourceVersion = list.GetResourceVersion()
 	}
 	// begin watch
 	eventQueue := utils.NewCooldownQueue(utils.DefaultQueueSize, utils.DefaultTTL)
@@ -109,7 +92,7 @@ func (c *Client) Start(ctx context.Context) error {
 				}
 				if !chanActive {
 					logger.L().Debug("watcher channel closed, restarting in 10s", helpers.String("resource", c.res.Resource))
-					time.Sleep(10 * time.Second)
+					time.Sleep(5 * time.Second)
 					break
 				}
 				// set resource version to resume watch from
@@ -361,4 +344,36 @@ func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, e
 		return object, fmt.Errorf("checksum mismatch: %s != %s", newChecksum, checksum)
 	}
 	return object, nil
+}
+
+func (c *Client) startStorageObjects(ctx context.Context) (string, error) {
+	list, err := c.client.Resource(c.res).Namespace("").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("list resources: %w", err)
+	}
+	for _, d := range list.Items {
+		ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
+		id := domain.KindName{
+			Kind:      c.kind,
+			Name:      d.GetName(),
+			Namespace: d.GetNamespace(),
+		}
+		obj, err := c.client.Resource(c.res).Namespace(d.GetNamespace()).Get(context.Background(), d.GetName(), metav1.GetOptions{})
+		if err != nil {
+			logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
+			continue
+		}
+		newObject, err := obj.MarshalJSON()
+		if err != nil {
+			logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
+			continue
+		}
+		err = c.callVerifyObject(ctx, id, newObject)
+		if err != nil {
+			logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
+			continue
+		}
+	}
+	// set resource version to watch from
+	return list.GetResourceVersion(), nil
 }
