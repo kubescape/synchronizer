@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kubescape/go-logger"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
@@ -101,13 +100,9 @@ func (a *Adapter) Start(ctx context.Context) error {
 		a.clients[r.String()] = client
 
 		go func() {
-			// FIXME: Call the client.Start() method only once the storage is ready
-			for i := 0; i < 10; i++ {
-				if err := client.Start(ctx); err != nil {
-					time.Sleep(5 * time.Second)
-				}
+			if err := client.Start(ctx); err != nil {
+				time.Sleep(3 * time.Second)
 			}
-			logger.L().Ctx(ctx).Fatal("failed to start client")
 		}()
 	}
 	return nil
