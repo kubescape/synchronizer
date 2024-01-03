@@ -216,13 +216,16 @@ func StringValueBigger(s1, s2 string) bool {
 	return i1 > i2
 }
 
-func RemoveManagedFields(d *unstructured.Unstructured) {
-
+func removeManagedFields(d *unstructured.Unstructured) {
 	// Remove managed fields
 	d.SetManagedFields(nil)
-
 	// Remove last-applied-configuration annotation
 	ann := d.GetAnnotations()
 	delete(ann, "kubectl.kubernetes.io/last-applied-configuration")
 	d.SetAnnotations(ann)
+}
+
+func FilterAndMarshal(d *unstructured.Unstructured) ([]byte, error) {
+	removeManagedFields(d)
+	return d.MarshalJSON()
 }

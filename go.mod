@@ -6,7 +6,7 @@ require (
 	github.com/SergJa/jsonhash v0.0.0-20210531165746-fc45f346aa74
 	github.com/apache/pulsar-client-go v0.11.1
 	github.com/armosec/armoapi-go v0.0.254
-	github.com/armosec/utils-k8s-go v0.0.22
+	github.com/armosec/utils-k8s-go v0.0.24
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/evanphx/json-patch v5.7.0+incompatible
 	github.com/gobwas/ws v1.3.1
