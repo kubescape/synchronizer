@@ -124,9 +124,8 @@ func (c *Client) Start(ctx context.Context) error {
 			Name:      d.GetName(),
 			Namespace: d.GetNamespace(),
 		}
-		utils.RemoveManagedFields(d)
 
-		newObject, err := d.MarshalJSON()
+		newObject, err := utils.FilterAndMarshal(d)
 		if err != nil {
 			logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("resource", c.res.Resource), helpers.String("id", id.String()))
 			continue
@@ -249,7 +248,7 @@ func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject [
 	if err != nil {
 		return fmt.Errorf("get resource: %w", err)
 	}
-	newObject, err := obj.MarshalJSON()
+	newObject, err := utils.FilterAndMarshal(obj)
 	if err != nil {
 		return fmt.Errorf("marshal resource: %w", err)
 	}
@@ -273,7 +272,7 @@ func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum s
 	if err != nil {
 		return nil, fmt.Errorf("get resource: %w", err)
 	}
-	object, err := obj.MarshalJSON()
+	object, err := utils.FilterAndMarshal(obj)
 	if err != nil {
 		return nil, fmt.Errorf("marshal resource: %w", err)
 	}
@@ -332,7 +331,7 @@ func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, e
 	if err != nil {
 		return nil, fmt.Errorf("get resource: %w", err)
 	}
-	object, err := obj.MarshalJSON()
+	object, err := utils.FilterAndMarshal(obj)
 	if err != nil {
 		return nil, fmt.Errorf("marshal resource: %w", err)
 	}
@@ -363,7 +362,7 @@ func (c *Client) startStorageObjects(ctx context.Context) (string, error) {
 			logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
 			continue
 		}
-		newObject, err := obj.MarshalJSON()
+		newObject, err := utils.FilterAndMarshal(obj)
 		if err != nil {
 			logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
 			continue

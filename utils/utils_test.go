@@ -126,7 +126,7 @@ func TestRemoveManagedFields(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			RemoveManagedFields(tt.obj)
+			removeManagedFields(tt.obj)
 			ja := jsonassert.New(t)
 			b, err := json.Marshal(tt.obj.Object)
 			assert.NoError(t, err)
