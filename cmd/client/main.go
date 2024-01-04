@@ -3,11 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
-	"net/url"
-	"os"
-	"time"
-
+	"github.com/cenkalti/backoff/v4"
 	"github.com/gobwas/ws"
 	backendUtils "github.com/kubescape/backend/pkg/utils"
 	"github.com/kubescape/go-logger"
@@ -17,6 +13,10 @@ import (
 	"github.com/kubescape/synchronizer/core"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
+	"net"
+	"net/url"
+	"os"
+	"time"
 )
 
 func main() {
@@ -94,22 +94,22 @@ func main() {
 
 	// websocket client
 	newConn := func() (net.Conn, error) {
-		conn, _, _, err := dialer.Dial(ctx, cfg.InCluster.ServerUrl)
-		if err != nil {
+		var conn net.Conn
+		if err := backoff.RetryNotify(func() error {
+			conn, _, _, err = dialer.Dial(ctx, cfg.InCluster.ServerUrl)
+			return err
+		}, backoff.NewExponentialBackOff(), func(err error, d time.Duration) {
+			logger.L().Ctx(ctx).Warning("connection error", helpers.Error(err),
+				helpers.String("retry in", d.String()))
+		}); err != nil {
 			return nil, fmt.Errorf("unable to create websocket connection: %w", err)
 		}
 		return conn, nil
 	}
 
-	var conn net.Conn
-	for {
-		if conn, err = newConn(); err != nil {
-			d := 5 * time.Second // TODO: use exponential backoff for retries
-			logger.L().Ctx(ctx).Error("connection error", helpers.Error(err), helpers.String("retry in", d.String()))
-			time.Sleep(d)
-		} else {
-			break
-		}
+	conn, err := newConn()
+	if err != nil {
+		logger.L().Ctx(ctx).Fatal("failed to connect", helpers.Error(err))
 	}
 
 	// synchronizer
