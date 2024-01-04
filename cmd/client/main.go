@@ -116,6 +116,6 @@ func main() {
 	synchronizer := core.NewSynchronizerClient(ctx, adapter, conn, newConn)
 	err = synchronizer.Start(ctx)
 	if err != nil {
-		logger.L().Fatal("error during sync, exiting", helpers.Error(err))
+		logger.L().Ctx(ctx).Fatal("error during sync, exiting", helpers.Error(err))
 	}
 }

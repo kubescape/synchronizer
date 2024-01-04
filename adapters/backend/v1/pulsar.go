@@ -64,16 +64,16 @@ func (c *PulsarMessageConsumer) startConsumingMessages(ctx context.Context, adap
 			// skip messages sent by the synchronizer server
 			if msg.Key() == SynchronizerServerProducerKey {
 				if err := c.consumer.Ack(msg); err != nil {
-					logger.L().Error("failed to ack message", helpers.Error(err))
+					logger.L().Ctx(ctx).Error("failed to ack message", helpers.Error(err))
 				}
 				continue
 			}
 			// handle message
 			if err := c.handleSingleSynchronizerMessage(ctx, adapter, msg); err != nil {
-				logger.L().Error("failed to handle message", helpers.Error(err))
+				logger.L().Ctx(ctx).Error("failed to handle message", helpers.Error(err))
 				c.consumer.Nack(msg)
 			} else if err := c.consumer.Ack(msg); err != nil {
-				logger.L().Error("failed to ack message", helpers.Error(err))
+				logger.L().Ctx(ctx).Error("failed to ack message", helpers.Error(err))
 			}
 		}
 	}
@@ -83,7 +83,7 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 	msgID := utils.PulsarMessageIDtoString(msg.ID())
 	msgProperties := msg.Properties()
 
-	logger.L().Debug("Received message from pulsar",
+	logger.L().Debug("received message from pulsar",
 		helpers.String("account", msgProperties[messaging.MsgPropAccount]),
 		helpers.String("cluster", msgProperties[messaging.MsgPropCluster]),
 		helpers.String("msgId", msgID))
@@ -107,7 +107,7 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 			return err
 		}
 		if err := callbacks.GetObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(data.Kind),
+			Kind:      domain.KindFromString(ctx, data.Kind),
 			Name:      data.Name,
 			Namespace: data.Namespace,
 		}, data.BaseObject); err != nil {
@@ -131,7 +131,7 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 			return err
 		}
 		if err := callbacks.PatchObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(data.Kind),
+			Kind:      domain.KindFromString(ctx, data.Kind),
 			Name:      data.Name,
 			Namespace: data.Namespace,
 		}, data.Checksum, data.Patch); err != nil {
@@ -155,7 +155,7 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 			return err
 		}
 		if err := callbacks.VerifyObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(data.Kind),
+			Kind:      domain.KindFromString(ctx, data.Kind),
 			Name:      data.Name,
 			Namespace: data.Namespace,
 		}, data.Checksum); err != nil {
@@ -179,7 +179,7 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 			return err
 		}
 		if err := callbacks.PutObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(data.Kind),
+			Kind:      domain.KindFromString(ctx, data.Kind),
 			Name:      data.Name,
 			Namespace: data.Namespace,
 		}, data.Object); err != nil {
@@ -203,7 +203,7 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 			return err
 		}
 		if err := callbacks.DeleteObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(data.Kind),
+			Kind:      domain.KindFromString(ctx, data.Kind),
 			Name:      data.Name,
 			Namespace: data.Namespace,
 		}); err != nil {

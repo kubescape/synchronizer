@@ -15,12 +15,12 @@ import (
 
 var (
 	kindDeployment = domain.KindName{
-		Kind:      domain.KindFromString("apps/v1/Deployment"),
+		Kind:      domain.KindFromString(context.TODO(), "apps/v1/Deployment"),
 		Name:      "name",
 		Namespace: "namespace",
 	}
 	kindKnownServers = domain.KindName{
-		Kind:      domain.KindFromString("spdx.softwarecomposition.kubescape.io/v1beta1/KnownServers"),
+		Kind:      domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/KnownServers"),
 		Name:      "name",
 		Namespace: "namespace",
 	}

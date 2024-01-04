@@ -57,6 +57,8 @@ func NewClient(client dynamic.Interface, account, cluster string, r config.Resou
 var _ adapters.Client = (*Client)(nil)
 
 func (c *Client) Start(ctx context.Context) error {
+	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
+	logger.L().Info("starting incluster client", helpers.String("resource", c.res.Resource))
 	watchOpts := metav1.ListOptions{}
 	// for our storage, we need to list all resources and get them one by one
 	// as list returns objects with empty spec
@@ -65,7 +67,7 @@ func (c *Client) Start(ctx context.Context) error {
 		i := 3 // initial wait time
 		for {
 			// FIXME: List the storage objects only once the storage is ready
-			if resourceVersion, err := c.startStorageObjects(ctx); err == nil {
+			if resourceVersion, err := c.getExistingStorageObjects(ctx); err == nil {
 				// set resource version to watch from
 				watchOpts.ResourceVersion = resourceVersion
 				i = 3 // initial wait time
@@ -78,7 +80,7 @@ func (c *Client) Start(ctx context.Context) error {
 	// begin watch
 	eventQueue := utils.NewCooldownQueue(utils.DefaultQueueSize, utils.DefaultTTL)
 	go func() {
-		logger.L().Ctx(ctx).Info("starting watch", helpers.String("resource", c.res.Resource))
+		logger.L().Info("starting watch", helpers.String("resource", c.res.Resource))
 		for {
 			watcher, err := c.client.Resource(c.res).Namespace("").Watch(context.Background(), watchOpts)
 			if err != nil {
@@ -96,6 +98,7 @@ func (c *Client) Start(ctx context.Context) error {
 					break
 				}
 				// set resource version to resume watch from
+				// inspired by https://github.com/kubernetes/client-go/blob/5a0a4247921dd9e72d158aaa6c1ee124aba1da80/tools/watch/retrywatcher.go#L157
 				metaObject, ok := event.Object.(resourceVersionGetter)
 				if ok {
 					watchOpts.ResourceVersion = metaObject.GetResourceVersion()
@@ -105,7 +108,6 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 	}()
 	for event := range eventQueue.ResultChan {
-		ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
 		if event.Type == watch.Error {
 			eventQueue.Stop()
 			return errors.New("watch event failed")
@@ -258,7 +260,7 @@ func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject [
 func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	baseObject, err := c.patchObject(ctx, id, checksum, patch)
 	if err != nil {
-		logger.L().Warning("patch object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
+		logger.L().Ctx(ctx).Warning("patch object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
 		return c.callbacks.GetObject(ctx, id, baseObject)
 	}
 	return nil
@@ -320,7 +322,7 @@ func (c *Client) Callbacks(_ context.Context) (domain.Callbacks, error) {
 func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, newChecksum string) error {
 	baseObject, err := c.verifyObject(id, newChecksum)
 	if err != nil {
-		logger.L().Warning("verify object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
+		logger.L().Ctx(ctx).Warning("verify object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
 		return c.callbacks.GetObject(ctx, id, baseObject)
 	}
 	return nil
@@ -345,13 +347,13 @@ func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, e
 	return object, nil
 }
 
-func (c *Client) startStorageObjects(ctx context.Context) (string, error) {
+func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) {
+	logger.L().Debug("getting existing objects from storage", helpers.String("resource", c.res.Resource))
 	list, err := c.client.Resource(c.res).Namespace("").List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		return "", fmt.Errorf("list resources: %w", err)
 	}
 	for _, d := range list.Items {
-		ctx := utils.ContextFromGeneric(ctx, domain.Generic{})
 		id := domain.KindName{
 			Kind:      c.kind,
 			Name:      d.GetName(),
