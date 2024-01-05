@@ -15,8 +15,13 @@ concurrency:
 
 jobs:
   pr-created:
-    uses: kubescape/workflows/.github/workflows/incluster-comp-pr-created.yaml@main
-    with:
-      GO_VERSION: "1.21"
-      CGO_ENABLED: 0
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '1.21'
+      - name: Install Dagger CLI
+        run: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+      - name: Run Dagger pipeline
+        run: dagger run go run ci/main.go
