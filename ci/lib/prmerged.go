@@ -81,3 +81,24 @@ func PrMerged(ctx context.Context, client *dagger.Client, src *dagger.Directory)
 
 	return nil
 }
+
+func UnitTest(ctx context.Context, client *dagger.Client, src *dagger.Directory) error {
+	fmt.Println("Running unit tests...")
+	// create a cache volume
+	goBuildCache := client.CacheVolume("goBuild")
+	goPkgCache := client.CacheVolume("goPkg")
+	// run tests
+	out, err := client.Container().
+		From("golang:1.20-bullseye").
+		WithDirectory("/src", src).
+		WithMountedCache("/go/pkg", goPkgCache).
+		WithMountedCache("/root/.cache/go-build", goBuildCache).
+		WithWorkdir("/src").
+		WithExec([]string{"go", "test", "-v", "./..."}).
+		Stderr(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Println(out)
+	return nil
+}

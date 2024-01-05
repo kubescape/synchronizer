@@ -13,7 +13,7 @@ var platforms = []dagger.Platform{
 	"linux/arm64",
 }
 
-// the system tests to run on the newly built image
+// TestNames contains the system tests to run on the newly built image
 var TestNames = []string{
 	"unit",
 }

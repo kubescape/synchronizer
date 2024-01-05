@@ -4,31 +4,42 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 
 	"dagger.io/dagger"
 )
 
-// Run basic tests on PR
+// PrCreated Run basic tests on PR
 func PrCreated(ctx context.Context, client *dagger.Client, src *dagger.Directory) error {
+	failedThreshold, err := strconv.Atoi(os.Getenv("FAILEDTHRESHOLD"))
+	if err != nil {
+		failedThreshold = 50
+	}
 	basicTestsInputs := BasicTestsInputs{
-		GOVERSION:     os.Getenv("GO_VERSION"),
-		CGOENABLED:    os.Getenv("CGO_ENABLED") == "1",
-		BUILDPATH:     os.Getenv("BUILD_PATH"),
-		UNITTESTSPATH: os.Getenv("UNITTESTS_PATH"),
+		GoVersion:       os.Getenv("GO_VERSION"),
+		CgoEnabled:      os.Getenv("CGO_ENABLED") == "1",
+		BuildPath:       os.Getenv("BUILD_PATH"),
+		UnittestsPath:   os.Getenv("UNIT_TESTS_PATH"),
+		FailedThreshold: failedThreshold,
 	}
 
 	basicTestsSecrets := BasicTestsSecrets{
-		SNYK_TOKEN:          os.Getenv("SNYK_TOKEN"),
-		GITGUARDIAN_API_KEY: os.Getenv("GITGUARDIAN_API_KEY"),
+		SnykToken:         os.Getenv("SNYK_TOKEN"),
+		GitguardianApiKey: os.Getenv("GITGUARDIAN_API_KEY"),
 	}
 
-	fmt.Printf("GOVERSION: %s\n", basicTestsInputs.GOVERSION)
-	fmt.Printf("CGOENABLED: %t\n", basicTestsInputs.CGOENABLED)
-	fmt.Printf("BUILDPATH: %s\n", basicTestsInputs.BUILDPATH)
-	fmt.Printf("UNITTESTSPATH: %s\n", basicTestsInputs.UNITTESTSPATH)
+	fmt.Printf("basicTestsInputs: %+v\n", basicTestsInputs)
 
-	if err := BasicTests(ctx, client, src, basicTestsInputs, basicTestsSecrets); err != nil {
-		return err
+	basicTests := BasicTests{
+		Client:  client,
+		Ctx:     ctx,
+		Inputs:  basicTestsInputs,
+		Secrets: basicTestsSecrets,
+		Src:     src,
+	}
+
+	if err := basicTests.Run(); err != nil {
+		return fmt.Errorf("basicTests.Run() failed: %w", err)
 	}
 
 	return nil

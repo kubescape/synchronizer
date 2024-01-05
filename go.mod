@@ -3,7 +3,7 @@ module github.com/kubescape/synchronizer
 go 1.21
 
 require (
-	dagger.io/dagger v0.9.3
+	dagger.io/dagger v0.9.5
 	github.com/SergJa/jsonhash v0.0.0-20210531165746-fc45f346aa74
 	github.com/apache/pulsar-client-go v0.11.1
 	github.com/armosec/armoapi-go v0.0.254
