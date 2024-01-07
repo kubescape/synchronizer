@@ -1,0 +1,137 @@
+{
+    "ConfigService":{
+        "url": "http://localhost:8081"
+    },
+    "Postgres": {
+        "enabled": true,
+        "host":"localhost",
+        "port":"5432",
+        "user":"admin",
+        "password":"admin",
+        "db":"main_db",
+        "sslMode":"disable"
+    },
+    "Pulsar": {
+        "url": "pulsar://localhost:6650",
+        "tenant": "armo",
+        "namespace": "kubescape",
+        "adminUrl": "http://localhost:8080",
+        "clusters": [
+            "standalone"
+        ],
+        "redeliveryDelaySeconds": 5,
+        "maxDeliveryAttempts": 20
+    },
+    "onFinishPulsarConfig": {
+        "url": "pulsar://localhost:6650",
+        "tenant": "armo",
+        "namespace": "internal",
+        "adminUrl": "http://localhost:8080",
+        "clusters": [
+            "standalone"
+        ],
+        "maxDeliveryAttempts": 2
+    },
+    "Logger": {
+        "level": "debug"
+    },
+    "Telemetry": {
+        "jaegerAgentHost": "localhost",
+        "jaegerAgentPort": "32033"
+    },
+    "PostureIngesterConfig":{
+        "enabled": true,
+        "topic": "kubescape-report-v2",
+        "subscription": "kubescape-report-v2",
+        "workersNumber": 1
+    },
+    "VulnScanIngesterConfig":{
+        "enabled": true,
+        "topic": "container-scan-report-v1",
+        "subscription": "container-scan-report-vulns-v1",
+        "workersNumber": 1,
+        "onFinishTopic": "container-scan-report-finished-v1"
+    },
+    "AttackChainEngineIngesterConfig":{
+        "enabled": true,
+        "topic": "",
+        "topics": ["container-scan-report-finished-v1", "kubescape-scan-report-finished-v1"],
+        "subscription": "attack-chains-engine-v1",
+        "workersNumber": 1
+    },
+    "AttackChainsStateUpdateConfig":{
+        "enabled": true,
+        "topic": "",
+        "topics":[],
+        "subscription": "attack-chains-states-update-v1",
+        "workersNumber": 1
+    },
+    "K8sObjectsIngesterConfig":{
+        "enabled": true,
+        "topic": "k8s-cluster-objects-v1",
+        "subscription": "k8s-cluster-objects-v1",
+        "workersNumber": 1
+    },
+    "RegistryRepositoriesIngesterConfig":{
+        "enabled": true,
+        "topic": "registry-repositories-v1",
+        "subscription": "registry-repositories-v1",
+        "workersNumber": 1
+    },
+    "JobReportsIngesterConfig":{
+        "enabled": true,
+        "topic": "job-reports-v1",
+        "subscription": "job-reports-v1",
+        "workersNumber": 1
+    },
+    "UserInputIngesterConfig":{
+        "enabled": true,
+        "topic": "user-input",
+        "subscription": "user-input-a",
+        "workersNumber": 1
+    },
+    "SynchronizerIngesterConfig":{
+        "enabled": false,
+        "topic": "synchronizer",
+        "subscription": "synchronizer-a",
+        "workersNumber": 1
+    },
+    "S3Config":{
+        "accessKey": "accessKey",
+        "secretKey": "secretKey",
+        "region": "region",
+        "bucket": "bucket"
+    },
+    "GitRegoStoreConfig": {
+        "regoLibraryBaseUrl" : "https://github.com",
+        "regoLibraryOwner" : "armosec",
+        "regoLibraryRepository"    :"regolibrary",
+        "regoLibraryPath"          : "releases",
+        "regoLibraryTag"           : "latest/download",
+        "regoLibraryBranch"        :"",
+        "regoLibraryPullFrequency": 15
+    },
+    "BackendAPIConfig": {
+        "email": "",
+        "password": "",
+        "server": "backend_url"
+    },
+    "AnalyticsIngesterConfig": {
+        "enabled": true,
+        "topic": "analytics",
+        "subscription": "analytics-sub",
+        "workersNumber": 1
+    },
+    "AnalyticsConfig": {
+        "GoogleAnalyticsConfig": {
+            "url": "http://localhost:8000",
+            "measurementId": "G-XXXXXXXXXX",
+            "gtmServerPreview": "npfqu4nf2084f2"
+        }
+    },
+    "ElasticSearchConfig": {        
+        "url": "http://localhost:9200",
+        "username": "",
+        "password": ""
+    }
+}

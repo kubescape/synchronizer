@@ -3,12 +3,14 @@ package incluster
 import (
 	"context"
 	"fmt"
-	"time"
-
+	"github.com/cenkalti/backoff/v4"
+	"github.com/kubescape/go-logger"
+	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
 	"k8s.io/client-go/dynamic"
+	"time"
 )
 
 type Adapter struct {
@@ -100,8 +102,15 @@ func (a *Adapter) Start(ctx context.Context) error {
 		a.clients[r.String()] = client
 
 		go func() {
-			if err := client.Start(ctx); err != nil {
-				time.Sleep(3 * time.Second)
+			if err := backoff.RetryNotify(func() error {
+				return client.Start(ctx)
+			}, backoff.NewExponentialBackOff(), func(err error, d time.Duration) {
+				logger.L().Ctx(ctx).Warning("start client", helpers.Error(err),
+					helpers.String("resource", client.res.Resource),
+					helpers.String("retry in", d.String()))
+			}); err != nil {
+				logger.L().Ctx(ctx).Fatal("giving up start client", helpers.Error(err),
+					helpers.String("resource", client.res.Resource))
 			}
 		}()
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/cenkalti/backoff/v4"
 	"io"
 	"net"
 	"time"
@@ -68,22 +69,27 @@ func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net
 }
 
 func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
-	err := s.writeDataFunc(*s.Conn, data)
-	if err != nil {
-		if s.isClient {
-			// try to reconnect
-			logger.L().Ctx(ctx).Warning("connection closed, trying to reconnect")
-			conn, err := s.newConn()
-			if err != nil {
-				logger.L().Ctx(ctx).Error("refreshing connection", helpers.Error(err))
-				return
+	if err := backoff.RetryNotify(func() error {
+		err := s.writeDataFunc(*s.Conn, data)
+		if err != nil {
+			if s.isClient {
+				// try to reconnect
+				conn, err := s.newConn()
+				if err != nil {
+					return fmt.Errorf("refreshing outgoing connection: %w", err)
+				}
+				logger.L().Ctx(ctx).Info("outgoing connection refreshed, synchronization will resume")
+				s.Conn = &conn
+			} else {
+				return backoff.Permanent(fmt.Errorf("cannot send message: %w", err))
 			}
-			logger.L().Ctx(ctx).Info("connection refreshed, synchronization will resume")
-			s.Conn = &conn
-		} else {
-			logger.L().Ctx(ctx).Error("cannot send message", helpers.Error(err))
-			return
 		}
+		return nil
+	}, backoff.NewExponentialBackOff(), func(err error, d time.Duration) {
+		logger.L().Ctx(ctx).Warning("send data", helpers.Error(err),
+			helpers.String("retry in", d.String()))
+	}); err != nil {
+		logger.L().Ctx(ctx).Fatal("giving up send data", helpers.Error(err))
 	}
 }
 
@@ -326,19 +332,30 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 	}
 	// process incoming messages
 	for {
-		data, err := s.readDataFunc(*s.Conn)
-		if err != nil {
-			if s.isClient {
-				logger.L().Ctx(ctx).Error("cannot read data, sleeping 1 minute before retrying", helpers.Error(err))
-				time.Sleep(1 * time.Minute)
-				continue
-			} else {
-				return fmt.Errorf("cannot read data: %w", err)
+		if err := backoff.RetryNotify(func() error {
+			data, err := s.readDataFunc(*s.Conn)
+			if err != nil {
+				if s.isClient {
+					// try to reconnect
+					conn, err := s.newConn()
+					if err != nil {
+						return fmt.Errorf("refreshing incoming connection: %w", err)
+					}
+					logger.L().Ctx(ctx).Info("incoming connection refreshed, synchronization will resume")
+					s.Conn = &conn
+				} else {
+					return backoff.Permanent(fmt.Errorf("cannot read data: %w", err))
+				}
 			}
-		}
-		err = inPool.Invoke(data)
-		if err != nil {
-			return fmt.Errorf("invoke inPool: %w", err)
+			err = inPool.Invoke(data)
+			if err != nil {
+				return fmt.Errorf("invoke inPool: %w", err)
+			}
+			return nil
+		}, backoff.NewExponentialBackOff(), func(err error, d time.Duration) {
+			logger.L().Ctx(ctx).Warning("process incoming messages", helpers.Error(err), helpers.String("retry in", d.String()))
+		}); err != nil {
+			return fmt.Errorf("giving up process incoming messages: %w", err)
 		}
 	}
 }

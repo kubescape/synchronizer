@@ -6,45 +6,40 @@
         "X-API-KEY": "X-API-KEY"
       },
       "headerToQueryParamMapping": {
-        "X-API-ACCOUNT": "customerGUID" 
+        "X-API-ACCOUNT": "customerGUID"
       }
     },
-    "subscription": "subscription",
+    "subscription": "synchronizer-server",
     "topic": "synchronizer",
     "pulsarConfig": {
       "url": "pulsar://localhost:6650",
-        "tenant": "kubescape",
-        "namespace": "kubescape",
-        "adminUrl": "http://localhost:8081",
-        "clusters": [
-            "standalone"
-        ],
-        "maxDeliveryAttempts": 2
+      "tenant": "armo",
+      "namespace": "kubescape",
+      "adminUrl": "http://localhost:8080",
+      "clusters": [
+        "standalone"
+      ],
+      "redeliveryDelaySeconds": 5,
+      "maxDeliveryAttempts": 20
     }
   },
   "resources": [
     {
-      "group": "apps",
+      "group": "",
       "version": "v1",
-      "resource": "deployments",
-      "strategy": "patch"
+      "resource": "configmaps",
+      "strategy": "copy"
     },
     {
       "group": "",
       "version": "v1",
-      "resource": "pods",
-      "strategy": "patch"
-    },
-    {
-      "group": "spdx.softwarecomposition.kubescape.io",
-      "version": "v1beta1",
-      "resource": "sbomspdxv2p3s",
+      "resource": "secrets",
       "strategy": "copy"
     },
     {
-      "group": "spdx.softwarecomposition.kubescape.io",
-      "version": "v1beta1",
-      "resource": "sbomspdxv2p3filtereds",
+      "group": "",
+      "version": "v1",
+      "resource": "serviceaccounts",
       "strategy": "copy"
     }
   ]

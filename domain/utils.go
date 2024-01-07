@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"strings"
 
 	"github.com/kubescape/go-logger"
@@ -12,10 +13,10 @@ func (k Kind) String() string {
 	return strings.Join([]string{k.Group, k.Version, k.Resource}, "/")
 }
 
-func KindFromString(kind string) *Kind {
+func KindFromString(ctx context.Context, kind string) *Kind {
 	parts := strings.Split(kind, "/")
 	if len(parts) != 3 {
-		logger.L().Error("failed creating kind from string", helpers.String("kind", kind))
+		logger.L().Ctx(ctx).Error("failed creating kind from string", helpers.String("kind", kind))
 		return nil
 	}
 	return &Kind{

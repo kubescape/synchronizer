@@ -12,22 +12,16 @@
         "strategy": "patch"
       },
       {
+        "group": "apps",
+        "version": "v1",
+        "resource": "statefulsets",
+        "strategy": "patch"
+      },
+      {
         "group": "",
         "version": "v1",
         "resource": "pods",
         "strategy": "patch"
-      },
-      {
-        "group": "spdx.softwarecomposition.kubescape.io",
-        "version": "v1beta1",
-        "resource": "sbomspdxv2p3s",
-        "strategy": "copy"
-      },
-      {
-        "group": "spdx.softwarecomposition.kubescape.io",
-        "version": "v1beta1",
-        "resource": "sbomspdxv2p3filtereds",
-        "strategy": "copy"
       }
     ]
   }

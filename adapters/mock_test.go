@@ -10,7 +10,7 @@ import (
 
 var (
 	kindDeployment = domain.KindName{
-		Kind:      domain.KindFromString("apps/v1/Deployment"),
+		Kind:      domain.KindFromString(context.TODO(), "apps/v1/Deployment"),
 		Name:      "name",
 		Namespace: "namespace",
 	}
