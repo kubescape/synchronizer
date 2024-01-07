@@ -87,6 +87,7 @@ func main() {
 			core.AccountHeader:     {cfg.InCluster.Account},
 			core.ClusterNameHeader: {cfg.InCluster.ClusterName},
 		}),
+		NetDial: utils.GetDialer(),
 	}
 
 	// start liveness probe
