@@ -69,7 +69,7 @@ func (c *Client) Start(ctx context.Context) error {
 			var err error
 			watchOpts.ResourceVersion, err = c.getExistingStorageObjects(ctx)
 			return err
-		}, backoff.NewExponentialBackOff(), func(err error, d time.Duration) {
+		}, utils.NewBackOff(), func(err error, d time.Duration) {
 			logger.L().Ctx(ctx).Warning("get existing storage objects", helpers.Error(err),
 				helpers.String("resource", c.res.Resource),
 				helpers.String("retry in", d.String()))
@@ -106,7 +106,7 @@ func (c *Client) Start(ctx context.Context) error {
 				}
 				eventQueue.Enqueue(event)
 			}
-		}, backoff.NewExponentialBackOff(), func(err error, d time.Duration) {
+		}, utils.NewBackOff(), func(err error, d time.Duration) {
 			logger.L().Ctx(ctx).Warning("watch", helpers.Error(err),
 				helpers.String("resource", c.res.Resource),
 				helpers.String("retry in", d.String()))

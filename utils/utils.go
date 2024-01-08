@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/cenkalti/backoff/v4"
 	"net/http"
 	"path/filepath"
 	"reflect"
@@ -228,4 +229,11 @@ func removeManagedFields(d *unstructured.Unstructured) {
 func FilterAndMarshal(d *unstructured.Unstructured) ([]byte, error) {
 	removeManagedFields(d)
 	return d.MarshalJSON()
+}
+
+func NewBackOff() backoff.BackOff {
+	b := backoff.NewExponentialBackOff()
+	// never stop retrying (unless PermanentError is returned)
+	b.MaxElapsedTime = 0
+	return b
 }

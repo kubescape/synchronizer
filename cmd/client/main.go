@@ -99,7 +99,7 @@ func main() {
 		if err := backoff.RetryNotify(func() error {
 			conn, _, _, err = dialer.Dial(ctx, cfg.InCluster.ServerUrl)
 			return err
-		}, backoff.NewExponentialBackOff(), func(err error, d time.Duration) {
+		}, utils.NewBackOff(), func(err error, d time.Duration) {
 			logger.L().Ctx(ctx).Warning("connection error", helpers.Error(err),
 				helpers.String("retry in", d.String()))
 		}); err != nil {
