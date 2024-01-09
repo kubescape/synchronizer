@@ -85,7 +85,7 @@ func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
 			}
 		}
 		return nil
-	}, backoff.NewExponentialBackOff(), func(err error, d time.Duration) {
+	}, utils.NewBackOff(), func(err error, d time.Duration) {
 		logger.L().Ctx(ctx).Warning("send data", helpers.Error(err),
 			helpers.String("retry in", d.String()))
 	}); err != nil {
@@ -352,7 +352,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				return fmt.Errorf("invoke inPool: %w", err)
 			}
 			return nil
-		}, backoff.NewExponentialBackOff(), func(err error, d time.Duration) {
+		}, utils.NewBackOff(), func(err error, d time.Duration) {
 			logger.L().Ctx(ctx).Warning("process incoming messages", helpers.Error(err), helpers.String("retry in", d.String()))
 		}); err != nil {
 			return fmt.Errorf("giving up process incoming messages: %w", err)

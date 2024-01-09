@@ -9,6 +9,7 @@ import (
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
+	"github.com/kubescape/synchronizer/utils"
 	"k8s.io/client-go/dynamic"
 	"time"
 )
@@ -104,7 +105,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 		go func() {
 			if err := backoff.RetryNotify(func() error {
 				return client.Start(ctx)
-			}, backoff.NewExponentialBackOff(), func(err error, d time.Duration) {
+			}, utils.NewBackOff(), func(err error, d time.Duration) {
 				logger.L().Ctx(ctx).Warning("start client", helpers.Error(err),
 					helpers.String("resource", client.res.Resource),
 					helpers.String("retry in", d.String()))
