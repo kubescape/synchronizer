@@ -88,6 +88,11 @@ func (c *Client) Start(ctx context.Context) error {
 			logger.L().Info("starting watch", helpers.String("resource", c.res.Resource))
 			for {
 				event, chanActive := <-watcher.ResultChan()
+				// set resource version to resume watch from
+				// inspired by https://github.com/kubernetes/client-go/blob/5a0a4247921dd9e72d158aaa6c1ee124aba1da80/tools/watch/retrywatcher.go#L157
+				if metaObject, ok := event.Object.(resourceVersionGetter); ok {
+					watchOpts.ResourceVersion = metaObject.GetResourceVersion()
+				}
 				if eventQueue.Closed() {
 					watcher.Stop()
 					return backoff.Permanent(errors.New("event queue closed"))
@@ -97,12 +102,6 @@ func (c *Client) Start(ctx context.Context) error {
 				}
 				if event.Type == watch.Error {
 					return fmt.Errorf("watch error: %s", event.Object)
-				}
-				// set resource version to resume watch from
-				// inspired by https://github.com/kubernetes/client-go/blob/5a0a4247921dd9e72d158aaa6c1ee124aba1da80/tools/watch/retrywatcher.go#L157
-				metaObject, ok := event.Object.(resourceVersionGetter)
-				if ok {
-					watchOpts.ResourceVersion = metaObject.GetResourceVersion()
 				}
 				eventQueue.Enqueue(event)
 			}
