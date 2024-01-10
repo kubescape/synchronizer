@@ -131,15 +131,15 @@ func (c *Client) Start(ctx context.Context) error {
 			Namespace: d.GetNamespace(),
 		}
 
-		newObject, err := utils.FilterAndMarshal(d)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("resource", c.res.Resource), helpers.String("id", id.String()))
-			continue
-		}
 		switch {
 		case event.Type == watch.Added:
 			logger.L().Debug("added resource", helpers.String("id", id.String()))
-			err := c.callVerifyObject(ctx, id, newObject)
+			newObject, err := c.getObjectFromUnstructured(d)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
+				continue
+			}
+			err = c.callVerifyObject(ctx, id, newObject)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
@@ -155,7 +155,12 @@ func (c *Client) Start(ctx context.Context) error {
 			}
 		case event.Type == watch.Modified:
 			logger.L().Debug("modified resource", helpers.String("id", id.String()))
-			err := c.callPutOrPatch(ctx, id, nil, newObject)
+			newObject, err := c.getObjectFromUnstructured(d)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
+				continue
+			}
+			err = c.callPutOrPatch(ctx, id, nil, newObject)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot handle modified resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
@@ -381,4 +386,15 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 	}
 	// set resource version to watch from
 	return list.GetResourceVersion(), nil
+}
+
+func (c *Client) getObjectFromUnstructured(d *unstructured.Unstructured) ([]byte, error) {
+	if c.res.Group == "spdx.softwarecomposition.kubescape.io" {
+		obj, err := c.client.Resource(c.res).Namespace(d.GetNamespace()).Get(context.Background(), d.GetName(), metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("get resource: %w", err)
+		}
+		return utils.FilterAndMarshal(obj)
+	}
+	return utils.FilterAndMarshal(d)
 }
