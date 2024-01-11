@@ -9,7 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/k3s"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+	"k8s.io/utils/ptr"
 	"math/rand"
 	"net"
 	"os"
@@ -38,9 +41,11 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	apiregistrationclient "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/typed/apiregistration/v1"
 )
 
 const (
@@ -196,6 +201,111 @@ func initIntegrationTest(t *testing.T) *Test {
 		testcontainers.WithImage("docker.io/rancher/k3s:v1.27.1-k3s1"),
 	)
 	require.NoError(t, err)
+	kubeConfigYaml, err := k3sC.GetKubeConfig(ctx)
+	require.NoError(t, err)
+	clusterConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeConfigYaml)
+	require.NoError(t, err)
+	k8sclient := kubernetes.NewForConfigOrDie(clusterConfig)
+	// apiservice
+	regclient := apiregistrationclient.NewForConfigOrDie(clusterConfig)
+	_, err = regclient.APIServices().Create(context.TODO(),
+		&apiregistrationv1.APIService{
+			ObjectMeta: metav1.ObjectMeta{Name: "v1beta1.spdx.softwarecomposition.kubescape.io"},
+			Spec: apiregistrationv1.APIServiceSpec{
+				InsecureSkipTLSVerify: true,
+				Group:                 "spdx.softwarecomposition.kubescape.io",
+				GroupPriorityMinimum:  1000,
+				VersionPriority:       15,
+				Version:               "v1beta1",
+				Service: &apiregistrationv1.ServiceReference{
+					Name:      "storage",
+					Namespace: "kubescape",
+				},
+			},
+		}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	// kubescape namespace
+	_, err = k8sclient.CoreV1().Namespaces().Create(context.TODO(),
+		&corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: "kubescape"},
+		}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	// storage service
+	storageLabels := map[string]string{"app.kubernetes.io/name": "storage"}
+	_, err = k8sclient.CoreV1().Services("kubescape").Create(context.TODO(),
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "storage"},
+			Spec: corev1.ServiceSpec{
+				Ports:    []corev1.ServicePort{{Port: 443, Protocol: "TCP", TargetPort: intstr.FromInt32(8443)}},
+				Selector: storageLabels,
+			},
+		}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	// storage configmap
+	_, err = k8sclient.CoreV1().ConfigMaps("kubescape").Create(context.TODO(),
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "ks-cloud-config"},
+			Data: map[string]string{
+				"clusterData": `{"clusterName":"k3s"}`,
+			},
+		}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	// storage serviceaccount
+	_, err = k8sclient.CoreV1().ServiceAccounts("kubescape").Create(context.TODO(),
+		&corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{Name: "storage"},
+		}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	// storage rolebinding
+	_, err = k8sclient.RbacV1().RoleBindings("kube-system").Create(context.TODO(),
+		&rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "storage-auth-reader"},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: "rbac.authorization.k8s.io",
+				Kind:     "Role",
+				Name:     "extension-apiserver-authentication-reader",
+			},
+			Subjects: []rbacv1.Subject{{
+				Kind:      "ServiceAccount",
+				Name:      "storage",
+				Namespace: "kubescape",
+			}},
+		}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	// storage deployment
+	_, err = k8sclient.AppsV1().Deployments("kubescape").Create(context.TODO(),
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "storage", Labels: storageLabels},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: ptr.To(int32(1)),
+				Selector: &metav1.LabelSelector{MatchLabels: storageLabels},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: storageLabels},
+					Spec: corev1.PodSpec{
+						ServiceAccountName: "storage",
+						Containers: []corev1.Container{{
+							Name:         "apiserver",
+							Image:        "quay.io/kubescape/storage:v0.0.57",
+							VolumeMounts: []corev1.VolumeMount{{Name: "ks-cloud-config", MountPath: "/etc/config"}},
+						}},
+						Volumes: []corev1.Volume{
+							{Name: "data", VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							}},
+							{Name: "ks-cloud-config", VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "ks-cloud-config"},
+									Items: []corev1.KeyToPath{
+										{Key: "clusterData", Path: "clusterData.json"},
+									},
+								},
+							}},
+						},
+					},
+				},
+			},
+		}, metav1.CreateOptions{})
+	require.NoError(t, err)
 	// pulsar
 	pulsarC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
@@ -271,10 +381,6 @@ func initIntegrationTest(t *testing.T) *Test {
 	// client side
 	clientCfg, err := config.LoadConfig("../configuration/client")
 	require.NoError(t, err)
-	kubeConfigYaml, err := k3sC.GetKubeConfig(ctx)
-	require.NoError(t, err)
-	clusterConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeConfigYaml)
-	require.NoError(t, err)
 	clientAdapter := incluster.NewInClusterAdapter(clientCfg.InCluster, dynamic.NewForConfigOrDie(clusterConfig))
 	newConn := func() (net.Conn, error) {
 		return clientConn, nil
@@ -305,7 +411,7 @@ func initIntegrationTest(t *testing.T) *Test {
 		containers:         map[string]testcontainers.Container{"k3s": k3sC, "postgres": postgresC, "pulsar": pulsarC},
 		files:              []string{rdsFile.Name()},
 		clientAdapter:      clientAdapter,
-		k8sclient:          kubernetes.NewForConfigOrDie(clusterConfig),
+		k8sclient:          k8sclient,
 		pulsarClient:       pulsarClient,
 		processor:          ingesterProcessor,
 		s3:                 &s3,

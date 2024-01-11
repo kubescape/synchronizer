@@ -30,9 +30,10 @@ require (
 	github.com/testcontainers/testcontainers-go v0.27.0
 	github.com/testcontainers/testcontainers-go/modules/k3s v0.27.0
 	golang.org/x/net v0.19.0
-	k8s.io/api v0.28.4
-	k8s.io/apimachinery v0.28.4
-	k8s.io/client-go v0.28.4
+	k8s.io/api v0.29.0
+	k8s.io/apimachinery v0.29.0
+	k8s.io/client-go v0.29.0
+	k8s.io/kube-aggregator v0.29.0
 	k8s.io/utils v0.0.0-20231121161247-cf03d44ff3cf
 )
 
