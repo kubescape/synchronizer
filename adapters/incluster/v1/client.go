@@ -110,7 +110,7 @@ func (c *Client) Start(ctx context.Context) error {
 				eventQueue.Enqueue(event)
 			}
 		}, utils.NewBackOff(), func(err error, d time.Duration) {
-			if err != nil && errors.Is(err, errWatchClosed) {
+			if !errors.Is(err, errWatchClosed) {
 				logger.L().Ctx(ctx).Warning("watch", helpers.Error(err),
 					helpers.String("resource", c.res.Resource),
 					helpers.String("retry in", d.String()))
