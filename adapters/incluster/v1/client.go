@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/cenkalti/backoff/v4"
 	"slices"
 	"time"
+
+	"github.com/cenkalti/backoff/v4"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/kubescape/go-logger"
@@ -88,28 +89,30 @@ func (c *Client) Start(ctx context.Context) error {
 			logger.L().Info("starting watch", helpers.String("resource", c.res.Resource))
 			for {
 				event, chanActive := <-watcher.ResultChan()
+				// set resource version to resume watch from
+				// inspired by https://github.com/kubernetes/client-go/blob/5a0a4247921dd9e72d158aaa6c1ee124aba1da80/tools/watch/retrywatcher.go#L157
+				if metaObject, ok := event.Object.(resourceVersionGetter); ok {
+					watchOpts.ResourceVersion = metaObject.GetResourceVersion()
+				}
 				if eventQueue.Closed() {
 					watcher.Stop()
 					return backoff.Permanent(errors.New("event queue closed"))
 				}
 				if !chanActive {
-					return errors.New("channel closed")
+					// channel closed, retry
+					return nil
 				}
 				if event.Type == watch.Error {
 					return fmt.Errorf("watch error: %s", event.Object)
 				}
-				// set resource version to resume watch from
-				// inspired by https://github.com/kubernetes/client-go/blob/5a0a4247921dd9e72d158aaa6c1ee124aba1da80/tools/watch/retrywatcher.go#L157
-				metaObject, ok := event.Object.(resourceVersionGetter)
-				if ok {
-					watchOpts.ResourceVersion = metaObject.GetResourceVersion()
-				}
 				eventQueue.Enqueue(event)
 			}
 		}, utils.NewBackOff(), func(err error, d time.Duration) {
-			logger.L().Ctx(ctx).Warning("watch", helpers.Error(err),
-				helpers.String("resource", c.res.Resource),
-				helpers.String("retry in", d.String()))
+			if err != nil {
+				logger.L().Ctx(ctx).Warning("watch", helpers.Error(err),
+					helpers.String("resource", c.res.Resource),
+					helpers.String("retry in", d.String()))
+			}
 		}); err != nil {
 			logger.L().Ctx(ctx).Fatal("giving up watch", helpers.Error(err),
 				helpers.String("resource", c.res.Resource))
@@ -132,15 +135,15 @@ func (c *Client) Start(ctx context.Context) error {
 			Namespace: d.GetNamespace(),
 		}
 
-		newObject, err := utils.FilterAndMarshal(d)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("resource", c.res.Resource), helpers.String("id", id.String()))
-			continue
-		}
 		switch {
 		case event.Type == watch.Added:
 			logger.L().Debug("added resource", helpers.String("id", id.String()))
-			err := c.callVerifyObject(ctx, id, newObject)
+			newObject, err := c.getObjectFromUnstructured(d)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
+				continue
+			}
+			err = c.callVerifyObject(ctx, id, newObject)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
@@ -156,7 +159,12 @@ func (c *Client) Start(ctx context.Context) error {
 			}
 		case event.Type == watch.Modified:
 			logger.L().Debug("modified resource", helpers.String("id", id.String()))
-			err := c.callPutOrPatch(ctx, id, nil, newObject)
+			newObject, err := c.getObjectFromUnstructured(d)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
+				continue
+			}
+			err = c.callPutOrPatch(ctx, id, nil, newObject)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot handle modified resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
@@ -382,4 +390,15 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 	}
 	// set resource version to watch from
 	return list.GetResourceVersion(), nil
+}
+
+func (c *Client) getObjectFromUnstructured(d *unstructured.Unstructured) ([]byte, error) {
+	if c.res.Group == "spdx.softwarecomposition.kubescape.io" {
+		obj, err := c.client.Resource(c.res).Namespace(d.GetNamespace()).Get(context.Background(), d.GetName(), metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("get resource: %w", err)
+		}
+		return utils.FilterAndMarshal(obj)
+	}
+	return utils.FilterAndMarshal(d)
 }
