@@ -169,6 +169,11 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			return
 		}
 
+		if len(data) == 0 {
+			// connection closed
+			return
+		}
+
 		// unmarshal message
 		var generic domain.Generic
 		err := json.Unmarshal(data, &generic)
