@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/cenkalti/backoff/v4"
 	"io"
 	"net"
 	"time"
+
+	"github.com/cenkalti/backoff/v4"
 
 	"github.com/gobwas/ws/wsutil"
 	"github.com/kubescape/go-logger"
@@ -162,12 +163,17 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 	clientId := utils.ClientIdentifierFromContext(ctx)
 	// incoming message pool
 	inPool, err := ants.NewPoolWithFunc(1, func(i interface{}) {
-		data := i.([]byte)
+		data, ok := i.([]byte)
+		if !ok {
+			logger.L().Ctx(ctx).Error("failed to convert message to bytes", helpers.Interface("message", i))
+			return
+		}
+
 		// unmarshal message
 		var generic domain.Generic
 		err := json.Unmarshal(data, &generic)
 		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err))
+			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err), helpers.String("target", "domain.Generic"), helpers.String("data", string(data)))
 			return
 		}
 		var kind string
