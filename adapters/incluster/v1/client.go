@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/cenkalti/backoff/v4"
 	"slices"
 	"time"
+
+	"github.com/cenkalti/backoff/v4"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/kubescape/go-logger"
@@ -98,7 +99,8 @@ func (c *Client) Start(ctx context.Context) error {
 					return backoff.Permanent(errors.New("event queue closed"))
 				}
 				if !chanActive {
-					return errors.New("channel closed")
+					// channel closed, retry
+					return nil
 				}
 				if event.Type == watch.Error {
 					return fmt.Errorf("watch error: %s", event.Object)
@@ -106,9 +108,11 @@ func (c *Client) Start(ctx context.Context) error {
 				eventQueue.Enqueue(event)
 			}
 		}, utils.NewBackOff(), func(err error, d time.Duration) {
-			logger.L().Ctx(ctx).Warning("watch", helpers.Error(err),
-				helpers.String("resource", c.res.Resource),
-				helpers.String("retry in", d.String()))
+			if err != nil {
+				logger.L().Ctx(ctx).Warning("watch", helpers.Error(err),
+					helpers.String("resource", c.res.Resource),
+					helpers.String("retry in", d.String()))
+			}
 		}); err != nil {
 			logger.L().Ctx(ctx).Fatal("giving up watch", helpers.Error(err),
 				helpers.String("resource", c.res.Resource))
