@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/k3s"
+	"k8s.io/client-go/tools/clientcmd"
 	"math/rand"
 	"net"
 	"os"
@@ -39,7 +41,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 )
 
 const (
@@ -49,7 +50,6 @@ const (
 	name      = "test"
 )
 
-// storage CRDs are not supported by kwok (apparently)
 var (
 	cm = &corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{
@@ -191,15 +191,10 @@ func initIntegrationTest(t *testing.T) *Test {
 	require.NoError(t, err)
 	// generate some random ports
 	ports := randomPorts(3)
-	// kwok
-	kwokC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "registry.k8s.io/kwok/cluster:v0.4.0-k8s.v1.28.0",
-			ExposedPorts: []string{"8080/tcp"},
-			WaitingFor:   wait.ForExposedPort(),
-		},
-		Started: true,
-	})
+	// k3s
+	k3sC, err := k3s.RunContainer(ctx,
+		testcontainers.WithImage("docker.io/rancher/k3s:v1.27.1-k3s1"),
+	)
 	require.NoError(t, err)
 	// pulsar
 	pulsarC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -276,8 +271,9 @@ func initIntegrationTest(t *testing.T) *Test {
 	// client side
 	clientCfg, err := config.LoadConfig("../configuration/client")
 	require.NoError(t, err)
-	clusterConfig := &rest.Config{}
-	clusterConfig.Host, err = kwokC.Endpoint(ctx, "")
+	kubeConfigYaml, err := k3sC.GetKubeConfig(ctx)
+	require.NoError(t, err)
+	clusterConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeConfigYaml)
 	require.NoError(t, err)
 	clientAdapter := incluster.NewInClusterAdapter(clientCfg.InCluster, dynamic.NewForConfigOrDie(clusterConfig))
 	newConn := func() (net.Conn, error) {
@@ -306,7 +302,7 @@ func initIntegrationTest(t *testing.T) *Test {
 	}()
 	return &Test{
 		ctx:                ctx,
-		containers:         map[string]testcontainers.Container{"kwok": kwokC, "postgres": postgresC, "pulsar": pulsarC},
+		containers:         map[string]testcontainers.Container{"k3s": k3sC, "postgres": postgresC, "pulsar": pulsarC},
 		files:              []string{rdsFile.Name()},
 		clientAdapter:      clientAdapter,
 		k8sclient:          kubernetes.NewForConfigOrDie(clusterConfig),
@@ -350,7 +346,7 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	// compare object in s3 with object in k8s
 	k8sPod, err := td.k8sclient.CoreV1().Pods(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	require.NoError(t, err)
-	// workaround for empty TypeMeta (from kwok?)
+	// workaround for empty TypeMeta (from k3s?)
 	k8sPod.TypeMeta.Kind = "Pod"
 	k8sPod.TypeMeta.APIVersion = "v1"
 	var s3Pod corev1.Pod
