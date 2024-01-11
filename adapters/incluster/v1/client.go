@@ -39,6 +39,8 @@ type Client struct {
 	Strategy      domain.Strategy
 }
 
+var errWatchClosed = errors.New("watch channel closed")
+
 func NewClient(client dynamic.Interface, account, cluster string, r config.Resource) *Client {
 	res := schema.GroupVersionResource{Group: r.Group, Version: r.Version, Resource: r.Resource}
 	return &Client{
@@ -100,7 +102,7 @@ func (c *Client) Start(ctx context.Context) error {
 				}
 				if !chanActive {
 					// channel closed, retry
-					return nil
+					return errWatchClosed
 				}
 				if event.Type == watch.Error {
 					return fmt.Errorf("watch error: %s", event.Object)
@@ -108,7 +110,7 @@ func (c *Client) Start(ctx context.Context) error {
 				eventQueue.Enqueue(event)
 			}
 		}, utils.NewBackOff(), func(err error, d time.Duration) {
-			if err != nil {
+			if !errors.Is(err, errWatchClosed) {
 				logger.L().Ctx(ctx).Warning("watch", helpers.Error(err),
 					helpers.String("resource", c.res.Resource),
 					helpers.String("retry in", d.String()))
