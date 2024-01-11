@@ -635,14 +635,10 @@ func TestSynchronizer_TC07(t *testing.T) {
 func TestSynchronizer_TC08(t *testing.T) {
 	td := initIntegrationTest(t)
 	// kill network connection on client side
-	err := (*td.synchronizerClient.Conn).Close()
+	dead, _ := net.Pipe()
+	err := dead.Close()
 	require.NoError(t, err)
-	// restore network connection between synchronizers
-	*td.synchronizerClient.Conn, *td.synchronizerServer.Conn = net.Pipe()
-	go func() {
-		// need to restart the server side since it stopped on closed pipe
-		_ = td.synchronizerServer.Start(td.ctx)
-	}()
+	*td.synchronizerClient.Conn = dead
 	// add pod to k8s
 	_, err = td.k8sclient.CoreV1().Pods(namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 	require.NoError(t, err)
