@@ -207,7 +207,7 @@ func initIntegrationTest(t *testing.T) *Test {
 	ports := randomPorts(3)
 	// k3s
 	k3sC, err := k3s.RunContainer(ctx,
-		testcontainers.WithImage("docker.io/rancher/k3s:v1.27.1-k3s1"),
+		testcontainers.WithImage("docker.io/rancher/k3s:v1.27.9-k3s1"),
 	)
 	require.NoError(t, err)
 	kubeConfigYaml, err := k3sC.GetKubeConfig(ctx)
