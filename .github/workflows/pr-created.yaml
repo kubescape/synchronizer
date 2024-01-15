@@ -20,3 +20,18 @@ jobs:
       GO_VERSION: "1.21"
       CGO_ENABLED: 0
     secrets: inherit
+
+  component-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go 1.21
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.21"
+          env: |
+            CGO_ENABLED=0
+      - name: Run component tests
+        run: |
+          echo "machine github.com login git password ${{ secrets.INGESTERS_READ_TOKEN }}" > ~/.netrc
+          go test --timeout=20m --tags=integration ./...
