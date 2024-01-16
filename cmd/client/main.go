@@ -90,6 +90,9 @@ func main() {
 		NetDial: utils.GetDialer(),
 	}
 
+	// start pprof server
+	utils.ServePprof()
+
 	// start liveness probe
 	utils.StartLivenessProbe()
 

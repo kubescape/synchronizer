@@ -60,6 +60,9 @@ func main() {
 		adapter = adapters.NewMockAdapter(false)
 	}
 
+	// start pprof server
+	utils.ServePprof()
+
 	// start liveness probe
 	utils.StartLivenessProbe()
 
