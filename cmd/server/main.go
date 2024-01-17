@@ -77,7 +77,11 @@ func main() {
 					synchronizer := core.NewSynchronizerServer(r.Context(), adapter, conn)
 					err = synchronizer.Start(r.Context())
 					if err != nil {
-						logger.L().Error("error during sync, closing listener", helpers.Error(err))
+						id := utils.ClientIdentifierFromContext(r.Context())
+						logger.L().Error("error during sync, closing listener",
+							helpers.String("account", id.Account),
+							helpers.String("cluster", id.Cluster),
+							helpers.Error(err))
 						return
 					}
 				}()
