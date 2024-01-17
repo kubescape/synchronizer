@@ -194,7 +194,13 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			helpers.Int("depth", generic.Depth))
 		// check message depth and ID
 		if generic.Depth > maxMessageDepth {
-			logger.L().Ctx(ctx).Error("message depth too high", helpers.Int("depth", generic.Depth))
+			logger.L().Ctx(ctx).Error("message depth too high",
+				helpers.String("account", clientId.Account),
+				helpers.String("cluster", clientId.Cluster),
+				helpers.Interface("event", generic.Event.Value()),
+				helpers.String("kind", kind),
+				helpers.String("msgid", generic.MsgId),
+				helpers.Int("depth", generic.Depth))
 			return
 		}
 		// store in context
