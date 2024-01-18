@@ -72,7 +72,7 @@ func TestLoadConfig(t *testing.T) {
 					Resources: []Resource{
 						{Group: "apps", Version: "v1", Resource: "deployments", Strategy: "patch"},
 						{Group: "apps", Version: "v1", Resource: "statefulsets", Strategy: "patch"},
-						{Group: "", Version: "v1", Resource: "pods", Strategy: "patch"},
+						{Group: "spdx.softwarecomposition.kubescape.io", Version: "v1beta1", Resource: "applicationprofiles", Strategy: "patch"},
 					},
 				},
 			},
