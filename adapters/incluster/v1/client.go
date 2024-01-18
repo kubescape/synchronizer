@@ -82,44 +82,8 @@ func (c *Client) Start(ctx context.Context) error {
 	}
 	// begin watch
 	eventQueue := utils.NewCooldownQueue(utils.DefaultQueueSize, utils.DefaultTTL)
-	go func() {
-		if err := backoff.RetryNotify(func() error {
-			watcher, err := c.client.Resource(c.res).Namespace("").Watch(context.Background(), watchOpts)
-			if err != nil {
-				return fmt.Errorf("client resource: %w", err)
-			}
-			logger.L().Info("starting watch", helpers.String("resource", c.res.Resource))
-			for {
-				event, chanActive := <-watcher.ResultChan()
-				// set resource version to resume watch from
-				// inspired by https://github.com/kubernetes/client-go/blob/5a0a4247921dd9e72d158aaa6c1ee124aba1da80/tools/watch/retrywatcher.go#L157
-				if metaObject, ok := event.Object.(resourceVersionGetter); ok {
-					watchOpts.ResourceVersion = metaObject.GetResourceVersion()
-				}
-				if eventQueue.Closed() {
-					watcher.Stop()
-					return backoff.Permanent(errors.New("event queue closed"))
-				}
-				if !chanActive {
-					// channel closed, retry
-					return errWatchClosed
-				}
-				if event.Type == watch.Error {
-					return fmt.Errorf("watch error: %s", event.Object)
-				}
-				eventQueue.Enqueue(event)
-			}
-		}, utils.NewBackOff(), func(err error, d time.Duration) {
-			if !errors.Is(err, errWatchClosed) {
-				logger.L().Ctx(ctx).Warning("watch", helpers.Error(err),
-					helpers.String("resource", c.res.Resource),
-					helpers.String("retry in", d.String()))
-			}
-		}); err != nil {
-			logger.L().Ctx(ctx).Fatal("giving up watch", helpers.Error(err),
-				helpers.String("resource", c.res.Resource))
-		}
-	}()
+	go c.watchRetry(ctx, watchOpts, eventQueue)
+	// process events
 	for event := range eventQueue.ResultChan {
 		// skip non-objects
 		d, ok := event.Object.(*unstructured.Unstructured)
@@ -181,6 +145,45 @@ func (c *Client) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool
 
 func (c *Client) Stop(_ context.Context) error {
 	return nil
+}
+
+func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, eventQueue *utils.CooldownQueue) {
+	if err := backoff.RetryNotify(func() error {
+		watcher, err := c.client.Resource(c.res).Namespace("").Watch(context.Background(), watchOpts)
+		if err != nil {
+			return fmt.Errorf("client resource: %w", err)
+		}
+		logger.L().Info("starting watch", helpers.String("resource", c.res.Resource))
+		for {
+			event, chanActive := <-watcher.ResultChan()
+			// set resource version to resume watch from
+			// inspired by https://github.com/kubernetes/client-go/blob/5a0a4247921dd9e72d158aaa6c1ee124aba1da80/tools/watch/retrywatcher.go#L157
+			if metaObject, ok := event.Object.(resourceVersionGetter); ok {
+				watchOpts.ResourceVersion = metaObject.GetResourceVersion()
+			}
+			if eventQueue.Closed() {
+				watcher.Stop()
+				return backoff.Permanent(errors.New("event queue closed"))
+			}
+			if !chanActive {
+				// channel closed, retry
+				return errWatchClosed
+			}
+			if event.Type == watch.Error {
+				return fmt.Errorf("watch error: %s", event.Object)
+			}
+			eventQueue.Enqueue(event)
+		}
+	}, utils.NewBackOff(), func(err error, d time.Duration) {
+		if !errors.Is(err, errWatchClosed) {
+			logger.L().Ctx(ctx).Warning("watch", helpers.Error(err),
+				helpers.String("resource", c.res.Resource),
+				helpers.String("retry in", d.String()))
+		}
+	}); err != nil {
+		logger.L().Ctx(ctx).Fatal("giving up watch", helpers.Error(err),
+			helpers.String("resource", c.res.Resource))
+	}
 }
 
 // hasParent returns true if workload has a parent

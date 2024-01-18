@@ -18,9 +18,9 @@
         "strategy": "patch"
       },
       {
-        "group": "",
-        "version": "v1",
-        "resource": "pods",
+        "group": "spdx.softwarecomposition.kubescape.io",
+        "version": "v1beta1",
+        "resource": "applicationprofiles",
         "strategy": "patch"
       }
     ]

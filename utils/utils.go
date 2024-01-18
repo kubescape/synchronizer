@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/cenkalti/backoff/v4"
 	"net/http"
+	"net/http/pprof"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -192,6 +193,28 @@ func PulsarMessageIDtoString(msgID pulsar.MessageID) string {
 	batchStr := strconv.Itoa(int(msgID.BatchIdx()))
 	msgIDstr := msgID.String() + ":" + batchStr
 	return msgIDstr
+}
+
+func ServePprof() {
+	if logger.L().GetLevel() == helpers.DebugLevel.String() {
+		logger.L().Info("starting pprof server", helpers.String("port", "6060"))
+		pprofMux := http.NewServeMux()
+		pprofMux.HandleFunc("/debug/pprof/", pprof.Index)
+		pprofMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		pprofMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		pprofMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		pprofMux.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+		pprofMux.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+		pprofMux.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+		pprofMux.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+		pprofMux.Handle("/debug/pprof/block", pprof.Handler("block"))
+		pprofMux.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+		go func() {
+			if err := http.ListenAndServe(":6060", pprofMux); err != nil {
+				logger.L().Error("failed to start pprof server", helpers.Error(err))
+			}
+		}()
+	}
 }
 
 func StartLivenessProbe() {
