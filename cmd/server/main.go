@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/gobwas/ws"
 	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
 	"github.com/kubescape/synchronizer/utils"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -31,6 +33,15 @@ func main() {
 	// backend adapter
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	// enable prometheus metrics
+	if _, present := os.LookupEnv("PROMETHEUS_METRICS"); present {
+		go func() {
+			logger.L().Info("prometheus metrics enabled - http://localhost:2112")
+			http.Handle("/metrics", promhttp.Handler())
+			_ = http.ListenAndServe(":2112", nil)
+		}()
+	}
 
 	var adapter adapters.Adapter
 	if cfg.Backend.PulsarConfig != nil {
@@ -82,6 +93,10 @@ func main() {
 							helpers.String("account", id.Account),
 							helpers.String("cluster", id.Cluster),
 							helpers.Error(err))
+						err := synchronizer.Stop(r.Context())
+						if err != nil {
+							logger.L().Error("error during sync stop", helpers.Error(err))
+						}
 						return
 					}
 				}()

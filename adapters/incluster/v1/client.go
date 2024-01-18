@@ -175,6 +175,14 @@ func (c *Client) Start(ctx context.Context) error {
 	return nil
 }
 
+func (c *Client) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
+	return c.account == id.Account && c.cluster == id.Cluster
+}
+
+func (c *Client) Stop(_ context.Context) error {
+	return nil
+}
+
 // hasParent returns true if workload has a parent
 // based on https://github.com/kubescape/k8s-interface/blob/2855cc94bd7666b227ad9e5db5ca25cb895e6cee/k8sinterface/k8sdynamic.go#L219
 func hasParent(workload *unstructured.Unstructured) bool {

@@ -159,6 +159,14 @@ func (s *Synchronizer) Start(ctx context.Context) error {
 	return nil
 }
 
+func (s *Synchronizer) Stop(ctx context.Context) error {
+	identifier := utils.ClientIdentifierFromContext(ctx)
+	logger.L().Info("stopping synchronization",
+		helpers.String("account", identifier.Account),
+		helpers.String("cluster", identifier.Cluster))
+	return s.adapter.Stop(ctx)
+}
+
 func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 	clientId := utils.ClientIdentifierFromContext(ctx)
 	// incoming message pool

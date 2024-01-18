@@ -36,9 +36,17 @@ var _ messaging.MessageConsumer = (*PulsarMessageConsumer)(nil)
 
 func NewPulsarMessageConsumer(cfg config.Config, pulsarClient pulsarconnector.Client) (*PulsarMessageConsumer, error) {
 	consumerMsgChannel := make(chan pulsar.ConsumerMessage)
-	consumer, err := pulsarClient.NewConsumer(pulsarconnector.WithTopic(cfg.Backend.Topic),
+
+	hostname, _ := os.Hostname()
+	subscriptionName := fmt.Sprintf("%s-%s", cfg.Backend.Subscription, hostname)
+	logger.L().Debug("creating new pulsar consumer",
+		helpers.String("subscriptionName", subscriptionName),
+		helpers.String("topic", string(cfg.Backend.Topic)))
+
+	consumer, err := pulsarClient.NewConsumer(
+		pulsarconnector.WithTopic(cfg.Backend.Topic),
 		pulsarconnector.WithMessageChannel(consumerMsgChannel),
-		pulsarconnector.WithSubscriptionName(cfg.Backend.Subscription))
+		pulsarconnector.WithSubscriptionName(subscriptionName))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new consumer: %w", err)
 	}
@@ -82,6 +90,17 @@ func (c *PulsarMessageConsumer) startConsumingMessages(ctx context.Context, adap
 func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Context, adapter adapters.Adapter, msg pulsar.ConsumerMessage) error {
 	msgID := utils.PulsarMessageIDtoString(msg.ID())
 	msgProperties := msg.Properties()
+	clientIdentifier := domain.ClientIdentifier{
+		Account: msgProperties[messaging.MsgPropAccount],
+		Cluster: msgProperties[messaging.MsgPropCluster],
+	}
+
+	if !adapter.IsRelated(ctx, clientIdentifier) {
+		logger.L().Debug("skipping message from pulsar. client is not related to this instance",
+			helpers.String("msgId", msgID),
+			helpers.Interface("identifier", clientIdentifier))
+		return nil
+	}
 
 	logger.L().Debug("received message from pulsar",
 		helpers.String("account", msgProperties[messaging.MsgPropAccount]),

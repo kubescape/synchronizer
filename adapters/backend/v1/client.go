@@ -27,11 +27,18 @@ func NewClient(producer messaging.MessageProducer) *Client {
 var _ adapters.Client = (*Client)(nil)
 
 func (c *Client) Start(ctx context.Context) error {
-
 	if err := c.sendServerConnectedMessage(ctx); err != nil {
 		return fmt.Errorf("failed to produce server connected message: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) Stop(ctx context.Context) error {
+	return c.Stop(ctx)
+}
+
+func (c *Client) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
+	return c.IsRelated(ctx, id)
 }
 
 func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
