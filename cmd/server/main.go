@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/gobwas/ws"
 	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
@@ -35,11 +34,11 @@ func main() {
 	defer cancel()
 
 	// enable prometheus metrics
-	if _, present := os.LookupEnv("PROMETHEUS_METRICS"); present {
+	if cfg.Backend.Prometheus != nil && cfg.Backend.Prometheus.Enabled {
 		go func() {
-			logger.L().Info("prometheus metrics enabled - http://localhost:2112")
+			logger.L().Info("prometheus metrics enabled", helpers.Int("port", cfg.Backend.Prometheus.Port))
 			http.Handle("/metrics", promhttp.Handler())
-			_ = http.ListenAndServe(":2112", nil)
+			_ = http.ListenAndServe(fmt.Sprintf(":%d", cfg.Backend.Prometheus.Port), nil)
 		}()
 	}
 
@@ -77,8 +76,17 @@ func main() {
 	// start liveness probe
 	utils.StartLivenessProbe()
 
+	var addr string
+	if cfg.Backend.Port > 0 {
+		addr = fmt.Sprintf(":%d", cfg.Backend.Port)
+	} else {
+		addr = ":8080"
+	}
+
+	logger.L().Info("starting synchronizer server", helpers.String("port", addr))
+
 	// websocket server
-	_ = http.ListenAndServe(":8080",
+	_ = http.ListenAndServe(addr,
 		authentication.AuthenticationServerMiddleware(cfg.Backend.AuthenticationServer,
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				conn, _, _, err := ws.UpgradeHTTP(r, w)
