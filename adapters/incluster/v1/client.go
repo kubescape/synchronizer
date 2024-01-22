@@ -139,6 +139,14 @@ func (c *Client) Start(ctx context.Context) error {
 	return nil
 }
 
+func (c *Client) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
+	return c.account == id.Account && c.cluster == id.Cluster
+}
+
+func (c *Client) Stop(_ context.Context) error {
+	return nil
+}
+
 func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, eventQueue *utils.CooldownQueue) {
 	if err := backoff.RetryNotify(func() error {
 		watcher, err := c.client.Resource(c.res).Namespace("").Watch(context.Background(), watchOpts)

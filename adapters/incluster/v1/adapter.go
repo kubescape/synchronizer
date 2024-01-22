@@ -3,6 +3,8 @@ package incluster
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -11,7 +13,6 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
 	"k8s.io/client-go/dynamic"
-	"time"
 )
 
 type Adapter struct {
@@ -116,4 +117,12 @@ func (a *Adapter) Start(ctx context.Context) error {
 		}()
 	}
 	return nil
+}
+
+func (a *Adapter) Stop(ctx context.Context) error {
+	return a.Stop(ctx)
+}
+
+func (a *Adapter) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
+	return a.cfg.Account == id.Account && a.cfg.ClusterName == id.Cluster
 }

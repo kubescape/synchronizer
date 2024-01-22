@@ -31,6 +31,14 @@ func NewMockAdapter(isClient bool) *MockAdapter {
 
 var _ Adapter = (*MockAdapter)(nil)
 
+func (m *MockAdapter) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
+	return true
+}
+
+func (m *MockAdapter) Stop(_ context.Context) error {
+	return nil
+}
+
 func (m *MockAdapter) DeleteObject(_ context.Context, id domain.KindName) error {
 	delete(m.Resources, id.String())
 	return nil

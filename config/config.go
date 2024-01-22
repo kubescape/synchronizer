@@ -21,10 +21,12 @@ type Config struct {
 }
 
 type Backend struct {
+	Port                 int                         `mapstructure:"port"`
 	AuthenticationServer *AuthenticationServerConfig `mapstructure:"authenticationServer"`
 	Subscription         string                      `mapstructure:"subscription"`
 	PulsarConfig         *pulsarconfig.PulsarConfig  `mapstructure:"pulsarConfig"`
 	Topic                pulsarconnector.TopicName   `mapstructure:"topic"`
+	Prometheus           *PrometheusConfig           `mapstructure:"prometheusConfig"`
 }
 
 type InCluster struct {
@@ -46,6 +48,11 @@ type AuthenticationServerConfig struct {
 	Url                       string            `mapstructure:"url"`
 	HeaderToQueryParamMapping map[string]string `mapstructure:"headerToQueryParamMapping"`
 	HeaderToHeaderMapping     map[string]string `mapstructure:"headerToHeaderMapping"`
+}
+
+type PrometheusConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+	Port    int  `mapstructure:"port"`
 }
 
 // Kind returns group/version/resource as a string.

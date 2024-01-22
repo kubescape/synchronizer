@@ -18,6 +18,7 @@ require (
 	github.com/evanphx/json-patch v5.7.0+incompatible
 	github.com/gobwas/ws v1.3.1
 	github.com/google/uuid v1.4.0
+	github.com/goradd/maps v0.1.5
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/kinbiko/jsonassert v1.1.1
 	github.com/kubescape/backend v0.0.14
@@ -26,6 +27,7 @@ require (
 	github.com/kubescape/storage v0.0.57
 	github.com/panjf2000/ants/v2 v2.8.2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
+	github.com/prometheus/client_golang v1.16.0
 	github.com/spf13/viper v1.17.0
 	github.com/stretchr/testify v1.8.4
 	github.com/testcontainers/testcontainers-go v0.27.0
@@ -184,7 +186,6 @@ require (
 	github.com/pkg/profile v1.7.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
 	github.com/pquerna/cachecontrol v0.2.0 // indirect
-	github.com/prometheus/client_golang v1.16.0 // indirect
 	github.com/prometheus/client_model v0.4.0 // indirect
 	github.com/prometheus/common v0.44.0 // indirect
 	github.com/prometheus/procfs v0.11.0 // indirect

@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/goradd/maps"
+	"github.com/kubescape/go-logger"
+	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
@@ -12,8 +15,8 @@ import (
 )
 
 type Adapter struct {
-	callbacksMap sync.Map // <string>:<domain.Callbacks>
-	clientsMap   sync.Map // <string>:<adapters.Client>
+	callbacksMap maps.SafeMap[string, domain.Callbacks]
+	clientsMap   maps.SafeMap[string, adapters.Client]
 	producer     messaging.MessageProducer
 	consumer     messaging.MessageConsumer
 	once         sync.Once
@@ -34,7 +37,7 @@ var _ adapters.Adapter = (*Adapter)(nil)
 func (b *Adapter) getClient(ctx context.Context) (adapters.Client, error) {
 	id := utils.ClientIdentifierFromContext(ctx)
 	if client, ok := b.clientsMap.Load(id.String()); ok {
-		return client.(adapters.Client), nil
+		return client, nil
 	}
 	return nil, fmt.Errorf("unknown resource %s", id.String())
 }
@@ -42,7 +45,7 @@ func (b *Adapter) getClient(ctx context.Context) (adapters.Client, error) {
 func (b *Adapter) Callbacks(ctx context.Context) (domain.Callbacks, error) {
 	id := utils.ClientIdentifierFromContext(ctx)
 	if callbacks, ok := b.callbacksMap.Load(id.String()); ok {
-		return callbacks.(domain.Callbacks), nil
+		return callbacks, nil
 	}
 	return domain.Callbacks{}, fmt.Errorf("unknown resource %s", id.String())
 }
@@ -81,7 +84,7 @@ func (b *Adapter) PutObject(ctx context.Context, id domain.KindName, object []by
 
 func (b *Adapter) RegisterCallbacks(ctx context.Context, callbacks domain.Callbacks) {
 	id := utils.ClientIdentifierFromContext(ctx)
-	b.callbacksMap.Store(id.String(), callbacks)
+	b.callbacksMap.Set(id.String(), callbacks)
 }
 
 func (b *Adapter) Start(ctx context.Context) error {
@@ -91,7 +94,8 @@ func (b *Adapter) Start(ctx context.Context) error {
 
 	client := NewClient(b.producer)
 	id := utils.ClientIdentifierFromContext(ctx)
-	b.clientsMap.Store(id.String(), client)
+	b.clientsMap.Set(id.String(), client)
+	connectedClientsGauge.Inc()
 	callbacks, err := b.Callbacks(ctx)
 	if err != nil {
 		return err
@@ -103,6 +107,19 @@ func (b *Adapter) Start(ctx context.Context) error {
 	}()
 
 	return nil
+}
+
+func (b *Adapter) Stop(ctx context.Context) error {
+	id := utils.ClientIdentifierFromContext(ctx)
+	logger.L().Debug("removing connected client", helpers.Interface("id", id))
+	b.callbacksMap.Delete(id.String())
+	b.clientsMap.Delete(id.String())
+	connectedClientsGauge.Dec()
+	return nil
+}
+
+func (b *Adapter) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
+	return b.callbacksMap.Has(id.String()) && b.clientsMap.Has(id.String())
 }
 
 func (b *Adapter) VerifyObject(ctx context.Context, id domain.KindName, checksum string) error {
