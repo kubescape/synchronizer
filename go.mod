@@ -23,7 +23,7 @@ require (
 	github.com/kinbiko/jsonassert v1.1.1
 	github.com/kubescape/backend v0.0.14
 	github.com/kubescape/go-logger v0.0.22
-	github.com/kubescape/messaging v0.0.20
+	github.com/kubescape/messaging v0.0.21
 	github.com/kubescape/storage v0.0.57
 	github.com/panjf2000/ants/v2 v2.8.2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
