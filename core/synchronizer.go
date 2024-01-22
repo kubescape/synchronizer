@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -138,10 +139,14 @@ func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.KindN
 }
 
 func (s *Synchronizer) Start(ctx context.Context) error {
+	hostname, _ := os.Hostname()
+
 	identifiers := utils.ClientIdentifierFromContext(ctx)
 	logger.L().Info("starting synchronization",
 		helpers.String("account", identifiers.Account),
-		helpers.String("cluster", identifiers.Cluster))
+		helpers.String("cluster", identifiers.Cluster),
+		helpers.String("host", hostname))
+
 	if s.isClient {
 		// send ping
 		go s.sendPing(ctx)
@@ -160,10 +165,13 @@ func (s *Synchronizer) Start(ctx context.Context) error {
 }
 
 func (s *Synchronizer) Stop(ctx context.Context) error {
+	hostname, _ := os.Hostname()
 	identifier := utils.ClientIdentifierFromContext(ctx)
 	logger.L().Info("stopping synchronization",
 		helpers.String("account", identifier.Account),
-		helpers.String("cluster", identifier.Cluster))
+		helpers.String("cluster", identifier.Cluster),
+		helpers.String("host", hostname),
+	)
 	return s.adapter.Stop(ctx)
 }
 

@@ -34,11 +34,11 @@ func (c *Client) Start(ctx context.Context) error {
 }
 
 func (c *Client) Stop(ctx context.Context) error {
-	return c.Stop(ctx)
+	return nil
 }
 
 func (c *Client) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
-	return c.IsRelated(ctx, id)
+	return true
 }
 
 func (c *Client) sendServerConnectedMessage(ctx context.Context) error {

@@ -98,7 +98,9 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 	if !adapter.IsRelated(ctx, clientIdentifier) {
 		logger.L().Debug("skipping message from pulsar. client is not related to this instance",
 			helpers.String("msgId", msgID),
-			helpers.Interface("identifier", clientIdentifier))
+			helpers.Interface("clientIdentifier", clientIdentifier),
+			helpers.String("consumerName", c.consumer.Name()),
+		)
 		return nil
 	}
 

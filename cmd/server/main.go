@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/gobwas/ws"
 	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
@@ -83,7 +84,8 @@ func main() {
 		addr = ":8080"
 	}
 
-	logger.L().Info("starting synchronizer server", helpers.String("port", addr))
+	hostname, _ := os.Hostname()
+	logger.L().Info("starting synchronizer server", helpers.String("port", addr), helpers.String("hostname", hostname))
 
 	// websocket server
 	_ = http.ListenAndServe(addr,
