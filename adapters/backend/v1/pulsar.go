@@ -80,7 +80,7 @@ func (c *PulsarMessageReader) Start(mainCtx context.Context, adapter adapters.Ad
 
 func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
 	for {
-		msg, err := c.reader.Next(context.Background())
+		msg, err := c.reader.Next(ctx)
 		if err != nil {
 			panic(err)
 		}
