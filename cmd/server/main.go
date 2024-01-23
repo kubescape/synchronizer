@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gobwas/ws"
 	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
@@ -96,15 +97,28 @@ func main() {
 					logger.L().Error("unable to upgrade connection", helpers.Error(err))
 					return
 				}
+
+				// we check if the client is already connected, if so we wait a bit for the previous connection to close (in case of a fast reconnect)
+				// this is to avoid multiple connections from the same client
+				id := utils.ClientIdentifierFromContext(r.Context())
+				if adapter.IsRelated(r.Context(), id) {
+					logger.L().Info("client already connected. waiting before starting a new synchronizer",
+						helpers.String("account", id.Account),
+						helpers.String("cluster", id.Cluster),
+						helpers.String("connectionId", id.ConnectionId))
+					time.Sleep(5 * time.Second)
+				}
+
 				go func() {
 					defer conn.Close()
 					synchronizer := core.NewSynchronizerServer(r.Context(), adapter, conn)
 					err = synchronizer.Start(r.Context())
 					if err != nil {
-						id := utils.ClientIdentifierFromContext(r.Context())
+
 						logger.L().Error("error during sync, closing listener",
 							helpers.String("account", id.Account),
 							helpers.String("cluster", id.Cluster),
+							helpers.String("connectionId", id.ConnectionId),
 							helpers.Error(err))
 						err := synchronizer.Stop(r.Context())
 						if err != nil {

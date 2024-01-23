@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/config"
@@ -93,13 +94,21 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 			}
 		}
 
-		logger.L().Debug("connection authenticated", helpers.String("account", account), helpers.String("cluster", cluster))
+		connId := uuid.New().String()
+
+		logger.L().Debug("connection authenticated",
+			helpers.String("account", account),
+			helpers.String("cluster", cluster),
+			helpers.String("connId", connId),
+		)
 
 		// create new context with client identifier
 		ctx := context.WithValue(r.Context(), domain.ContextKeyClientIdentifier, domain.ClientIdentifier{
-			Account: account,
-			Cluster: cluster,
+			Account:      account,
+			Cluster:      cluster,
+			ConnectionId: connId,
 		})
+
 		// create new request using the new context
 		authenticatedRequest := r.WithContext(ctx)
 		next.ServeHTTP(w, authenticatedRequest)

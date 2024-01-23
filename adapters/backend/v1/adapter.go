@@ -15,12 +15,13 @@ import (
 )
 
 type Adapter struct {
-	callbacksMap maps.SafeMap[string, domain.Callbacks]
-	clientsMap   maps.SafeMap[string, adapters.Client]
-	producer     messaging.MessageProducer
-	consumer     messaging.MessageConsumer
-	once         sync.Once
-	mainContext  context.Context
+	callbacksMap  maps.SafeMap[string, domain.Callbacks]
+	clientsMap    maps.SafeMap[string, adapters.Client]
+	connectionMap maps.SafeMap[string, string] // <cluster, account> -> <connection string>
+	producer      messaging.MessageProducer
+	consumer      messaging.MessageConsumer
+	once          sync.Once
+	mainContext   context.Context
 }
 
 func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, messageConsumer messaging.MessageConsumer) *Adapter {
@@ -91,9 +92,11 @@ func (b *Adapter) Start(ctx context.Context) error {
 	b.once.Do(func() {
 		b.consumer.Start(b.mainContext, b)
 	})
+	// keeps track of the last connection string for each cluster/account
+	id := utils.ClientIdentifierFromContext(ctx)
+	b.connectionMap.Set(id.String(), id.ConnectionString())
 
 	client := NewClient(b.producer)
-	id := utils.ClientIdentifierFromContext(ctx)
 	b.clientsMap.Set(id.String(), client)
 	connectedClientsGauge.Inc()
 	callbacks, err := b.Callbacks(ctx)
@@ -111,10 +114,23 @@ func (b *Adapter) Start(ctx context.Context) error {
 
 func (b *Adapter) Stop(ctx context.Context) error {
 	id := utils.ClientIdentifierFromContext(ctx)
+
+	// make sure we are not removing a connected client if a different connection was already found
+	if connectionString, ok := b.connectionMap.Load(id.String()); ok && connectionString != id.ConnectionString() {
+		logger.L().Info("not removing connected client since a different connection was already found",
+			helpers.String("old", id.ConnectionString()),
+			helpers.String("existing", connectionString))
+		return nil
+	}
+
 	logger.L().Debug("removing connected client", helpers.Interface("id", id))
 	b.callbacksMap.Delete(id.String())
-	b.clientsMap.Delete(id.String())
+	if client, ok := b.clientsMap.Load(id.String()); ok {
+		_ = client.Stop(ctx)
+		b.clientsMap.Delete(id.String())
+	}
 	connectedClientsGauge.Dec()
+
 	return nil
 }
 

@@ -145,6 +145,7 @@ func (s *Synchronizer) Start(ctx context.Context) error {
 	logger.L().Info("starting synchronization",
 		helpers.String("account", identifiers.Account),
 		helpers.String("cluster", identifiers.Cluster),
+		helpers.String("connId", identifiers.ConnectionId),
 		helpers.String("host", hostname))
 
 	if s.isClient {
@@ -167,9 +168,11 @@ func (s *Synchronizer) Start(ctx context.Context) error {
 func (s *Synchronizer) Stop(ctx context.Context) error {
 	hostname, _ := os.Hostname()
 	identifier := utils.ClientIdentifierFromContext(ctx)
+
 	logger.L().Info("stopping synchronization",
 		helpers.String("account", identifier.Account),
 		helpers.String("cluster", identifier.Cluster),
+		helpers.String("connId", identifier.ConnectionId),
 		helpers.String("host", hostname),
 	)
 	return s.adapter.Stop(ctx)
