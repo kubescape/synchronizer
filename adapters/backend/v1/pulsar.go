@@ -24,70 +24,95 @@ const (
 )
 
 // ******************************
-// * Pulsar Message Consumer  *//
+// * Pulsar Message Reader  *//
 // ******************************
 
-type PulsarMessageConsumer struct {
-	consumer       pulsar.Consumer
-	messageChannel chan pulsar.ConsumerMessage
+type PulsarMessageReader struct {
+	name           string
+	reader         pulsar.Reader
+	messageChannel chan pulsar.Message
 }
 
-var _ messaging.MessageConsumer = (*PulsarMessageConsumer)(nil)
+var _ messaging.MessageReader = (*PulsarMessageReader)(nil)
 
-func NewPulsarMessageConsumer(cfg config.Config, pulsarClient pulsarconnector.Client) (*PulsarMessageConsumer, error) {
-	consumerMsgChannel := make(chan pulsar.ConsumerMessage)
+func NewPulsarMessageReader(cfg config.Config, pulsarClient pulsarconnector.Client) (*PulsarMessageReader, error) {
+	msgChannel := make(chan pulsar.Message)
 
-	hostname, _ := os.Hostname()
-	subscriptionName := fmt.Sprintf("%s-%s", cfg.Backend.Subscription, hostname)
-	logger.L().Debug("creating new pulsar consumer",
-		helpers.String("subscriptionName", subscriptionName),
-		helpers.String("topic", string(cfg.Backend.Topic)))
-
-	consumer, err := pulsarClient.NewConsumer(
-		pulsarconnector.WithTopic(cfg.Backend.Topic),
-		pulsarconnector.WithMessageChannel(consumerMsgChannel),
-		pulsarconnector.WithSubscriptionName(subscriptionName))
+	hostname, err := os.Hostname()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new consumer: %w", err)
+		panic(err)
+	}
+	readerName := fmt.Sprintf("%s-%s", cfg.Backend.Subscription, hostname)
+	topic := pulsarconnector.BuildPersistentTopic(pulsarClient.GetConfig().Tenant, pulsarClient.GetConfig().Namespace, cfg.Backend.Topic)
+	logger.L().Debug("creating new pulsar reader",
+		helpers.String("readerName", readerName),
+		helpers.String("topic", topic))
+
+	reader, err := pulsarClient.CreateReader(
+		pulsar.ReaderOptions{
+			Name:                    readerName,
+			Topic:                   topic,
+			StartMessageID:          pulsar.LatestMessageID(),
+			StartMessageIDInclusive: true,
+		})
+
+	if err != nil {
+		panic(err)
 	}
 
-	return &PulsarMessageConsumer{consumer: consumer, messageChannel: consumerMsgChannel}, nil
+	return &PulsarMessageReader{
+		name:           readerName,
+		reader:         reader,
+		messageChannel: msgChannel,
+	}, nil
 }
 
-func (c *PulsarMessageConsumer) Start(ctx context.Context, adapter adapters.Adapter) {
+func (c *PulsarMessageReader) Start(mainCtx context.Context, adapter adapters.Adapter) {
 	go func() {
-		logger.L().Info("starting to consume messages from pulsar")
-		_ = c.startConsumingMessages(ctx, adapter)
+		logger.L().Info("starting to read messages from pulsar")
+		c.readerLoop(mainCtx)
+	}()
+	go func() {
+		logger.L().Info("starting to listening on pulsar message channel")
+		_ = c.listenOnMessageChannel(mainCtx, adapter)
 	}()
 }
 
-func (c *PulsarMessageConsumer) startConsumingMessages(ctx context.Context, adapter adapters.Adapter) error {
-	defer c.consumer.Close()
+func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
+	for {
+		msg, err := c.reader.Next(context.Background())
+		if err != nil {
+			panic(err)
+		}
+
+		// skip messages sent by the synchronizer server
+		if msg.Key() == SynchronizerServerProducerKey {
+			continue
+		}
+
+		c.messageChannel <- msg
+	}
+}
+
+func (c *PulsarMessageReader) listenOnMessageChannel(ctx context.Context, adapter adapters.Adapter) error {
+	defer c.reader.Close()
 	for {
 		select {
 		case <-ctx.Done():
 			close(c.messageChannel)
 			return nil
 		case msg := <-c.messageChannel:
-			// skip messages sent by the synchronizer server
-			if msg.Key() == SynchronizerServerProducerKey {
-				if err := c.consumer.Ack(msg); err != nil {
-					logger.L().Ctx(ctx).Error("failed to ack message", helpers.Error(err))
-				}
-				continue
-			}
-			// handle message
+			msgID := utils.PulsarMessageIDtoString(msg.ID())
 			if err := c.handleSingleSynchronizerMessage(ctx, adapter, msg); err != nil {
-				logger.L().Ctx(ctx).Error("failed to handle message", helpers.Error(err))
-				c.consumer.Nack(msg)
-			} else if err := c.consumer.Ack(msg); err != nil {
-				logger.L().Ctx(ctx).Error("failed to ack message", helpers.Error(err))
+				logger.L().Ctx(ctx).Error("failed to handle message", helpers.Error(err), helpers.String("msgId", msgID))
+			} else {
+				logger.L().Ctx(ctx).Debug("message processed successfully", helpers.String("msgId", msgID))
 			}
 		}
 	}
 }
 
-func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Context, adapter adapters.Adapter, msg pulsar.ConsumerMessage) error {
+func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Context, adapter adapters.Adapter, msg pulsar.Message) error {
 	msgID := utils.PulsarMessageIDtoString(msg.ID())
 	msgProperties := msg.Properties()
 	clientIdentifier := domain.ClientIdentifier{
@@ -99,7 +124,7 @@ func (c *PulsarMessageConsumer) handleSingleSynchronizerMessage(ctx context.Cont
 		logger.L().Debug("skipping message from pulsar. client is not related to this instance",
 			helpers.String("msgId", msgID),
 			helpers.Interface("clientIdentifier", clientIdentifier),
-			helpers.String("consumerName", c.consumer.Name()),
+			helpers.String("readerName", c.name),
 		)
 		return nil
 	}

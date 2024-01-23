@@ -76,7 +76,7 @@ type TestSynchronizerServer struct {
 	syncServerContextCancelFn context.CancelFunc
 	conn                      net.Conn
 	pulsarProducer            *backend.PulsarMessageProducer
-	pulsarConsumer            *backend.PulsarMessageConsumer
+	pulsarReader              *backend.PulsarMessageReader
 }
 
 type TestKubernetesCluster struct {
@@ -116,7 +116,7 @@ func randomPorts(n int) []string {
 		listener, err := net.Listen("tcp", "0.0.0.0:"+port)
 		if err != nil {
 			// try again
-			break
+			continue
 		}
 		_ = listener.Close()
 		if err == nil && !ports.Contains(port) {
@@ -514,11 +514,11 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 	serverCfg.Backend.PulsarConfig.AdminUrl = pulsarAdminUrl
 	pulsarProducer, err := backend.NewPulsarMessageProducer(serverCfg, pulsarClient)
 	require.NoError(t, err)
-	pulsarConsumer, err := backend.NewPulsarMessageConsumer(serverCfg, pulsarClient)
+	pulsarReader, err := backend.NewPulsarMessageReader(serverCfg, pulsarClient)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
-	serverAdapter := backend.NewBackendAdapter(ctx, pulsarProducer, pulsarConsumer)
+	serverAdapter := backend.NewBackendAdapter(ctx, pulsarProducer, pulsarReader)
 	synchronizerServer := NewSynchronizerServer(ctx, serverAdapter, serverConn)
 
 	// start server
@@ -528,7 +528,7 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 
 	return &TestSynchronizerServer{
 		pulsarProducer:            pulsarProducer,
-		pulsarConsumer:            pulsarConsumer,
+		pulsarReader:              pulsarReader,
 		syncServerContextCancelFn: cancel,
 		serverUrl:                 fmt.Sprintf("ws://127.0.0.1:%s/", serverPort),
 		syncServer:                synchronizerServer,

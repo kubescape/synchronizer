@@ -21,15 +21,15 @@ type Adapter struct {
 	connMapMutex  sync.RWMutex
 	connectionMap map[string]domain.ClientIdentifier // <cluster, account> -> <connection string>
 	producer      messaging.MessageProducer
-	consumer      messaging.MessageConsumer
+	reader        messaging.MessageReader
 	once          sync.Once
 	mainContext   context.Context
 }
 
-func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, messageConsumer messaging.MessageConsumer) *Adapter {
+func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, messageReader messaging.MessageReader) *Adapter {
 	adapter := &Adapter{
 		producer:      messageProducer,
-		consumer:      messageConsumer,
+		reader:        messageReader,
 		mainContext:   mainContext,
 		connectionMap: make(map[string]domain.ClientIdentifier),
 	}
@@ -93,7 +93,7 @@ func (b *Adapter) RegisterCallbacks(ctx context.Context, callbacks domain.Callba
 
 func (b *Adapter) Start(ctx context.Context) error {
 	b.once.Do(func() {
-		b.consumer.Start(b.mainContext, b)
+		b.reader.Start(b.mainContext, b)
 	})
 
 	b.connMapMutex.Lock()

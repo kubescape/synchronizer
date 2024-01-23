@@ -59,12 +59,12 @@ func main() {
 			logger.L().Fatal("failed to create pulsar producer", helpers.Error(err), helpers.String("config", fmt.Sprintf("%+v", cfg.Backend.PulsarConfig)))
 		}
 
-		pulsarConsumer, err := backend.NewPulsarMessageConsumer(cfg, pulsarClient)
+		pulsarReader, err := backend.NewPulsarMessageReader(cfg, pulsarClient)
 		if err != nil {
-			logger.L().Fatal("failed to create pulsar consumer", helpers.Error(err), helpers.String("config", fmt.Sprintf("%+v", cfg.Backend.PulsarConfig)))
+			logger.L().Fatal("failed to create pulsar reader", helpers.Error(err), helpers.String("config", fmt.Sprintf("%+v", cfg.Backend.PulsarConfig)))
 		}
 
-		adapter = backend.NewBackendAdapter(ctx, pulsarProducer, pulsarConsumer)
+		adapter = backend.NewBackendAdapter(ctx, pulsarProducer, pulsarReader)
 	} else {
 		// mock adapter
 		logger.L().Info("initializing mock adapter")
