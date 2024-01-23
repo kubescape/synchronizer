@@ -15,9 +15,11 @@ import (
 )
 
 type Adapter struct {
-	callbacksMap  maps.SafeMap[string, domain.Callbacks]
-	clientsMap    maps.SafeMap[string, adapters.Client]
-	connectionMap maps.SafeMap[string, string] // <cluster, account> -> <connection string>
+	callbacksMap maps.SafeMap[string, domain.Callbacks]
+	clientsMap   maps.SafeMap[string, adapters.Client]
+
+	connMapMutex  sync.RWMutex
+	connectionMap map[string]string // <cluster, account> -> <connection string>
 	producer      messaging.MessageProducer
 	consumer      messaging.MessageConsumer
 	once          sync.Once
@@ -26,9 +28,10 @@ type Adapter struct {
 
 func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, messageConsumer messaging.MessageConsumer) *Adapter {
 	adapter := &Adapter{
-		producer:    messageProducer,
-		consumer:    messageConsumer,
-		mainContext: mainContext,
+		producer:      messageProducer,
+		consumer:      messageConsumer,
+		mainContext:   mainContext,
+		connectionMap: make(map[string]string),
 	}
 	return adapter
 }
@@ -92,9 +95,17 @@ func (b *Adapter) Start(ctx context.Context) error {
 	b.once.Do(func() {
 		b.consumer.Start(b.mainContext, b)
 	})
-	// keeps track of the last connection string for each cluster/account
+
+	b.connMapMutex.Lock()
+	defer b.connMapMutex.Unlock()
 	id := utils.ClientIdentifierFromContext(ctx)
-	b.connectionMap.Set(id.String(), id.ConnectionString())
+
+	logger.L().Info("starting synchronizer backend adapter",
+		helpers.String("connectionString", id.ConnectionString()),
+	)
+
+	// keeps track of the last connection string for each cluster/account
+	b.connectionMap[id.String()] = id.ConnectionString()
 
 	client := NewClient(b.producer)
 	b.clientsMap.Set(id.String(), client)
@@ -115,15 +126,25 @@ func (b *Adapter) Start(ctx context.Context) error {
 func (b *Adapter) Stop(ctx context.Context) error {
 	id := utils.ClientIdentifierFromContext(ctx)
 
+	b.connMapMutex.Lock()
+	defer b.connMapMutex.Unlock()
+
+	logger.L().Info("starting synchronizer backend adapter",
+		helpers.String("connectionString", id.ConnectionString()),
+	)
 	// make sure we are not removing a connected client if a different connection was already found
-	if connectionString, ok := b.connectionMap.Load(id.String()); ok && connectionString != id.ConnectionString() {
+	if connectionString, ok := b.connectionMap[id.String()]; ok && connectionString != id.ConnectionString() {
 		logger.L().Info("not removing connected client since a different connection was already found",
 			helpers.String("old", id.ConnectionString()),
 			helpers.String("existing", connectionString))
 		return nil
 	}
 
-	logger.L().Debug("removing connected client", helpers.Interface("id", id))
+	logger.L().Info("removing connected client from backend adapter",
+		helpers.Interface("id", id),
+	)
+	delete(b.connectionMap, id.String())
+
 	b.callbacksMap.Delete(id.String())
 	if client, ok := b.clientsMap.Load(id.String()); ok {
 		_ = client.Stop(ctx)
