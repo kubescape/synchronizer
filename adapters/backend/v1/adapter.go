@@ -19,7 +19,7 @@ type Adapter struct {
 	clientsMap   maps.SafeMap[string, adapters.Client]
 
 	connMapMutex  sync.RWMutex
-	connectionMap map[string]string // <cluster, account> -> <connection string>
+	connectionMap map[string]domain.ClientIdentifier // <cluster, account> -> <connection string>
 	producer      messaging.MessageProducer
 	consumer      messaging.MessageConsumer
 	once          sync.Once
@@ -31,7 +31,7 @@ func NewBackendAdapter(mainContext context.Context, messageProducer messaging.Me
 		producer:      messageProducer,
 		consumer:      messageConsumer,
 		mainContext:   mainContext,
-		connectionMap: make(map[string]string),
+		connectionMap: make(map[string]domain.ClientIdentifier),
 	}
 	return adapter
 }
@@ -98,17 +98,27 @@ func (b *Adapter) Start(ctx context.Context) error {
 
 	b.connMapMutex.Lock()
 	defer b.connMapMutex.Unlock()
-	id := utils.ClientIdentifierFromContext(ctx)
+	incomingId := utils.ClientIdentifierFromContext(ctx)
 
 	logger.L().Info("starting synchronizer backend adapter",
-		helpers.String("connectionString", id.ConnectionString()),
+		helpers.Interface("id", incomingId),
 	)
 
-	// keeps track of the last connection string for each cluster/account
-	b.connectionMap[id.String()] = id.ConnectionString()
+	// an existing different connection connection was found
+	if existingId, ok := b.connectionMap[incomingId.String()]; ok && existingId.ConnectionString() != incomingId.ConnectionString() {
+		// if the existing connection is newer than the incoming one, we don't start the synchronization
+		if existingId.ConnectionTime.After(incomingId.ConnectionTime) {
+			err := fmt.Errorf("failed to start synchronization for client because a newer connection exist")
+			logger.L().Error(err.Error(),
+				helpers.Interface("existingId", existingId),
+				helpers.Interface("incomingId", incomingId))
+			return err
+		}
+	}
+	b.connectionMap[incomingId.String()] = incomingId
 
 	client := NewClient(b.producer)
-	b.clientsMap.Set(id.String(), client)
+	b.clientsMap.Set(incomingId.String(), client)
 	connectedClientsGauge.Inc()
 	callbacks, err := b.Callbacks(ctx)
 	if err != nil {
@@ -124,31 +134,33 @@ func (b *Adapter) Start(ctx context.Context) error {
 }
 
 func (b *Adapter) Stop(ctx context.Context) error {
-	id := utils.ClientIdentifierFromContext(ctx)
+	toDelete := utils.ClientIdentifierFromContext(ctx)
 
 	b.connMapMutex.Lock()
 	defer b.connMapMutex.Unlock()
 
 	logger.L().Info("starting synchronizer backend adapter",
-		helpers.String("connectionString", id.ConnectionString()),
+		helpers.String("connectionString", toDelete.ConnectionString()),
 	)
-	// make sure we are not removing a connected client if a different connection was already found
-	if connectionString, ok := b.connectionMap[id.String()]; ok && connectionString != id.ConnectionString() {
-		logger.L().Info("not removing connected client since a different connection was already found",
-			helpers.String("old", id.ConnectionString()),
-			helpers.String("existing", connectionString))
-		return nil
+	// an existing different connection connection was found
+	if existingId, ok := b.connectionMap[toDelete.String()]; ok && existingId.ConnectionString() != toDelete.ConnectionString() {
+		if existingId.ConnectionTime.After(toDelete.ConnectionTime) {
+			logger.L().Info("not removing connected client since a different connection with newer connection time found",
+				helpers.Interface("toDelete", toDelete),
+				helpers.Interface("existingId", existingId))
+			return nil
+		}
 	}
 
 	logger.L().Info("removing connected client from backend adapter",
-		helpers.Interface("id", id),
+		helpers.Interface("id", toDelete),
 	)
-	delete(b.connectionMap, id.String())
+	delete(b.connectionMap, toDelete.String())
 
-	b.callbacksMap.Delete(id.String())
-	if client, ok := b.clientsMap.Load(id.String()); ok {
+	b.callbacksMap.Delete(toDelete.String())
+	if client, ok := b.clientsMap.Load(toDelete.String()); ok {
 		_ = client.Stop(ctx)
-		b.clientsMap.Delete(id.String())
+		b.clientsMap.Delete(toDelete.String())
 	}
 	connectedClientsGauge.Dec()
 
