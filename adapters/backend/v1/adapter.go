@@ -43,7 +43,7 @@ func (b *Adapter) getClient(ctx context.Context) (adapters.Client, error) {
 	if client, ok := b.clientsMap.Load(id.String()); ok {
 		return client, nil
 	}
-	return nil, fmt.Errorf("unknown resource %s", id.String())
+	return nil, fmt.Errorf("client was missing from map %s (probably disconnected client)", id.String())
 }
 
 func (b *Adapter) Callbacks(ctx context.Context) (domain.Callbacks, error) {
@@ -51,7 +51,7 @@ func (b *Adapter) Callbacks(ctx context.Context) (domain.Callbacks, error) {
 	if callbacks, ok := b.callbacksMap.Load(id.String()); ok {
 		return callbacks, nil
 	}
-	return domain.Callbacks{}, fmt.Errorf("unknown resource %s", id.String())
+	return domain.Callbacks{}, fmt.Errorf("callbacks for client %s were missing (probably disconnected client)", id.String())
 }
 
 func (b *Adapter) DeleteObject(ctx context.Context, id domain.KindName) error {
@@ -139,7 +139,7 @@ func (b *Adapter) Stop(ctx context.Context) error {
 	b.connMapMutex.Lock()
 	defer b.connMapMutex.Unlock()
 
-	logger.L().Info("starting synchronizer backend adapter",
+	logger.L().Info("stopping synchronizer backend adapter",
 		helpers.String("connectionString", toDelete.ConnectionString()),
 	)
 	// an existing different connection connection was found
