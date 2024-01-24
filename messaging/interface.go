@@ -12,7 +12,7 @@ type MessageProducer interface {
 	ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte) error
 }
 
-type MessageConsumer interface {
-	// Start starts the message consumer and blocks until the context is done
+type MessageReader interface {
+	// Start starts the message reader and blocks until the context is done
 	Start(mainContext context.Context, adapter adapters.Adapter)
 }

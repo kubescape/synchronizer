@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"os"
@@ -20,6 +21,7 @@ import (
 	postgresconnectordal "github.com/armosec/postgres-connector/dal"
 	migration "github.com/armosec/postgres-connector/migration"
 	"github.com/cenkalti/backoff/v4"
+
 	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
 	"github.com/kubescape/synchronizer/adapters/backend/v1"
 	"github.com/kubescape/synchronizer/config"
@@ -76,7 +78,7 @@ type TestSynchronizerServer struct {
 	syncServerContextCancelFn context.CancelFunc
 	conn                      net.Conn
 	pulsarProducer            *backend.PulsarMessageProducer
-	pulsarConsumer            *backend.PulsarMessageConsumer
+	pulsarReader              *backend.PulsarMessageReader
 }
 
 type TestKubernetesCluster struct {
@@ -116,7 +118,7 @@ func randomPorts(n int) []string {
 		listener, err := net.Listen("tcp", "0.0.0.0:"+port)
 		if err != nil {
 			// try again
-			break
+			continue
 		}
 		_ = listener.Close()
 		if err == nil && !ports.Contains(port) {
@@ -416,14 +418,20 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 	}
 }
 
-func createPulsar(t *testing.T, ctx context.Context, port1, port2 string) (pulsarC testcontainers.Container, pulsarUrl, pulsarAdminUrl string) {
-	var err error
-	pulsarC, err = testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+func createPulsar(t *testing.T, ctx context.Context, brokerPort, adminPort string) (pulsarC testcontainers.Container, pulsarUrl, pulsarAdminUrl string) {
+	pulsarC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "apachepulsar/pulsar:2.11.0",
 			Cmd:          []string{"bin/pulsar", "standalone"},
-			ExposedPorts: []string{port1 + ":6650/tcp", port2 + ":8080/tcp"},
-			WaitingFor:   wait.ForExposedPort(),
+			ExposedPorts: []string{brokerPort + ":6650/tcp", adminPort + ":8080/tcp"},
+			WaitingFor: wait.ForAll(
+				wait.ForExposedPort(),
+				wait.ForHTTP("/admin/v2/clusters").WithPort("8080/tcp").WithResponseMatcher(func(r io.Reader) bool {
+					respBytes, _ := io.ReadAll(r)
+					resp := string(respBytes)
+					return strings.Contains(resp, `["standalone"]`)
+				}),
+			),
 		},
 		Started: true,
 	})
@@ -514,11 +522,11 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 	serverCfg.Backend.PulsarConfig.AdminUrl = pulsarAdminUrl
 	pulsarProducer, err := backend.NewPulsarMessageProducer(serverCfg, pulsarClient)
 	require.NoError(t, err)
-	pulsarConsumer, err := backend.NewPulsarMessageConsumer(serverCfg, pulsarClient)
+	pulsarReader, err := backend.NewPulsarMessageReader(serverCfg, pulsarClient)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
-	serverAdapter := backend.NewBackendAdapter(ctx, pulsarProducer, pulsarConsumer)
+	serverAdapter := backend.NewBackendAdapter(ctx, pulsarProducer, pulsarReader)
 	synchronizerServer := NewSynchronizerServer(ctx, serverAdapter, serverConn)
 
 	// start server
@@ -528,7 +536,7 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 
 	return &TestSynchronizerServer{
 		pulsarProducer:            pulsarProducer,
-		pulsarConsumer:            pulsarConsumer,
+		pulsarReader:              pulsarReader,
 		syncServerContextCancelFn: cancel,
 		serverUrl:                 fmt.Sprintf("ws://127.0.0.1:%s/", serverPort),
 		syncServer:                synchronizerServer,
@@ -1024,6 +1032,7 @@ func TestSynchronizer_TC10(t *testing.T) {
 	time.Sleep(5 * time.Second)
 	// restart postgres
 	err = td.containers["postgres"].Start(td.ctx)
+
 	require.NoError(t, err)
 	time.Sleep(5 * time.Second)
 	// check object in postgres

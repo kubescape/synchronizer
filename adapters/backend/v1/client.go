@@ -38,7 +38,8 @@ func (c *Client) Stop(ctx context.Context) error {
 }
 
 func (c *Client) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
-	return true
+	identifierFromContext := utils.ClientIdentifierFromContext(ctx)
+	return identifierFromContext.Cluster == id.Cluster && identifierFromContext.Account == id.Account
 }
 
 func (c *Client) sendServerConnectedMessage(ctx context.Context) error {

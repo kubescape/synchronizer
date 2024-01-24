@@ -17,17 +17,21 @@ import (
 type Adapter struct {
 	callbacksMap maps.SafeMap[string, domain.Callbacks]
 	clientsMap   maps.SafeMap[string, adapters.Client]
-	producer     messaging.MessageProducer
-	consumer     messaging.MessageConsumer
-	once         sync.Once
-	mainContext  context.Context
+
+	connMapMutex  sync.RWMutex
+	connectionMap map[string]domain.ClientIdentifier // <cluster, account> -> <connection string>
+	producer      messaging.MessageProducer
+	reader        messaging.MessageReader
+	once          sync.Once
+	mainContext   context.Context
 }
 
-func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, messageConsumer messaging.MessageConsumer) *Adapter {
+func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, messageReader messaging.MessageReader) *Adapter {
 	adapter := &Adapter{
-		producer:    messageProducer,
-		consumer:    messageConsumer,
-		mainContext: mainContext,
+		producer:      messageProducer,
+		reader:        messageReader,
+		mainContext:   mainContext,
+		connectionMap: make(map[string]domain.ClientIdentifier),
 	}
 	return adapter
 }
@@ -39,7 +43,7 @@ func (b *Adapter) getClient(ctx context.Context) (adapters.Client, error) {
 	if client, ok := b.clientsMap.Load(id.String()); ok {
 		return client, nil
 	}
-	return nil, fmt.Errorf("unknown resource %s", id.String())
+	return nil, fmt.Errorf("client was missing from map %s (probably disconnected client)", id.String())
 }
 
 func (b *Adapter) Callbacks(ctx context.Context) (domain.Callbacks, error) {
@@ -47,7 +51,7 @@ func (b *Adapter) Callbacks(ctx context.Context) (domain.Callbacks, error) {
 	if callbacks, ok := b.callbacksMap.Load(id.String()); ok {
 		return callbacks, nil
 	}
-	return domain.Callbacks{}, fmt.Errorf("unknown resource %s", id.String())
+	return domain.Callbacks{}, fmt.Errorf("callbacks for client %s were missing (probably disconnected client)", id.String())
 }
 
 func (b *Adapter) DeleteObject(ctx context.Context, id domain.KindName) error {
@@ -89,12 +93,32 @@ func (b *Adapter) RegisterCallbacks(ctx context.Context, callbacks domain.Callba
 
 func (b *Adapter) Start(ctx context.Context) error {
 	b.once.Do(func() {
-		b.consumer.Start(b.mainContext, b)
+		b.reader.Start(b.mainContext, b)
 	})
 
+	b.connMapMutex.Lock()
+	defer b.connMapMutex.Unlock()
+	incomingId := utils.ClientIdentifierFromContext(ctx)
+
+	logger.L().Info("starting synchronizer backend adapter",
+		helpers.Interface("id", incomingId),
+	)
+
+	// an existing different connection connection was found
+	if existingId, ok := b.connectionMap[incomingId.String()]; ok && existingId.ConnectionString() != incomingId.ConnectionString() {
+		// if the existing connection is newer than the incoming one, we don't start the synchronization
+		if existingId.ConnectionTime.After(incomingId.ConnectionTime) {
+			err := fmt.Errorf("failed to start synchronization for client because a newer connection exist")
+			logger.L().Error(err.Error(),
+				helpers.Interface("existingId", existingId),
+				helpers.Interface("incomingId", incomingId))
+			return err
+		}
+	}
+	b.connectionMap[incomingId.String()] = incomingId
+
 	client := NewClient(b.producer)
-	id := utils.ClientIdentifierFromContext(ctx)
-	b.clientsMap.Set(id.String(), client)
+	b.clientsMap.Set(incomingId.String(), client)
 	connectedClientsGauge.Inc()
 	callbacks, err := b.Callbacks(ctx)
 	if err != nil {
@@ -110,11 +134,36 @@ func (b *Adapter) Start(ctx context.Context) error {
 }
 
 func (b *Adapter) Stop(ctx context.Context) error {
-	id := utils.ClientIdentifierFromContext(ctx)
-	logger.L().Debug("removing connected client", helpers.Interface("id", id))
-	b.callbacksMap.Delete(id.String())
-	b.clientsMap.Delete(id.String())
+	toDelete := utils.ClientIdentifierFromContext(ctx)
+
+	b.connMapMutex.Lock()
+	defer b.connMapMutex.Unlock()
+
+	logger.L().Info("stopping synchronizer backend adapter",
+		helpers.String("connectionString", toDelete.ConnectionString()),
+	)
+	// an existing different connection connection was found
+	if existingId, ok := b.connectionMap[toDelete.String()]; ok && existingId.ConnectionString() != toDelete.ConnectionString() {
+		if existingId.ConnectionTime.After(toDelete.ConnectionTime) {
+			logger.L().Info("not removing connected client since a different connection with newer connection time found",
+				helpers.Interface("toDelete", toDelete),
+				helpers.Interface("existingId", existingId))
+			return nil
+		}
+	}
+
+	logger.L().Info("removing connected client from backend adapter",
+		helpers.Interface("id", toDelete),
+	)
+	delete(b.connectionMap, toDelete.String())
+
+	b.callbacksMap.Delete(toDelete.String())
+	if client, ok := b.clientsMap.Load(toDelete.String()); ok {
+		_ = client.Stop(ctx)
+		b.clientsMap.Delete(toDelete.String())
+	}
 	connectedClientsGauge.Dec()
+
 	return nil
 }
 

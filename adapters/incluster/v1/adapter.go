@@ -120,7 +120,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 }
 
 func (a *Adapter) Stop(ctx context.Context) error {
-	return a.Stop(ctx)
+	return nil
 }
 
 func (a *Adapter) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {

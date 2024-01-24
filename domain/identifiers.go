@@ -1,6 +1,9 @@
 package domain
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 type KindName struct {
 	Kind      *Kind
@@ -19,10 +22,16 @@ func (c KindName) String() string {
 }
 
 type ClientIdentifier struct {
-	Account string
-	Cluster string
+	Account        string
+	Cluster        string
+	ConnectionId   string
+	ConnectionTime time.Time
 }
 
 func (c ClientIdentifier) String() string {
 	return strings.Join([]string{c.Account, c.Cluster}, "/")
+}
+
+func (c ClientIdentifier) ConnectionString() string {
+	return strings.Join([]string{c.Account, c.Cluster, c.ConnectionId}, "/")
 }

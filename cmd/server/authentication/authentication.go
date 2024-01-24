@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/config"
@@ -27,6 +29,9 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 				client = &http.Client{}
 			}
 		})
+		connectionTime := time.Now()
+		connectionId := uuid.New().String()
+
 		accessKey := r.Header.Get(core.AccessKeyHeader)
 		account := r.Header.Get(core.AccountHeader)
 		cluster := r.Header.Get(core.ClusterNameHeader)
@@ -56,6 +61,7 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 			u.RawQuery = q.Encode()
 
 			logger.L().Debug("creating authentication request",
+				helpers.String("connId", connectionId),
 				helpers.String("url", u.String()))
 
 			authenticationRequest, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
@@ -72,6 +78,7 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 				helpers.Int("accessKey (length)", len(accessKey)),
 				helpers.String("account", account),
 				helpers.String("cluster", cluster),
+				helpers.String("connId", connectionId),
 				helpers.String("url", u.String()))
 
 			response, err := client.Do(authenticationRequest)
@@ -79,6 +86,7 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 				logger.L().Error("authentication request failed", helpers.Error(err),
 					helpers.String("account", account),
 					helpers.String("cluster", cluster),
+					helpers.String("connId", connectionId),
 					helpers.String("url", u.String()))
 				w.WriteHeader(http.StatusUnauthorized)
 				return
@@ -87,19 +95,28 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 					helpers.Int("accessKey (length)", len(accessKey)),
 					helpers.String("account", account),
 					helpers.String("cluster", cluster),
+					helpers.String("connId", connectionId),
 					helpers.Int("statusCode", response.StatusCode))
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 		}
 
-		logger.L().Debug("connection authenticated", helpers.String("account", account), helpers.String("cluster", cluster))
+		logger.L().Debug("connection authenticated",
+			helpers.String("account", account),
+			helpers.String("cluster", cluster),
+			helpers.String("connId", connectionId),
+			helpers.String("connectionTime", connectionTime.Format(time.RFC3339Nano)),
+		)
 
 		// create new context with client identifier
 		ctx := context.WithValue(r.Context(), domain.ContextKeyClientIdentifier, domain.ClientIdentifier{
-			Account: account,
-			Cluster: cluster,
+			Account:        account,
+			Cluster:        cluster,
+			ConnectionId:   connectionId,
+			ConnectionTime: connectionTime,
 		})
+
 		// create new request using the new context
 		authenticatedRequest := r.WithContext(ctx)
 		next.ServeHTTP(w, authenticatedRequest)

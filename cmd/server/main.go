@@ -59,12 +59,12 @@ func main() {
 			logger.L().Fatal("failed to create pulsar producer", helpers.Error(err), helpers.String("config", fmt.Sprintf("%+v", cfg.Backend.PulsarConfig)))
 		}
 
-		pulsarConsumer, err := backend.NewPulsarMessageConsumer(cfg, pulsarClient)
+		pulsarReader, err := backend.NewPulsarMessageReader(cfg, pulsarClient)
 		if err != nil {
-			logger.L().Fatal("failed to create pulsar consumer", helpers.Error(err), helpers.String("config", fmt.Sprintf("%+v", cfg.Backend.PulsarConfig)))
+			logger.L().Fatal("failed to create pulsar reader", helpers.Error(err), helpers.String("config", fmt.Sprintf("%+v", cfg.Backend.PulsarConfig)))
 		}
 
-		adapter = backend.NewBackendAdapter(ctx, pulsarProducer, pulsarConsumer)
+		adapter = backend.NewBackendAdapter(ctx, pulsarProducer, pulsarReader)
 	} else {
 		// mock adapter
 		logger.L().Info("initializing mock adapter")
@@ -96,15 +96,18 @@ func main() {
 					logger.L().Error("unable to upgrade connection", helpers.Error(err))
 					return
 				}
+
 				go func() {
 					defer conn.Close()
 					synchronizer := core.NewSynchronizerServer(r.Context(), adapter, conn)
 					err = synchronizer.Start(r.Context())
 					if err != nil {
+
 						id := utils.ClientIdentifierFromContext(r.Context())
 						logger.L().Error("error during sync, closing listener",
 							helpers.String("account", id.Account),
 							helpers.String("cluster", id.Cluster),
+							helpers.String("connectionId", id.ConnectionId),
 							helpers.Error(err))
 						err := synchronizer.Stop(r.Context())
 						if err != nil {
