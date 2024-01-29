@@ -495,7 +495,8 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
 
-	cluster.syncClient = NewSynchronizerClient(ctx, clientAdapter, clientConn, newConn)
+	cluster.syncClient, err = NewSynchronizerClient(ctx, clientAdapter, clientConn, newConn)
+	require.NoError(t, err)
 	cluster.syncClientAdapter = clientAdapter
 	cluster.clientConn = clientConn
 	cluster.syncClientContextCancelFn = cancel
@@ -527,7 +528,8 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
 	serverAdapter := backend.NewBackendAdapter(ctx, pulsarProducer, pulsarReader)
-	synchronizerServer := NewSynchronizerServer(ctx, serverAdapter, serverConn)
+	synchronizerServer, err := NewSynchronizerServer(ctx, serverAdapter, serverConn)
+	require.NoError(t, err)
 
 	// start server
 	go func() {

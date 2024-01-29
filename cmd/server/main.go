@@ -99,11 +99,18 @@ func main() {
 
 				go func() {
 					defer conn.Close()
-					synchronizer := core.NewSynchronizerServer(r.Context(), adapter, conn)
+					id := utils.ClientIdentifierFromContext(r.Context())
+					synchronizer, err := core.NewSynchronizerServer(r.Context(), adapter, conn)
+					if err != nil {
+						logger.L().Error("error during sync, closing listener",
+							helpers.String("account", id.Account),
+							helpers.String("cluster", id.Cluster),
+							helpers.String("connectionId", id.ConnectionId),
+							helpers.Error(err))
+						return
+					}
 					err = synchronizer.Start(r.Context())
 					if err != nil {
-
-						id := utils.ClientIdentifierFromContext(r.Context())
 						logger.L().Error("error during sync, closing listener",
 							helpers.String("account", id.Account),
 							helpers.String("cluster", id.Cluster),
