@@ -28,21 +28,25 @@ type Synchronizer struct {
 	Conn          *net.Conn
 	newConn       func() (net.Conn, error)
 	outPool       *ants.PoolWithFunc
+	inPool        *ants.PoolWithFunc
 	readDataFunc  func(rw io.ReadWriter) ([]byte, error)
 	writeDataFunc func(w io.Writer, p []byte) error
 }
 
-func NewSynchronizerClient(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn, newConn func() (net.Conn, error)) *Synchronizer {
-	s := newSynchronizer(mainCtx, adapter, conn, true, wsutil.ReadServerBinary, wsutil.WriteClientBinary)
+func NewSynchronizerClient(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn, newConn func() (net.Conn, error)) (*Synchronizer, error) {
+	s, err := newSynchronizer(mainCtx, adapter, conn, true, wsutil.ReadServerBinary, wsutil.WriteClientBinary)
+	if err != nil {
+		return nil, err
+	}
 	s.newConn = newConn
-	return s
+	return s, nil
 }
 
-func NewSynchronizerServer(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn) *Synchronizer {
+func NewSynchronizerServer(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn) (*Synchronizer, error) {
 	return newSynchronizer(mainCtx, adapter, conn, false, wsutil.ReadClientBinary, wsutil.WriteServerBinary)
 }
 
-func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn, isClient bool, readDataFunc func(rw io.ReadWriter) ([]byte, error), writeDataFunc func(w io.Writer, p []byte) error) *Synchronizer {
+func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn, isClient bool, readDataFunc func(rw io.ReadWriter) ([]byte, error), writeDataFunc func(w io.Writer, p []byte) error) (*Synchronizer, error) {
 	s := &Synchronizer{
 		adapter:       adapter,
 		isClient:      isClient,
@@ -57,7 +61,7 @@ func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net
 		s.sendData(mainCtx, data)
 	})
 	if err != nil {
-		logger.L().Ctx(mainCtx).Fatal("unable to create outgoing message pool", helpers.Error(err))
+		return nil, fmt.Errorf("unable to create outgoing message pool: %w", err)
 	}
 	callbacks := domain.Callbacks{
 		DeleteObject: s.DeleteObjectCallback,
@@ -67,7 +71,7 @@ func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net
 		VerifyObject: s.VerifyObjectCallback,
 	}
 	adapter.RegisterCallbacks(mainCtx, callbacks)
-	return s
+	return s, nil
 }
 
 func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
@@ -91,7 +95,10 @@ func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
 		logger.L().Ctx(ctx).Warning("send data", helpers.Error(err),
 			helpers.String("retry in", d.String()))
 	}); err != nil {
-		logger.L().Ctx(ctx).Fatal("giving up send data", helpers.Error(err))
+		logger.L().Ctx(ctx).Error("giving up send data", helpers.Error(err))
+		if err := s.Stop(ctx); err != nil {
+			logger.L().Ctx(ctx).Error("error stopping synchronizer", helpers.Error(err))
+		}
 	}
 }
 
@@ -173,15 +180,32 @@ func (s *Synchronizer) Stop(ctx context.Context) error {
 		helpers.String("account", identifier.Account),
 		helpers.String("cluster", identifier.Cluster),
 		helpers.String("connId", identifier.ConnectionId),
-		helpers.String("host", hostname),
-	)
+		helpers.String("host", hostname))
+	if s.outPool != nil {
+		logger.L().Info("releasing out pool",
+			helpers.String("account", identifier.Account),
+			helpers.String("cluster", identifier.Cluster),
+			helpers.String("connId", identifier.ConnectionId),
+			helpers.String("host", hostname))
+		s.outPool.Release()
+	}
+	if s.inPool != nil {
+		logger.L().Info("releasing in pool",
+			helpers.String("account", identifier.Account),
+			helpers.String("cluster", identifier.Cluster),
+			helpers.String("connId", identifier.ConnectionId),
+			helpers.String("host", hostname))
+		s.inPool.Release()
+	}
+
 	return s.adapter.Stop(ctx)
 }
 
 func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
+	var err error
 	clientId := utils.ClientIdentifierFromContext(ctx)
 	// incoming message pool
-	inPool, err := ants.NewPoolWithFunc(1, func(i interface{}) {
+	s.inPool, err = ants.NewPoolWithFunc(1, func(i interface{}) {
 		data, ok := i.([]byte)
 		if !ok {
 			logger.L().Ctx(ctx).Error("failed to convert message to bytes", helpers.Interface("message", i))
@@ -364,7 +388,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 		}
 	})
 	if err != nil {
-		logger.L().Ctx(ctx).Fatal("unable to create incoming message pool", helpers.Error(err))
+		return fmt.Errorf("unable to create incoming message pool: %w", err)
 	}
 	// process incoming messages
 	for {
@@ -383,7 +407,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 					return backoff.Permanent(fmt.Errorf("cannot read data: %w", err))
 				}
 			}
-			err = inPool.Invoke(data)
+			err = s.inPool.Invoke(data)
 			if err != nil {
 				return fmt.Errorf("invoke inPool: %w", err)
 			}
