@@ -42,8 +42,10 @@ func initTest(t *testing.T) (context.Context, *adapters.MockAdapter, *adapters.M
 	newConn := func() (net.Conn, error) {
 		return clientConn, nil
 	}
-	client := NewSynchronizerClient(ctx, clientAdapter, clientConn, newConn)
-	server := NewSynchronizerServer(ctx, serverAdapter, serverConn)
+	client, err := NewSynchronizerClient(ctx, clientAdapter, clientConn, newConn)
+	assert.NoError(t, err)
+	server, err := NewSynchronizerServer(ctx, serverAdapter, serverConn)
+	assert.NoError(t, err)
 	go func() {
 		_ = client.Start(ctx)
 	}()
