@@ -135,6 +135,58 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 		helpers.String("msgId", msgID))
 
 	switch msgProperties[messaging.MsgPropEvent] {
+	case messaging.MsgPropEventValueReconciliationRequestMessage:
+		var data messaging.ReconciliationRequestMessage
+		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
+			return fmt.Errorf("failed to unmarshal message: %w", err)
+		}
+
+		ctx := utils.ContextFromGeneric(ctx, domain.Generic{
+			Depth: data.Depth,
+			MsgId: data.MsgId,
+		})
+
+		ctx = utils.ContextFromIdentifiers(ctx, domain.ClientIdentifier{
+			Account: data.Account,
+			Cluster: data.Cluster,
+		})
+
+		callbacks, err := adapter.Callbacks(ctx)
+		if err != nil {
+			return err
+		}
+
+		// we transform the batch into a list of NewChecksum messages
+		messages := make([]domain.BatchItem, len(data.Objects))
+		event := domain.EventNewChecksum
+		for i, obj := range data.Objects {
+			kind := domain.KindFromString(ctx, obj.Kind)
+			if kind == nil {
+				return fmt.Errorf("invalid kind string: %s", obj.Kind)
+			}
+			msg := domain.NewChecksum{
+				Depth:           data.Depth, // we don't really care because it's part of the batch
+				Event:           &event,     // we don't really care because it's part of the batch
+				MsgId:           data.MsgId, // we don't really care because it's part of the batch
+				Kind:            kind,
+				Name:            obj.Name,
+				Namespace:       obj.Namespace,
+				ResourceVersion: obj.ResourceVersion,
+			}
+
+			msgJson, err := json.Marshal(msg)
+			if err != nil {
+				return fmt.Errorf("failed to marshal message: %w", err)
+			}
+			messages[i] = domain.BatchItem{
+				Event:   &event,
+				Payload: string(msgJson),
+			}
+		}
+
+		if err := callbacks.Batch(ctx, domain.ReconciliationBatch, messages); err != nil {
+			return fmt.Errorf("failed to send reconciliation batch: %w", err)
+		}
 	case messaging.MsgPropEventValueGetObjectMessage:
 		var data messaging.GetObjectMessage
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
@@ -153,9 +205,10 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			return err
 		}
 		if err := callbacks.GetObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(ctx, data.Kind),
-			Name:      data.Name,
-			Namespace: data.Namespace,
+			Kind:            domain.KindFromString(ctx, data.Kind),
+			Name:            data.Name,
+			Namespace:       data.Namespace,
+			ResourceVersion: data.ResourceVersion,
 		}, data.BaseObject); err != nil {
 			return fmt.Errorf("failed to send GetObject message: %w", err)
 		}
@@ -177,9 +230,10 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			return err
 		}
 		if err := callbacks.PatchObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(ctx, data.Kind),
-			Name:      data.Name,
-			Namespace: data.Namespace,
+			Kind:            domain.KindFromString(ctx, data.Kind),
+			Name:            data.Name,
+			Namespace:       data.Namespace,
+			ResourceVersion: data.ResourceVersion,
 		}, data.Checksum, data.Patch); err != nil {
 			return fmt.Errorf("failed to send PatchObject message: %w", err)
 		}
@@ -201,9 +255,10 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			return err
 		}
 		if err := callbacks.VerifyObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(ctx, data.Kind),
-			Name:      data.Name,
-			Namespace: data.Namespace,
+			Kind:            domain.KindFromString(ctx, data.Kind),
+			Name:            data.Name,
+			Namespace:       data.Namespace,
+			ResourceVersion: data.ResourceVersion,
 		}, data.Checksum); err != nil {
 			return fmt.Errorf("failed to send VerifyObject message: %w", err)
 		}
@@ -225,9 +280,10 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			return err
 		}
 		if err := callbacks.PutObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(ctx, data.Kind),
-			Name:      data.Name,
-			Namespace: data.Namespace,
+			Kind:            domain.KindFromString(ctx, data.Kind),
+			Name:            data.Name,
+			Namespace:       data.Namespace,
+			ResourceVersion: data.ResourceVersion,
 		}, data.Object); err != nil {
 			return fmt.Errorf("failed to send PutObject message: %w", err)
 		}
@@ -249,9 +305,10 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			return err
 		}
 		if err := callbacks.DeleteObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(ctx, data.Kind),
-			Name:      data.Name,
-			Namespace: data.Namespace,
+			Kind:            domain.KindFromString(ctx, data.Kind),
+			Name:            data.Name,
+			Namespace:       data.Namespace,
+			ResourceVersion: data.ResourceVersion,
 		}); err != nil {
 			return fmt.Errorf("failed to send DeleteObject message: %w", err)
 		}

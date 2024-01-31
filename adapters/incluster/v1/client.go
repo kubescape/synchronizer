@@ -96,9 +96,10 @@ func (c *Client) Start(ctx context.Context) error {
 			continue
 		}
 		id := domain.KindName{
-			Kind:      c.kind,
-			Name:      d.GetName(),
-			Namespace: d.GetNamespace(),
+			Kind:            c.kind,
+			Name:            d.GetName(),
+			Namespace:       d.GetNamespace(),
+			ResourceVersion: domain.ToResourceVersion(d.GetResourceVersion()),
 		}
 
 		switch {
@@ -354,6 +355,10 @@ func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, newChecks
 	return nil
 }
 
+func (c *Client) Batch(_ context.Context, _ domain.BatchType, _ []domain.BatchItem) error {
+	return fmt.Errorf("batch not implemented in client")
+}
+
 func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, error) {
 	obj, err := c.client.Resource(c.res).Namespace(id.Namespace).Get(context.Background(), id.Name, metav1.GetOptions{})
 	if err != nil {
@@ -381,9 +386,10 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 	}
 	for _, d := range list.Items {
 		id := domain.KindName{
-			Kind:      c.kind,
-			Name:      d.GetName(),
-			Namespace: d.GetNamespace(),
+			Kind:            c.kind,
+			Name:            d.GetName(),
+			Namespace:       d.GetNamespace(),
+			ResourceVersion: domain.ToResourceVersion(d.GetResourceVersion()),
 		}
 		obj, err := c.client.Resource(c.res).Namespace(d.GetNamespace()).Get(context.Background(), d.GetName(), metav1.GetOptions{})
 		if err != nil {

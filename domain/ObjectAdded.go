@@ -2,6 +2,7 @@ package domain
 
 // ObjectAdded represents a ObjectAdded model.
 type ObjectAdded struct {
+	ResourceVersion      int
 	Checksum             string
 	Depth                int
 	Event                *Event

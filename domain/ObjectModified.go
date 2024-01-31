@@ -2,6 +2,7 @@ package domain
 
 // ObjectModified represents a ObjectModified model.
 type ObjectModified struct {
+	ResourceVersion      int
 	Checksum             string
 	Depth                int
 	Event                *Event

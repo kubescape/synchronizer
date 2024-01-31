@@ -2,6 +2,7 @@ package domain
 
 // ObjectDeleted represents a ObjectDeleted model.
 type ObjectDeleted struct {
+	ResourceVersion      int
 	Depth                int
 	Event                *Event
 	Kind                 *Kind

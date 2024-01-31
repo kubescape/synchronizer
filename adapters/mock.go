@@ -31,6 +31,10 @@ func NewMockAdapter(isClient bool) *MockAdapter {
 
 var _ Adapter = (*MockAdapter)(nil)
 
+func (m *MockAdapter) Batch(_ context.Context, _ domain.BatchType, _ []domain.BatchItem) error {
+	return nil
+}
+
 func (m *MockAdapter) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
 	return true
 }
