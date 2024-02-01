@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"go.uber.org/multierr"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/kubescape/go-logger"
@@ -23,20 +24,23 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
+type BatchProcessingFunc func(context.Context, *Client, domain.BatchItems) error
+
 // resourceVersionGetter is an interface used to get resource version from events.
 type resourceVersionGetter interface {
 	GetResourceVersion() string
 }
 
 type Client struct {
-	client        dynamic.Interface
-	account       string
-	cluster       string
-	kind          *domain.Kind
-	callbacks     domain.Callbacks
-	res           schema.GroupVersionResource
-	ShadowObjects map[string][]byte
-	Strategy      domain.Strategy
+	client              dynamic.Interface
+	account             string
+	cluster             string
+	kind                *domain.Kind
+	callbacks           domain.Callbacks
+	res                 schema.GroupVersionResource
+	ShadowObjects       map[string][]byte
+	Strategy            domain.Strategy
+	batchProcessingFunc map[domain.BatchType]BatchProcessingFunc
 }
 
 var errWatchClosed = errors.New("watch channel closed")
@@ -55,6 +59,10 @@ func NewClient(client dynamic.Interface, account, cluster string, r config.Resou
 		res:           res,
 		ShadowObjects: map[string][]byte{},
 		Strategy:      r.Strategy,
+		batchProcessingFunc: map[domain.BatchType]BatchProcessingFunc{
+			domain.DefaultBatch:        defaultBatchProcessingFunc, // regular processing, when batch type is not set
+			domain.ReconciliationBatch: reconcileBatchProcessingFunc,
+		},
 	}
 }
 
@@ -355,8 +363,13 @@ func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, newChecks
 	return nil
 }
 
-func (c *Client) Batch(_ context.Context, _ domain.BatchType, _ []domain.BatchItem) error {
-	return fmt.Errorf("batch not implemented in client")
+func (c *Client) Batch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+	if f, ok := c.batchProcessingFunc[batchType]; ok {
+		logger.L().Debug("batch processing", helpers.String("batch type", string(batchType)))
+		return f(ctx, c, items)
+	}
+
+	return fmt.Errorf("batch type %s not supported", batchType)
 }
 
 func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, error) {
@@ -420,4 +433,123 @@ func (c *Client) getObjectFromUnstructured(d *unstructured.Unstructured) ([]byte
 		return utils.FilterAndMarshal(obj)
 	}
 	return utils.FilterAndMarshal(d)
+}
+
+// Batch processing functions
+func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.BatchItems) error {
+	logger.L().Debug("reconciliation batch started", helpers.String("resource", c.res.Resource))
+	if len(items.NewChecksum) == 0 {
+		return fmt.Errorf("reconciliation batch (%s) was empty - expected at least one NewChecksum message", c.res.Resource)
+	}
+
+	list, err := c.client.Resource(c.res).Namespace("").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("list resources: %w", err)
+	}
+
+	for _, item := range items.NewChecksum {
+		idx := findResourceInList(list.Items, item.Namespace, item.Name)
+
+		id := domain.KindName{
+			Kind:            c.kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+
+		// resource was not found, sending delete message
+		if idx == -1 {
+			logger.L().Debug("resource missing", helpers.String("kind", item.Kind.String()), helpers.String("name", item.Name), helpers.String("namespace", item.Namespace))
+			err = multierr.Append(err, c.callbacks.DeleteObject(ctx, id))
+			continue
+		}
+
+		// resource was found
+		resource := list.Items[idx]
+		currentVersion := domain.ToResourceVersion(resource.GetResourceVersion())
+		if currentVersion == item.ResourceVersion {
+			// resource has same version, skipping
+			logger.L().Debug("resource has same version", helpers.String("resource", item.Kind.String()), helpers.String("name", item.Name), helpers.String("namespace", item.Namespace))
+			continue
+		}
+
+		// resource has changed, sending a put message
+		logger.L().Debug("resource has changed",
+			helpers.String("resource", item.Kind.String()),
+			helpers.String("name", item.Name),
+			helpers.String("namespace", item.Namespace),
+			helpers.Int("batch resource version", item.ResourceVersion),
+			helpers.Int("current resource version", currentVersion))
+		newObject, marshalErr := c.getObjectFromUnstructured(&resource)
+		if marshalErr != nil {
+			err = multierr.Append(err, fmt.Errorf("marshal resource: %w", marshalErr))
+		}
+		err = multierr.Append(err, c.callbacks.PutObject(ctx, id, newObject))
+	}
+
+	return nil
+}
+
+func findResourceInList(list []unstructured.Unstructured, namespace, name string) int {
+	for i, resource := range list {
+		if resource.GetName() == name && resource.GetNamespace() == namespace {
+			return i
+		}
+	}
+
+	return -1
+}
+
+func defaultBatchProcessingFunc(ctx context.Context, c *Client, items domain.BatchItems) error {
+	var err error
+	for _, item := range items.GetObject {
+		id := domain.KindName{
+			Kind:            c.kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.GetObject(ctx, id, []byte(item.BaseObject)))
+	}
+
+	for _, item := range items.NewChecksum {
+		id := domain.KindName{
+			Kind:            c.kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.VerifyObject(ctx, id, item.Checksum))
+	}
+
+	for _, item := range items.ObjectDeleted {
+		id := domain.KindName{
+			Kind:            c.kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.DeleteObject(ctx, id))
+	}
+
+	for _, item := range items.PatchObject {
+		id := domain.KindName{
+			Kind:            c.kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.PatchObject(ctx, id, item.Checksum, []byte(item.Patch)))
+	}
+
+	for _, item := range items.PutObject {
+		id := domain.KindName{
+			Kind:            c.kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.PutObject(ctx, id, []byte(item.Object)))
+	}
+	return err
 }

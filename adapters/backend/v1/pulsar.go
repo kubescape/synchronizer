@@ -16,6 +16,7 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
 	"github.com/kubescape/synchronizer/utils"
+	"go.uber.org/multierr"
 )
 
 const (
@@ -145,7 +146,6 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			Depth: data.Depth,
 			MsgId: data.MsgId,
 		})
-
 		ctx = utils.ContextFromIdentifiers(ctx, domain.ClientIdentifier{
 			Account: data.Account,
 			Cluster: data.Cluster,
@@ -156,37 +156,33 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			return err
 		}
 
-		// we transform the batch into a list of NewChecksum messages
-		messages := make([]domain.BatchItem, len(data.Objects))
+		// unwrap the reconciliation request and send batches of NewChecksum for each kind
 		event := domain.EventNewChecksum
-		for i, obj := range data.Objects {
-			kind := domain.KindFromString(ctx, obj.Kind)
+
+		for kindStr, objects := range data.KindToObjects {
+			kind := domain.KindFromString(ctx, kindStr)
 			if kind == nil {
-				return fmt.Errorf("invalid kind string: %s", obj.Kind)
-			}
-			msg := domain.NewChecksum{
-				Depth:           data.Depth, // we don't really care because it's part of the batch
-				Event:           &event,     // we don't really care because it's part of the batch
-				MsgId:           data.MsgId, // we don't really care because it's part of the batch
-				Kind:            kind,
-				Name:            obj.Name,
-				Namespace:       obj.Namespace,
-				ResourceVersion: obj.ResourceVersion,
+				err = multierr.Append(err, fmt.Errorf("unknown kind %s in batch", kindStr))
+				continue
 			}
 
-			msgJson, err := json.Marshal(msg)
-			if err != nil {
-				return fmt.Errorf("failed to marshal message: %w", err)
-			}
-			messages[i] = domain.BatchItem{
-				Event:   &event,
-				Payload: string(msgJson),
-			}
-		}
+			items := domain.BatchItems{}
+			items.NewChecksum = []domain.NewChecksum{}
 
-		if err := callbacks.Batch(ctx, domain.ReconciliationBatch, messages); err != nil {
-			return fmt.Errorf("failed to send reconciliation batch: %w", err)
+			for _, object := range objects {
+				items.NewChecksum = append(items.NewChecksum, domain.NewChecksum{
+					Name:            object.Name,
+					Namespace:       object.Namespace,
+					ResourceVersion: object.ResourceVersion,
+					Checksum:        object.Checksum,
+					Kind:            kind,
+					Event:           &event,
+				})
+			}
+
+			err = multierr.Append(err, callbacks.Batch(ctx, *kind, domain.ReconciliationBatch, items))
 		}
+		return fmt.Errorf("failed to handle ReconciliationRequest message: %w", err)
 	case messaging.MsgPropEventValueGetObjectMessage:
 		var data messaging.GetObjectMessage
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {

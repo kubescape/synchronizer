@@ -1,21 +1,12 @@
 {
   "backend": {
-    "authenticationServer": {
-      "url": "https://api.armosec.io/api/v1",
-      "headerToHeaderMapping": {
-        "X-API-KEY": "X-API-KEY"
-      },
-      "headerToQueryParamMapping": {
-        "X-API-ACCOUNT": "customerGUID"
-      }
-    },
     "subscription": "synchronizer-server",
     "topic": "synchronizer",
     "pulsarConfig": {
       "url": "pulsar://localhost:6650",
       "tenant": "armo",
       "namespace": "kubescape",
-      "adminUrl": "http://localhost:8080",
+      "adminUrl": "http://localhost:8081",
       "clusters": [
         "standalone"
       ],

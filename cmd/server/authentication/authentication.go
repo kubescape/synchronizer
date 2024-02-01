@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -24,7 +25,11 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		once.Do(func() {
 			if cfg == nil || cfg.Url == "" {
-				logger.L().Warning("authentication server is not set; Incoming connections will not be authenticated")
+				if os.Getenv("TEST") == "true" {
+					logger.L().Warning("authentication server is not set; Incoming connections will not be authenticated")
+				} else {
+					logger.L().Fatal("authentication server is not set - exiting")
+				}
 			} else {
 				client = &http.Client{}
 			}

@@ -104,8 +104,8 @@ func (s *Synchronizer) DeleteObjectCallback(ctx context.Context, id domain.KindN
 	return nil
 }
 
-func (s *Synchronizer) BatchCallback(ctx context.Context, batchType domain.BatchType, messages []domain.BatchItem) error {
-	err := s.sendBatch(ctx, batchType, messages)
+func (s *Synchronizer) BatchCallback(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+	err := s.sendBatch(ctx, kind, batchType, items)
 	if err != nil {
 		return fmt.Errorf("send batch: %w", err)
 	}
@@ -232,27 +232,173 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			return
 		}
 
-		// if *generic.Event == domain.EventBatch {
-		// 	var msg domain.Batch
-		// 	err = json.Unmarshal(data, &msg)
-		// 	if err != nil {
-		// 		logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err))
-		// 		return
-		// 	}
+		// store in context
+		ctx = utils.ContextFromGeneric(ctx, generic)
+		// handle message
+		switch *generic.Event {
+		case domain.EventBatch:
+			var msg domain.Batch
+			err = json.Unmarshal(data, &msg)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", generic.Event.Value()),
+					helpers.String("kind", generic.Kind.String()),
+					helpers.String("msgid", generic.MsgId))
+				return
+			}
 
-		// 	for i := range msg.Messages {
-		// 		childEvent := msg.Messages[i].Event
-		// 		generic.Event = childEvent
-
-		// 		if payload, ok := msg.Messages[i].Payload.([]byte); ok {
-		// 			s.handleMessage(ctx, generic, payload, clientId)
-		// 		} else {
-		// 			logger.L().Ctx(ctx).Error("invalid payload type in batch message")
-		// 		}
-		// 	}
-		// } else {
-		s.handleMessage(ctx, generic, data, clientId)
-		// }
+			err := s.handleSyncBatch(ctx, *msg.Kind, domain.BatchType(msg.BatchType), *msg.Items)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", msg.Event.Value()),
+					helpers.String("msgid", msg.MsgId))
+				return
+			}
+		case domain.EventGetObject:
+			var msg domain.GetObject
+			err = json.Unmarshal(data, &msg)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", generic.Event.Value()),
+					helpers.String("kind", generic.Kind.String()),
+					helpers.String("msgid", generic.MsgId))
+				return
+			}
+			id := domain.KindName{
+				Kind:            msg.Kind,
+				Name:            msg.Name,
+				Namespace:       msg.Namespace,
+				ResourceVersion: msg.ResourceVersion,
+			}
+			err := s.handleSyncGetObject(ctx, id, []byte(msg.BaseObject))
+			if err != nil {
+				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", msg.Event.Value()),
+					helpers.String("id", id.String()),
+					helpers.String("msgid", msg.MsgId))
+				return
+			}
+		case domain.EventNewChecksum:
+			var msg domain.NewChecksum
+			err = json.Unmarshal(data, &msg)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", generic.Event.Value()),
+					helpers.String("kind", generic.Kind.String()),
+					helpers.String("msgid", generic.MsgId))
+				return
+			}
+			id := domain.KindName{
+				Kind:            msg.Kind,
+				Name:            msg.Name,
+				Namespace:       msg.Namespace,
+				ResourceVersion: msg.ResourceVersion,
+			}
+			err := s.handleSyncNewChecksum(ctx, id, msg.Checksum)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", msg.Event.Value()),
+					helpers.String("id", id.String()),
+					helpers.String("msgid", msg.MsgId))
+				return
+			}
+		case domain.EventObjectDeleted:
+			var msg domain.ObjectDeleted
+			err = json.Unmarshal(data, &msg)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", generic.Event.Value()),
+					helpers.String("kind", generic.Kind.String()),
+					helpers.String("msgid", generic.MsgId))
+				return
+			}
+			id := domain.KindName{
+				Kind:            msg.Kind,
+				Name:            msg.Name,
+				Namespace:       msg.Namespace,
+				ResourceVersion: msg.ResourceVersion,
+			}
+			err := s.handleSyncObjectDeleted(ctx, id)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", msg.Event.Value()),
+					helpers.String("id", id.String()),
+					helpers.String("msgid", msg.MsgId))
+				return
+			}
+		case domain.EventPatchObject:
+			var msg domain.PatchObject
+			err = json.Unmarshal(data, &msg)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", generic.Event.Value()),
+					helpers.String("kind", generic.Kind.String()),
+					helpers.String("msgid", generic.MsgId))
+				return
+			}
+			id := domain.KindName{
+				Kind:            msg.Kind,
+				Name:            msg.Name,
+				Namespace:       msg.Namespace,
+				ResourceVersion: msg.ResourceVersion,
+			}
+			err := s.handleSyncPatchObject(ctx, id, msg.Checksum, []byte(msg.Patch))
+			if err != nil {
+				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", msg.Event.Value()),
+					helpers.String("id", id.String()),
+					helpers.String("msgid", msg.MsgId))
+				return
+			}
+		case domain.EventPutObject:
+			var msg domain.PutObject
+			err = json.Unmarshal(data, &msg)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", generic.Event.Value()),
+					helpers.String("kind", generic.Kind.String()),
+					helpers.String("msgid", generic.MsgId))
+				return
+			}
+			id := domain.KindName{
+				Kind:            msg.Kind,
+				Name:            msg.Name,
+				Namespace:       msg.Namespace,
+				ResourceVersion: msg.ResourceVersion,
+			}
+			err := s.handleSyncPutObject(ctx, id, []byte(msg.Object))
+			if err != nil {
+				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", msg.Event.Value()),
+					helpers.String("id", id.String()),
+					helpers.String("msgid", msg.MsgId))
+				return
+			}
+		}
 	})
 	if err != nil {
 		logger.L().Ctx(ctx).Fatal("unable to create incoming message pool", helpers.Error(err))
@@ -287,178 +433,8 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 	}
 }
 
-func (s *Synchronizer) handleMessage(ctx context.Context, generic domain.Generic, data []byte, clientId domain.ClientIdentifier) {
-	var err error
-	// store in context
-	ctx = utils.ContextFromGeneric(ctx, generic)
-	// handle message
-	switch *generic.Event {
-	case domain.EventBatch:
-		var msg domain.Batch
-		err = json.Unmarshal(data, &msg)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
-				helpers.String("account", clientId.Account),
-				helpers.String("cluster", clientId.Cluster),
-				helpers.Interface("event", generic.Event.Value()),
-				helpers.String("kind", generic.Kind.String()),
-				helpers.String("msgid", generic.MsgId))
-			return
-		}
-		err := s.handleSyncBatch(ctx, domain.BatchType(msg.BatchType), msg.Messages)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
-				helpers.String("account", clientId.Account),
-				helpers.String("cluster", clientId.Cluster),
-				helpers.Interface("event", msg.Event.Value()),
-				helpers.String("msgid", msg.MsgId))
-			return
-		}
-	case domain.EventGetObject:
-		var msg domain.GetObject
-		err = json.Unmarshal(data, &msg)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
-				helpers.String("account", clientId.Account),
-				helpers.String("cluster", clientId.Cluster),
-				helpers.Interface("event", generic.Event.Value()),
-				helpers.String("kind", generic.Kind.String()),
-				helpers.String("msgid", generic.MsgId))
-			return
-		}
-		id := domain.KindName{
-			Kind:            msg.Kind,
-			Name:            msg.Name,
-			Namespace:       msg.Namespace,
-			ResourceVersion: msg.ResourceVersion,
-		}
-		err := s.handleSyncGetObject(ctx, id, []byte(msg.BaseObject))
-		if err != nil {
-			logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
-				helpers.String("account", clientId.Account),
-				helpers.String("cluster", clientId.Cluster),
-				helpers.Interface("event", msg.Event.Value()),
-				helpers.String("id", id.String()),
-				helpers.String("msgid", msg.MsgId))
-			return
-		}
-	case domain.EventNewChecksum:
-		var msg domain.NewChecksum
-		err = json.Unmarshal(data, &msg)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
-				helpers.String("account", clientId.Account),
-				helpers.String("cluster", clientId.Cluster),
-				helpers.Interface("event", generic.Event.Value()),
-				helpers.String("kind", generic.Kind.String()),
-				helpers.String("msgid", generic.MsgId))
-			return
-		}
-		id := domain.KindName{
-			Kind:            msg.Kind,
-			Name:            msg.Name,
-			Namespace:       msg.Namespace,
-			ResourceVersion: msg.ResourceVersion,
-		}
-		err := s.handleSyncNewChecksum(ctx, id, msg.Checksum)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
-				helpers.String("account", clientId.Account),
-				helpers.String("cluster", clientId.Cluster),
-				helpers.Interface("event", msg.Event.Value()),
-				helpers.String("id", id.String()),
-				helpers.String("msgid", msg.MsgId))
-			return
-		}
-	case domain.EventObjectDeleted:
-		var msg domain.ObjectDeleted
-		err = json.Unmarshal(data, &msg)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
-				helpers.String("account", clientId.Account),
-				helpers.String("cluster", clientId.Cluster),
-				helpers.Interface("event", generic.Event.Value()),
-				helpers.String("kind", generic.Kind.String()),
-				helpers.String("msgid", generic.MsgId))
-			return
-		}
-		id := domain.KindName{
-			Kind:            msg.Kind,
-			Name:            msg.Name,
-			Namespace:       msg.Namespace,
-			ResourceVersion: msg.ResourceVersion,
-		}
-		err := s.handleSyncObjectDeleted(ctx, id)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
-				helpers.String("account", clientId.Account),
-				helpers.String("cluster", clientId.Cluster),
-				helpers.Interface("event", msg.Event.Value()),
-				helpers.String("id", id.String()),
-				helpers.String("msgid", msg.MsgId))
-			return
-		}
-	case domain.EventPatchObject:
-		var msg domain.PatchObject
-		err = json.Unmarshal(data, &msg)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
-				helpers.String("account", clientId.Account),
-				helpers.String("cluster", clientId.Cluster),
-				helpers.Interface("event", generic.Event.Value()),
-				helpers.String("kind", generic.Kind.String()),
-				helpers.String("msgid", generic.MsgId))
-			return
-		}
-		id := domain.KindName{
-			Kind:            msg.Kind,
-			Name:            msg.Name,
-			Namespace:       msg.Namespace,
-			ResourceVersion: msg.ResourceVersion,
-		}
-		err := s.handleSyncPatchObject(ctx, id, msg.Checksum, []byte(msg.Patch))
-		if err != nil {
-			logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
-				helpers.String("account", clientId.Account),
-				helpers.String("cluster", clientId.Cluster),
-				helpers.Interface("event", msg.Event.Value()),
-				helpers.String("id", id.String()),
-				helpers.String("msgid", msg.MsgId))
-			return
-		}
-	case domain.EventPutObject:
-		var msg domain.PutObject
-		err = json.Unmarshal(data, &msg)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
-				helpers.String("account", clientId.Account),
-				helpers.String("cluster", clientId.Cluster),
-				helpers.Interface("event", generic.Event.Value()),
-				helpers.String("kind", generic.Kind.String()),
-				helpers.String("msgid", generic.MsgId))
-			return
-		}
-		id := domain.KindName{
-			Kind:            msg.Kind,
-			Name:            msg.Name,
-			Namespace:       msg.Namespace,
-			ResourceVersion: msg.ResourceVersion,
-		}
-		err := s.handleSyncPutObject(ctx, id, []byte(msg.Object))
-		if err != nil {
-			logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
-				helpers.String("account", clientId.Account),
-				helpers.String("cluster", clientId.Cluster),
-				helpers.Interface("event", msg.Event.Value()),
-				helpers.String("id", id.String()),
-				helpers.String("msgid", msg.MsgId))
-			return
-		}
-	}
-}
-
-func (s *Synchronizer) handleSyncBatch(ctx context.Context, batchType domain.BatchType, messages []domain.BatchItem) error {
-	err := s.adapter.Batch(ctx, batchType, messages)
+func (s *Synchronizer) handleSyncBatch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+	err := s.adapter.Batch(ctx, kind, batchType, items)
 	if err != nil {
 		return fmt.Errorf("batch: %w", err)
 	}
@@ -661,16 +637,17 @@ func (s *Synchronizer) sendPing(ctx context.Context) {
 	}
 }
 
-func (s *Synchronizer) sendBatch(ctx context.Context, batchType domain.BatchType, batchItems []domain.BatchItem) error {
+func (s *Synchronizer) sendBatch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
 	event := domain.EventBatch
 	depth := ctx.Value(domain.ContextKeyDepth).(int)
 	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	msg := domain.Batch{
 		Depth:     depth + 1,
 		Event:     &event,
+		Kind:      &kind,
 		MsgId:     msgId,
 		BatchType: string(batchType),
-		Messages:  batchItems,
+		Items:     &items,
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -685,8 +662,9 @@ func (s *Synchronizer) sendBatch(ctx context.Context, batchType domain.BatchType
 		helpers.String("account", clientId.Account),
 		helpers.String("cluster", clientId.Cluster),
 		helpers.String("batchType", msg.BatchType),
+		helpers.String("kind", msg.Kind.String()),
 		helpers.String("msgid", msg.MsgId),
-		helpers.Int("items", len(msg.Messages)))
+		helpers.Int("items", msg.Items.Length()))
 	return nil
 }
 

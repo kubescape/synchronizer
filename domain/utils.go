@@ -25,3 +25,7 @@ func KindFromString(ctx context.Context, kind string) *Kind {
 		Resource: parts[2],
 	}
 }
+
+func (items BatchItems) Length() int {
+	return len(items.GetObject) + len(items.NewChecksum) + len(items.ObjectDeleted) + len(items.PatchObject) + len(items.PutObject)
+}

@@ -21,9 +21,7 @@ channels:
       message:
         oneOf:
           - $ref: '#/components/messages/newChecksum'
-          - $ref: '#/components/messages/objectAdded'
           - $ref: '#/components/messages/objectDeleted'
-          - $ref: '#/components/messages/objectModified'
           - $ref: '#/components/messages/getObject'
           - $ref: '#/components/messages/patchObject'
           - $ref: '#/components/messages/putObject'
@@ -33,9 +31,7 @@ channels:
       message:
         oneOf:
           - $ref: '#/components/messages/newChecksum'
-          - $ref: '#/components/messages/objectAdded'
           - $ref: '#/components/messages/objectDeleted'
-          - $ref: '#/components/messages/objectModified'
           - $ref: '#/components/messages/getObject'
           - $ref: '#/components/messages/patchObject'
           - $ref: '#/components/messages/putObject'
@@ -50,18 +46,10 @@ components:
       description: Event sent when a new checksum is observed
       payload:
         $ref: '#/components/schemas/newChecksum'
-    objectAdded:
-      description: Event sent when an object is added
-      payload:
-        $ref: '#/components/schemas/objectAdded'
     objectDeleted:
       description: Event sent when an object is deleted
       payload:
         $ref: '#/components/schemas/objectDeleted'
-    objectModified:
-      description: Event sent when an object is modified
-      payload:
-        $ref: '#/components/schemas/objectModified'
     getObject:
       description: Ask for an object to be sent back
       payload:
@@ -109,27 +97,6 @@ components:
           $ref: '#/components/schemas/name'
         namespace:
           $ref: '#/components/schemas/namespace'
-    objectAdded:
-      type: object
-      properties:
-        resourceVersion:
-          $ref: '#/components/schemas/resourceVersion'
-        checksum:
-          $ref: '#/components/schemas/sum'
-        depth:
-          $ref: '#/components/schemas/depth'
-        event:
-          $ref: '#/components/schemas/event'
-        kind:
-          $ref: '#/components/schemas/kind'
-        msgID:
-          $ref: '#/components/schemas/msgID'
-        name:
-          $ref: '#/components/schemas/name'
-        namespace:
-          $ref: '#/components/schemas/namespace'
-        object:
-          $ref: '#/components/schemas/object'
     objectDeleted:
       type: object
       properties:
@@ -147,27 +114,6 @@ components:
           $ref: '#/components/schemas/name'
         namespace:
           $ref: '#/components/schemas/namespace'
-    objectModified:
-      type: object
-      properties:
-        resourceVersion:
-          $ref: '#/components/schemas/resourceVersion'
-        checksum:
-          $ref: '#/components/schemas/sum'
-        depth:
-          $ref: '#/components/schemas/depth'
-        event:
-          $ref: '#/components/schemas/event'
-        kind:
-          $ref: '#/components/schemas/kind'
-        msgID:
-          $ref: '#/components/schemas/msgID'
-        name:
-          $ref: '#/components/schemas/name'
-        namespace:
-          $ref: '#/components/schemas/namespace'
-        object:
-          $ref: '#/components/schemas/object'
     getObject:
       type: object
       properties:
@@ -235,9 +181,9 @@ components:
       description: type of event, always append new types to not break compatibility
       enum:
         - newChecksum
-        - objectAdded
+        - objectAdded # deprecated
         - objectDeleted
-        - objectModified
+        - objectModified # deprecated 
         - getObject
         - patchObject
         - putObject
@@ -271,14 +217,29 @@ components:
     sum:
       type: string
       description: The checksum of the object
-    batchItem:
+    batchItems:
       type: object
       properties:
-        event:
-          $ref: '#/components/schemas/event'
-        payload:
-          type: string
-          description: item payload
+        putObject:
+          type: array
+          items:
+            $ref: '#/components/schemas/putObject'
+        newChecksum:
+          type: array
+          items:
+            $ref: '#/components/schemas/newChecksum'
+        objectDeleted:
+          type: array
+          items:
+            $ref: '#/components/schemas/objectDeleted'
+        getObject:
+          type: array
+          items:
+            $ref: '#/components/schemas/getObject'
+        patchObject:
+          type: array
+          items:
+            $ref: '#/components/schemas/patchObject'
     batch:
       type: object
       properties:
@@ -288,10 +249,10 @@ components:
           $ref: '#/components/schemas/event'
         msgID:
           $ref: '#/components/schemas/msgID'
+        kind:
+          $ref: '#/components/schemas/kind'
         batchType:
           type: string
           description: batch type could be used to distinguish between different types of batches which require different processing
-        messages:
-          type: array
-          items:
-            $ref: '#/components/schemas/batchItem'
+        items:
+          $ref: '#/components/schemas/batchItems'

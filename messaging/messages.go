@@ -109,17 +109,17 @@ type ServerConnectedMessage struct {
 }
 
 type ReconciliationRequestMessage struct {
-	Cluster   string                        `json:"cluster"`
-	Account   string                        `json:"account"`
-	Depth     int                           `json:"depth"`
-	MsgId     string                        `json:"msgId"`
-	Initiator string                        `json:"initiator"`
-	Objects   []ReconciliationRequestObject `json:"objects"`
+	Cluster         string                                   `json:"cluster"`
+	Account         string                                   `json:"account"`
+	Depth           int                                      `json:"depth"`
+	MsgId           string                                   `json:"msgId"`
+	ServerInitiated bool                                     `json:"serverInitiated"`
+	KindToObjects   map[string][]ReconciliationRequestObject `json:"kindToObject"`
 }
 
 type ReconciliationRequestObject struct {
+	Checksum        string `json:"checksum"`
 	ResourceVersion int    `json:"resourceVersion"`
-	Kind            string `json:"kind"`
 	Name            string `json:"name"`
 	Namespace       string `json:"namespace"`
 }

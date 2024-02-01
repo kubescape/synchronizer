@@ -5,7 +5,8 @@ type Batch struct {
 	Depth                int
 	Event                *Event
 	MsgId                string
+	Kind                 *Kind
 	BatchType            string
-	Messages             []BatchItem
+	Items                *BatchItems
 	AdditionalProperties map[string]interface{}
 }

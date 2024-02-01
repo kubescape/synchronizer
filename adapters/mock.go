@@ -31,7 +31,8 @@ func NewMockAdapter(isClient bool) *MockAdapter {
 
 var _ Adapter = (*MockAdapter)(nil)
 
-func (m *MockAdapter) Batch(_ context.Context, _ domain.BatchType, _ []domain.BatchItem) error {
+func (m *MockAdapter) Batch(_ context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+	// TODO : implement
 	return nil
 }
 

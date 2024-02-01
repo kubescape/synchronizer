@@ -82,12 +82,8 @@ func TestLoadConfig(t *testing.T) {
 			path: "../configuration/server",
 			want: Config{
 				Backend: Backend{
-					AuthenticationServer: &AuthenticationServerConfig{
-						Url:                       "https://api.armosec.io/api/v1",
-						HeaderToQueryParamMapping: map[string]string{"x-api-account": "customerGUID"},
-						HeaderToHeaderMapping:     map[string]string{"x-api-key": "X-API-KEY"},
-					},
-					Subscription: "synchronizer-server",
+					AuthenticationServer: nil,
+					Subscription:         "synchronizer-server",
 					PulsarConfig: &pulsarconfig.PulsarConfig{
 						URL:                    "pulsar://localhost:6650",
 						Tenant:                 "armo",

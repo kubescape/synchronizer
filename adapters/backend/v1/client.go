@@ -3,7 +3,6 @@ package backend
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/kubescape/go-logger"
@@ -12,6 +11,7 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
 	"github.com/kubescape/synchronizer/utils"
+	"go.uber.org/multierr"
 )
 
 type Client struct {
@@ -105,81 +105,58 @@ func (c *Client) PutObject(ctx context.Context, id domain.KindName, object []byt
 	return c.sendPutObjectMessage(ctx, id, object)
 }
 
-func (c *Client) Batch(ctx context.Context, batchType domain.BatchType, messages []domain.BatchItem) error {
-	var allErrors error
-	for _, batchItem := range messages {
-		payload := []byte(batchItem.Payload)
-
-		switch *batchItem.Event {
-		case domain.EventPutObject:
-			var msg domain.PutObject
-			err := json.Unmarshal(payload, &msg)
-			if err != nil {
-				allErrors = errors.Join(allErrors, err)
-				logger.L().Ctx(ctx).Error("failed to unmarshal delete object message", helpers.Error(err))
-				continue
-			}
-			id := domain.KindName{
-				Kind:            msg.Kind,
-				Name:            msg.Name,
-				Namespace:       msg.Namespace,
-				ResourceVersion: msg.ResourceVersion,
-			}
-
-			if err := c.PutObject(ctx, id, []byte(msg.Object)); err != nil {
-				allErrors = errors.Join(allErrors, err)
-				logger.L().Ctx(ctx).Error("failed to delete object", helpers.Error(err))
-			}
-
-		// TODO: handle other events
-		case domain.EventObjectDeleted:
-			var msg domain.ObjectDeleted
-			err := json.Unmarshal(payload, &msg)
-			if err != nil {
-				allErrors = errors.Join(allErrors, err)
-				logger.L().Ctx(ctx).Error("failed to unmarshal delete object message", helpers.Error(err))
-				continue
-			}
-			id := domain.KindName{
-				Kind:            msg.Kind,
-				Name:            msg.Name,
-				Namespace:       msg.Namespace,
-				ResourceVersion: msg.ResourceVersion,
-			}
-
-			if err := c.DeleteObject(ctx, id); err != nil {
-				allErrors = errors.Join(allErrors, err)
-				logger.L().Ctx(ctx).Error("failed to delete object", helpers.Error(err))
-			}
-		case domain.EventGetObject:
-			var msg domain.GetObject
-			err := json.Unmarshal(payload, &msg)
-			if err != nil {
-				allErrors = errors.Join(allErrors, err)
-				logger.L().Ctx(ctx).Error("failed to unmarshal get object message", helpers.Error(err))
-				continue
-			}
-
-			id := domain.KindName{
-				Kind:            msg.Kind,
-				Name:            msg.Name,
-				Namespace:       msg.Namespace,
-				ResourceVersion: msg.ResourceVersion,
-			}
-
-			if err := c.GetObject(ctx, id, []byte(msg.BaseObject)); err != nil {
-				allErrors = errors.Join(allErrors, err)
-				logger.L().Ctx(ctx).Error("failed to get object", helpers.Error(err))
-			}
-		default:
-			err := fmt.Errorf("unknown event type in batch message")
-			allErrors = errors.Join(allErrors, err)
-			logger.L().Ctx(ctx).Error("failed processing batch message", helpers.Error(err))
+func (c *Client) Batch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+	var err error
+	for _, item := range items.GetObject {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
 		}
-
+		err = multierr.Append(err, c.GetObject(ctx, id, []byte(item.BaseObject)))
 	}
 
-	return allErrors
+	for _, item := range items.NewChecksum {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.VerifyObject(ctx, id, item.Checksum))
+	}
+
+	for _, item := range items.ObjectDeleted {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.DeleteObject(ctx, id))
+	}
+
+	for _, item := range items.PatchObject {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.PatchObject(ctx, id, item.Checksum, []byte(item.Patch)))
+	}
+
+	for _, item := range items.PutObject {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.PutObject(ctx, id, []byte(item.Object)))
+	}
+	return err
 }
 
 func (c *Client) RegisterCallbacks(_ context.Context, callbacks domain.Callbacks) {
@@ -359,13 +336,11 @@ func (c *Client) SendReconciliationRequestMessage(ctx context.Context) error {
 	id := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.ReconciliationRequestMessage{
-		Cluster:   id.Cluster,
-		Account:   id.Account,
-		Depth:     depth + 1,
-		MsgId:     msgId,
-		Initiator: SynchronizerServerProducerKey,
-		// should be empty. when the ingester receives this message it will populate the  reconciliation request with objects
-		Objects: []messaging.ReconciliationRequestObject{},
+		Cluster:         id.Cluster,
+		Account:         id.Account,
+		Depth:           depth + 1,
+		MsgId:           msgId,
+		ServerInitiated: true,
 	}
 	logger.L().Debug("sending reconciliation request message to producer",
 		helpers.String("account", msg.Account),
