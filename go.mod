@@ -6,7 +6,7 @@ toolchain go1.21.5
 
 require (
 	github.com/SergJa/jsonhash v0.0.0-20210531165746-fc45f346aa74
-	github.com/apache/pulsar-client-go v0.11.1
+	github.com/apache/pulsar-client-go v0.12.0
 	github.com/armosec/armoapi-go v0.0.292
 	github.com/armosec/armosec-infra v0.0.16
 	github.com/armosec/event-ingester-service v0.1.1-0.20240103121040-e464c2791b07
@@ -23,7 +23,7 @@ require (
 	github.com/kinbiko/jsonassert v1.1.1
 	github.com/kubescape/backend v0.0.14
 	github.com/kubescape/go-logger v0.0.22
-	github.com/kubescape/messaging v0.0.21
+	github.com/kubescape/messaging v0.0.22
 	github.com/kubescape/storage v0.0.57
 	github.com/panjf2000/ants/v2 v2.8.2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
@@ -92,7 +92,7 @@ require (
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dsnet/compress v0.0.2-0.20210315054119-f66993602bf5 // indirect
-	github.com/dvsekhvalnov/jose2go v1.5.0 // indirect
+	github.com/dvsekhvalnov/jose2go v1.6.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/facebookincubator/nvdtools v0.1.5 // indirect
 	github.com/fatih/color v1.16.0 // indirect
