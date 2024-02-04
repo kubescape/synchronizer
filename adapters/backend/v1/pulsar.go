@@ -307,18 +307,22 @@ func (p *PulsarMessageProducer) ProduceMessage(ctx context.Context, id domain.Cl
 }
 
 func logPulsarSyncAsyncErrors(msgID pulsar.MessageID, message *pulsar.ProducerMessage, err error) {
+	var metricLabels prometheus.Labels
 	if err != nil {
-		pulsarProducerMessagePayloadBytesProducedCounter.With(prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueError}).Add(float64(len(message.Payload)))
-		pulsarProducerMessagesProducedCounter.With(prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueError}).Inc()
+		metricLabels = prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueError}
 		logger.L().Error("failed to send message to pulsar",
 			helpers.Error(err),
 			helpers.String("messageID", msgID.String()),
 			helpers.Int("payloadBytes", len(message.Payload)),
 			helpers.Interface("messageProperties", message.Properties))
 	} else {
-		pulsarProducerMessagePayloadBytesProducedCounter.With(prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueSuccess}).Add(float64(len(message.Payload)))
-		pulsarProducerMessagesProducedCounter.With(prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueSuccess}).Inc()
+		metricLabels = prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueSuccess}
 		logger.L().Debug("successfully sent message to pulsar", helpers.String("messageID", msgID.String()), helpers.Interface("messageProperties", message.Properties))
+	}
+
+	pulsarProducerMessagesProducedCounter.With(metricLabels).Inc()
+	if message != nil {
+		pulsarProducerMessagePayloadBytesProducedCounter.With(metricLabels).Add(float64(len(message.Payload)))
 	}
 }
 
