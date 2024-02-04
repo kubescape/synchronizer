@@ -16,6 +16,7 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
 	"github.com/kubescape/synchronizer/utils"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -300,7 +301,6 @@ func NewPulsarMessageProducer(cfg config.Config, pulsarClient pulsarconnector.Cl
 }
 
 func (p *PulsarMessageProducer) ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte) error {
-	pulsarProducerMessagePayloadBytesProducedCounter.Add(float64(len(payload)))
 	producerMessage := NewProducerMessage(SynchronizerServerProducerKey, id.Account, id.Cluster, eventType, payload)
 	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
 	return nil
@@ -308,14 +308,16 @@ func (p *PulsarMessageProducer) ProduceMessage(ctx context.Context, id domain.Cl
 
 func logPulsarSyncAsyncErrors(msgID pulsar.MessageID, message *pulsar.ProducerMessage, err error) {
 	if err != nil {
-		pulsarProducerErrorsCounter.Inc()
+		pulsarProducerMessagePayloadBytesProducedCounter.With(prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueError}).Add(float64(len(message.Payload)))
+		pulsarProducerMessagesProducedCounter.With(prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueError}).Inc()
 		logger.L().Error("failed to send message to pulsar",
 			helpers.Error(err),
 			helpers.String("messageID", msgID.String()),
 			helpers.Int("payloadBytes", len(message.Payload)),
 			helpers.Interface("messageProperties", message.Properties))
 	} else {
-		pulsarProducerMessagesProducedCounter.Inc()
+		pulsarProducerMessagePayloadBytesProducedCounter.With(prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueSuccess}).Add(float64(len(message.Payload)))
+		pulsarProducerMessagesProducedCounter.With(prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueSuccess}).Inc()
 		logger.L().Debug("successfully sent message to pulsar", helpers.String("messageID", msgID.String()), helpers.Interface("messageProperties", message.Properties))
 	}
 }
