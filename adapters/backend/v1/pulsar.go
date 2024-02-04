@@ -74,8 +74,15 @@ func (c *PulsarMessageReader) Start(mainCtx context.Context, adapter adapters.Ad
 	}()
 	go func() {
 		logger.L().Info("starting to listening on pulsar message channel")
-		_ = c.listenOnMessageChannel(mainCtx, adapter)
+		c.listenOnMessageChannel(mainCtx, adapter)
 	}()
+}
+
+func (c *PulsarMessageReader) stop() {
+	logger.L().Info("closing pulsar reader")
+	c.reader.Close()
+	logger.L().Info("closing pulsar message channel")
+	close(c.messageChannel)
 }
 
 func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
@@ -94,13 +101,12 @@ func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
 	}
 }
 
-func (c *PulsarMessageReader) listenOnMessageChannel(ctx context.Context, adapter adapters.Adapter) error {
-	defer c.reader.Close()
+func (c *PulsarMessageReader) listenOnMessageChannel(ctx context.Context, adapter adapters.Adapter) {
+	defer c.stop()
 	for {
 		select {
 		case <-ctx.Done():
-			close(c.messageChannel)
-			return nil
+			return
 		case msg := <-c.messageChannel:
 			msgID := utils.PulsarMessageIDtoString(msg.ID())
 			if err := c.handleSingleSynchronizerMessage(ctx, adapter, msg); err != nil {

@@ -64,7 +64,8 @@ func main() {
 			logger.L().Fatal("failed to create pulsar reader", helpers.Error(err), helpers.String("config", fmt.Sprintf("%+v", cfg.Backend.PulsarConfig)))
 		}
 
-		adapter = backend.NewBackendAdapter(ctx, pulsarProducer, pulsarReader)
+		adapter = backend.NewBackendAdapter(ctx, pulsarProducer)
+		pulsarReader.Start(ctx, adapter)
 	} else {
 		// mock adapter
 		logger.L().Info("initializing mock adapter")
@@ -102,7 +103,7 @@ func main() {
 					id := utils.ClientIdentifierFromContext(r.Context())
 					synchronizer, err := core.NewSynchronizerServer(r.Context(), adapter, conn)
 					if err != nil {
-						logger.L().Error("error during sync, closing listener",
+						logger.L().Error("error during creating synchronizer server instance",
 							helpers.String("account", id.Account),
 							helpers.String("cluster", id.Cluster),
 							helpers.String("connectionId", id.ConnectionId),
