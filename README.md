@@ -43,12 +43,6 @@ flowchart LR
     CONFIG=./configuration/server go run cmd/server/main.go
     ```
 
-    If authentication server is not set run :
-
-    ```sh
-    TEST=true CONFIG=./configuration/server go run cmd/server/main.go
-    ```
-
 3. Start synchronizer client:
 
     ```sh
