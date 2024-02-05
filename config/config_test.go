@@ -88,7 +88,7 @@ func TestLoadConfig(t *testing.T) {
 						URL:                    "pulsar://localhost:6650",
 						Tenant:                 "armo",
 						Namespace:              "kubescape",
-						AdminUrl:               "http://localhost:8080",
+						AdminUrl:               "http://localhost:8081",
 						Clusters:               []string{"standalone"},
 						RedeliveryDelaySeconds: 5,
 						MaxDeliveryAttempts:    20,
@@ -123,7 +123,7 @@ func TestLoadServiceURLs(t *testing.T) {
 				GatewayUrl:                "https://gw.test.com",
 				ApiServerUrl:              "https://api.test.com",
 				MetricsUrl:                "https://metrics.test.com",
-				SynchronizerUrl:           "wss://synchronizer.test.com",
+				SynchronizerUrl:           "ws://127.0.0.1:8080",
 			},
 		},
 		{
@@ -135,7 +135,7 @@ func TestLoadServiceURLs(t *testing.T) {
 				GatewayUrl:                "https://gw.test.com",
 				ApiServerUrl:              "https://api.test.com",
 				MetricsUrl:                "https://metrics.test.com",
-				SynchronizerUrl:           "wss://synchronizer.test.com",
+				SynchronizerUrl:           "ws://127.0.0.1:8080",
 			},
 		},
 	}

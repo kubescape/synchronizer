@@ -666,7 +666,7 @@ func TestMockAdapter_Batch(t *testing.T) {
 				Resources:     tt.resources,
 				shadowObjects: map[string][]byte{},
 			}
-			err := m.Batch(ctx, *domain.KindFromString(context.TODO(), "apps/v1/Deployment"), domain.BatchType(tt.batchType), tt.items)
+			err := m.Batch(ctx, *domain.KindFromString(context.TODO(), "apps/v1/Deployment"), domain.BatchType(""), tt.items)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Batch() error = %v, wantErr %v", err, tt.wantErr)
 			}
