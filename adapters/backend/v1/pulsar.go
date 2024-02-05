@@ -182,7 +182,9 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 
 			err = multierr.Append(err, callbacks.Batch(ctx, *kind, domain.ReconciliationBatch, items))
 		}
-		return fmt.Errorf("failed to handle ReconciliationRequest message: %w", err)
+		if err != nil {
+			return fmt.Errorf("failed to handle ReconciliationRequest message: %w", err)
+		}
 	case messaging.MsgPropEventValueGetObjectMessage:
 		var data messaging.GetObjectMessage
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
@@ -348,6 +350,13 @@ func NewPulsarMessageProducer(cfg config.Config, pulsarClient pulsarconnector.Cl
 
 func (p *PulsarMessageProducer) ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte) error {
 	producerMessage := NewProducerMessage(SynchronizerServerProducerKey, id.Account, id.Cluster, eventType, payload)
+	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
+	return nil
+}
+
+// ProduceMessageForTest is a helper method to produce messages for testing purposes only using a specific producerMessageKey
+func (p *PulsarMessageProducer) ProduceMessageForTest(ctx context.Context, producerMessageKey string, id domain.ClientIdentifier, eventType string, payload []byte) error {
+	producerMessage := NewProducerMessage(producerMessageKey, id.Account, id.Cluster, eventType, payload)
 	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
 	return nil
 }
