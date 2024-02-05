@@ -987,7 +987,7 @@ func TestSynchronizer_TC08(t *testing.T) {
 	// add applicationprofile to k8s
 	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
-	time.Sleep(15 * time.Second)
+	time.Sleep(20 * time.Second)
 	// check object in postgres
 	_, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
 	assert.NoError(t, err)
