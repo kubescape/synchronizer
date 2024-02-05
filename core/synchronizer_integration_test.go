@@ -1059,6 +1059,9 @@ func TestSynchronizer_TC11(t *testing.T) {
 	// add applicationprofile to k8s
 	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
 	time.Sleep(5 * time.Second)
+	// re-enable S3Mock
+	td.s3.SetReturnError(false)
+	time.Sleep(5 * time.Second)
 	// check object in postgres
 	_, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
 	assert.NoError(t, err)
