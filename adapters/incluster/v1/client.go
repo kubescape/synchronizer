@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -21,9 +24,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
 )
+
+const envMultiplier = "EVENT_MULTIPLIER"
 
 type BatchProcessingFunc func(context.Context, *Client, domain.BatchItems) error
 
@@ -37,6 +43,7 @@ type Client struct {
 	account             string
 	cluster             string
 	kind                *domain.Kind
+	multiplier          int
 	callbacks           domain.Callbacks
 	res                 schema.GroupVersionResource
 	ShadowObjects       map[string][]byte
@@ -48,6 +55,8 @@ var errWatchClosed = errors.New("watch channel closed")
 
 func NewClient(client dynamic.Interface, account, cluster string, r config.Resource) *Client {
 	res := schema.GroupVersionResource{Group: r.Group, Version: r.Version, Resource: r.Resource}
+	// get event multiplier from env, defaults to 0
+	multiplier, _ := strconv.Atoi(os.Getenv(envMultiplier))
 	return &Client{
 		account: account,
 		client:  client,
@@ -57,6 +66,7 @@ func NewClient(client dynamic.Interface, account, cluster string, r config.Resou
 			Version:  res.Version,
 			Resource: res.Resource,
 		},
+		multiplier:    multiplier,
 		res:           res,
 		ShadowObjects: map[string][]byte{},
 		Strategy:      r.Strategy,
@@ -182,7 +192,11 @@ func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, e
 			if event.Type == watch.Error {
 				return fmt.Errorf("watch error: %s", event.Object)
 			}
-			eventQueue.Enqueue(event)
+			if c.multiplier > 0 {
+				multiplyEvent(event, eventQueue, c.multiplier)
+			} else {
+				eventQueue.Enqueue(event)
+			}
 		}
 	}, utils.NewBackOff(), func(err error, d time.Duration) {
 		if !errors.Is(err, errWatchClosed) {
@@ -193,6 +207,36 @@ func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, e
 	}); err != nil {
 		logger.L().Ctx(ctx).Fatal("giving up watch", helpers.Error(err),
 			helpers.String("resource", c.res.Resource))
+	}
+}
+
+func multiplyEvent(event watch.Event, queue *utils.CooldownQueue, multiplier int) {
+	objectName := event.Object.(*unstructured.Unstructured).GetName()
+	objectUID := event.Object.(*unstructured.Unstructured).GetUID()
+	for i := 0; i < multiplier; i++ {
+		newEvent := event.DeepCopy()
+		newEvent.Object.(*unstructured.Unstructured).SetName(fmt.Sprintf("%s-%d", objectName, i))
+		// change the workload-name label too - if applicable
+		labels := newEvent.Object.(*unstructured.Unstructured).GetLabels()
+		if labels != nil {
+			if workloadName, ok := labels["kubescape.io/workload-name"]; ok {
+				labels["kubescape.io/workload-name"] = fmt.Sprintf("%s-%d", workloadName, i)
+				newEvent.Object.(*unstructured.Unstructured).SetLabels(labels)
+			}
+		}
+
+		annotations := newEvent.Object.(*unstructured.Unstructured).GetAnnotations()
+		if annotations != nil {
+			if wlid, ok := annotations["kubescape.io/wlid"]; ok {
+
+				// workloadinterface.
+				annotations["kubescape.io/wlid"] = fmt.Sprintf("%s-%d", wlid, i)
+				newEvent.Object.(*unstructured.Unstructured).SetAnnotations(annotations)
+			}
+		}
+		// need also to modify UID, otherwise it will deduplicated by the cooldown queue
+		newEvent.Object.(*unstructured.Unstructured).SetUID(types.UID(fmt.Sprintf("%s-%d", objectUID, i)))
+		queue.Enqueue(*newEvent)
 	}
 }
 
@@ -282,7 +326,7 @@ func (c *Client) DeleteObject(_ context.Context, id domain.KindName) error {
 }
 
 func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
-	obj, err := c.client.Resource(c.res).Namespace(id.Namespace).Get(context.Background(), id.Name, metav1.GetOptions{})
+	obj, err := c.getResource(id.Namespace, id.Name)
 	if err != nil {
 		return fmt.Errorf("get resource: %w", err)
 	}
@@ -306,7 +350,7 @@ func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum s
 	if c.Strategy != domain.PatchStrategy {
 		return nil, fmt.Errorf("patch strategy not enabled for resource %s", id.Kind.String())
 	}
-	obj, err := c.client.Resource(c.res).Namespace(id.Namespace).Get(context.Background(), id.Name, metav1.GetOptions{})
+	obj, err := c.getResource(id.Namespace, id.Name)
 	if err != nil {
 		return nil, fmt.Errorf("get resource: %w", err)
 	}
@@ -374,7 +418,7 @@ func (c *Client) Batch(ctx context.Context, kind domain.Kind, batchType domain.B
 }
 
 func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, error) {
-	obj, err := c.client.Resource(c.res).Namespace(id.Namespace).Get(context.Background(), id.Name, metav1.GetOptions{})
+	obj, err := c.getResource(id.Namespace, id.Name)
 	if err != nil {
 		return nil, fmt.Errorf("get resource: %w", err)
 	}
@@ -410,6 +454,38 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 			logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
 			continue
 		}
+		if c.multiplier > 0 {
+			c.multiplyVerifyObject(ctx, id, obj)
+		} else {
+			newObject, err := utils.FilterAndMarshal(obj)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
+				continue
+			}
+			err = c.callVerifyObject(ctx, id, newObject)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
+				continue
+			}
+		}
+	}
+	// set resource version to watch from
+	return list.GetResourceVersion(), nil
+}
+
+func (c *Client) multiplyVerifyObject(ctx context.Context, id domain.KindName, obj *unstructured.Unstructured) {
+	objectName := id.Name
+	for i := 0; i < c.multiplier; i++ {
+		id.Name = fmt.Sprintf("%s-%d", objectName, i)
+		obj.SetName(id.Name)
+		// change the workload-name label too - if applicable
+		labels := obj.GetLabels()
+		if labels != nil {
+			if workloadName, ok := labels["kubescape.io/workload-name"]; ok {
+				labels["kubescape.io/workload-name"] = fmt.Sprintf("%s-%d", workloadName, i)
+				obj.SetLabels(labels)
+			}
+		}
 		newObject, err := utils.FilterAndMarshal(obj)
 		if err != nil {
 			logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
@@ -421,13 +497,11 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 			continue
 		}
 	}
-	// set resource version to watch from
-	return list.GetResourceVersion(), nil
 }
 
 func (c *Client) getObjectFromUnstructured(d *unstructured.Unstructured) ([]byte, error) {
 	if c.res.Group == "spdx.softwarecomposition.kubescape.io" {
-		obj, err := c.client.Resource(c.res).Namespace(d.GetNamespace()).Get(context.Background(), d.GetName(), metav1.GetOptions{})
+		obj, err := c.getResource(d.GetNamespace(), d.GetName())
 		if err != nil {
 			return nil, fmt.Errorf("get resource: %w", err)
 		}
@@ -612,4 +686,19 @@ func defaultBatchProcessingFunc(ctx context.Context, c *Client, items domain.Bat
 		err = multierr.Append(err, c.PutObject(ctx, id, []byte(item.Object)))
 	}
 	return err
+}
+
+func (c *Client) getResource(namespace string, name string) (*unstructured.Unstructured, error) {
+	if c.multiplier > 0 {
+		name = stripSuffix(name)
+	}
+	return c.client.Resource(c.res).Namespace(namespace).Get(context.Background(), name, metav1.GetOptions{})
+}
+
+func stripSuffix(name string) string {
+	lastHyphen := strings.LastIndex(name, "-")
+	if lastHyphen != -1 && strings.HasPrefix(name[lastHyphen:], "-") {
+		return name[:lastHyphen]
+	}
+	return name
 }
