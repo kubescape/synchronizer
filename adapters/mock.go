@@ -10,6 +10,7 @@ import (
 	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
+	"go.uber.org/multierr"
 )
 
 type MockAdapter struct {
@@ -31,9 +32,58 @@ func NewMockAdapter(isClient bool) *MockAdapter {
 
 var _ Adapter = (*MockAdapter)(nil)
 
-func (m *MockAdapter) Batch(_ context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
-	// TODO : implement
-	return nil
+func (m *MockAdapter) Batch(ctx context.Context, kind domain.Kind, _ domain.BatchType, items domain.BatchItems) error {
+	var err error
+	for _, item := range items.GetObject {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, m.GetObject(ctx, id, []byte(item.BaseObject)))
+	}
+
+	for _, item := range items.NewChecksum {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, m.VerifyObject(ctx, id, item.Checksum))
+	}
+
+	for _, item := range items.ObjectDeleted {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, m.DeleteObject(ctx, id))
+	}
+
+	for _, item := range items.PatchObject {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, m.PatchObject(ctx, id, item.Checksum, []byte(item.Patch)))
+	}
+
+	for _, item := range items.PutObject {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, m.PutObject(ctx, id, []byte(item.Object)))
+	}
+	return err
 }
 
 func (m *MockAdapter) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {

@@ -1064,7 +1064,7 @@ func TestSynchronizer_TC11(t *testing.T) {
 	tearDown(td)
 }
 
-// TestSynchronizer_TC11: Reconciliation flow
+// TestSynchronizer_TC12: Reconciliation flow
 // we have one application profile in k8s cluster, then, we delete this resource from postgres and create a dummy resource to postgres,
 // a reconciliation message is produced by the ingester with the two resources (one that exists in k8s with a different resource version and one that does not exist in k8s)
 // we expect to see the resource that exists in k8s to be back in postgres and the resource that does not exist in k8s to be deleted from postgres
