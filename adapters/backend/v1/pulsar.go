@@ -16,6 +16,7 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
 	"github.com/kubescape/synchronizer/utils"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/multierr"
 )
 
@@ -75,8 +76,15 @@ func (c *PulsarMessageReader) Start(mainCtx context.Context, adapter adapters.Ad
 	}()
 	go func() {
 		logger.L().Info("starting to listening on pulsar message channel")
-		_ = c.listenOnMessageChannel(mainCtx, adapter)
+		c.listenOnMessageChannel(mainCtx, adapter)
 	}()
+}
+
+func (c *PulsarMessageReader) stop() {
+	logger.L().Info("closing pulsar reader")
+	c.reader.Close()
+	logger.L().Info("closing pulsar message channel")
+	close(c.messageChannel)
 }
 
 func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
@@ -95,13 +103,12 @@ func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
 	}
 }
 
-func (c *PulsarMessageReader) listenOnMessageChannel(ctx context.Context, adapter adapters.Adapter) error {
-	defer c.reader.Close()
+func (c *PulsarMessageReader) listenOnMessageChannel(ctx context.Context, adapter adapters.Adapter) {
+	defer c.stop()
 	for {
 		select {
 		case <-ctx.Done():
-			close(c.messageChannel)
-			return nil
+			return
 		case msg := <-c.messageChannel:
 			msgID := utils.PulsarMessageIDtoString(msg.ID())
 			if err := c.handleSingleSynchronizerMessage(ctx, adapter, msg); err != nil {
@@ -362,10 +369,22 @@ func (p *PulsarMessageProducer) ProduceMessageForTest(ctx context.Context, produ
 }
 
 func logPulsarSyncAsyncErrors(msgID pulsar.MessageID, message *pulsar.ProducerMessage, err error) {
+	var metricLabels prometheus.Labels
 	if err != nil {
-		logger.L().Error("failed to send message to pulsar", helpers.Error(err))
+		metricLabels = prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueError}
+		logger.L().Error("failed to send message to pulsar",
+			helpers.Error(err),
+			helpers.String("messageID", msgID.String()),
+			helpers.Int("payloadBytes", len(message.Payload)),
+			helpers.Interface("messageProperties", message.Properties))
 	} else {
+		metricLabels = prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueSuccess}
 		logger.L().Debug("successfully sent message to pulsar", helpers.String("messageID", msgID.String()), helpers.Interface("messageProperties", message.Properties))
+	}
+
+	pulsarProducerMessagesProducedCounter.With(metricLabels).Inc()
+	if message != nil {
+		pulsarProducerMessagePayloadBytesProducedCounter.With(metricLabels).Add(float64(len(message.Payload)))
 	}
 }
 

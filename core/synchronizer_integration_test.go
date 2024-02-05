@@ -497,7 +497,8 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
 
-	cluster.syncClient = NewSynchronizerClient(ctx, clientAdapter, clientConn, newConn)
+	cluster.syncClient, err = NewSynchronizerClient(ctx, clientAdapter, clientConn, newConn)
+	require.NoError(t, err)
 	cluster.syncClientAdapter = clientAdapter
 	cluster.clientConn = clientConn
 	cluster.syncClientContextCancelFn = cancel
@@ -528,8 +529,10 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
-	serverAdapter := backend.NewBackendAdapter(ctx, pulsarProducer, pulsarReader)
-	synchronizerServer := NewSynchronizerServer(ctx, serverAdapter, serverConn)
+	serverAdapter := backend.NewBackendAdapter(ctx, pulsarProducer)
+	pulsarReader.Start(ctx, serverAdapter)
+	synchronizerServer, err := NewSynchronizerServer(ctx, serverAdapter, serverConn)
+	require.NoError(t, err)
 
 	// start server
 	go func() {
@@ -987,7 +990,7 @@ func TestSynchronizer_TC08(t *testing.T) {
 	// add applicationprofile to k8s
 	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
-	time.Sleep(5 * time.Second)
+	time.Sleep(20 * time.Second)
 	// check object in postgres
 	_, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
 	assert.NoError(t, err)

@@ -3,6 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
+	"os"
+	"time"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gobwas/ws"
 	backendUtils "github.com/kubescape/backend/pkg/utils"
@@ -13,10 +18,6 @@ import (
 	"github.com/kubescape/synchronizer/core"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
-	"net"
-	"net/url"
-	"os"
-	"time"
 )
 
 func main() {
@@ -117,7 +118,10 @@ func main() {
 	}
 
 	// synchronizer
-	synchronizer := core.NewSynchronizerClient(ctx, adapter, conn, newConn)
+	synchronizer, err := core.NewSynchronizerClient(ctx, adapter, conn, newConn)
+	if err != nil {
+		logger.L().Ctx(ctx).Fatal("failed to create synchronizer", helpers.Error(err))
+	}
 	err = synchronizer.Start(ctx)
 	if err != nil {
 		logger.L().Ctx(ctx).Fatal("error during sync, exiting", helpers.Error(err))
