@@ -45,7 +45,7 @@ func NewPulsarMessageReader(cfg config.Config, pulsarClient pulsarconnector.Clie
 		panic(err)
 	}
 	readerName := fmt.Sprintf("%s-%s", cfg.Backend.Subscription, hostname)
-	topic := pulsarconnector.BuildPersistentTopic(pulsarClient.GetConfig().Tenant, pulsarClient.GetConfig().Namespace, cfg.Backend.Topic)
+	topic := pulsarconnector.BuildPersistentTopic(pulsarClient.GetConfig().Tenant, pulsarClient.GetConfig().Namespace, cfg.Backend.ConsumerTopic)
 	logger.L().Debug("creating new pulsar reader",
 		helpers.String("readerName", readerName),
 		helpers.String("topic", topic))
@@ -333,7 +333,7 @@ type PulsarMessageProducer struct {
 }
 
 func NewPulsarMessageProducer(cfg config.Config, pulsarClient pulsarconnector.Client) (*PulsarMessageProducer, error) {
-	topic := cfg.Backend.Topic
+	topic := cfg.Backend.ProducerTopic
 	fullTopic := pulsarconnector.BuildPersistentTopic(pulsarClient.GetConfig().Tenant, pulsarClient.GetConfig().Namespace, topic)
 
 	options := pulsar.ProducerOptions{

@@ -25,7 +25,8 @@ type Backend struct {
 	AuthenticationServer *AuthenticationServerConfig `mapstructure:"authenticationServer"`
 	Subscription         string                      `mapstructure:"subscription"`
 	PulsarConfig         *pulsarconfig.PulsarConfig  `mapstructure:"pulsarConfig"`
-	Topic                pulsarconnector.TopicName   `mapstructure:"topic"`
+	ProducerTopic        pulsarconnector.TopicName   `mapstructure:"producerTopic"`
+	ConsumerTopic        pulsarconnector.TopicName   `mapstructure:"consumerTopic"`
 	Prometheus           *PrometheusConfig           `mapstructure:"prometheusConfig"`
 	ReconciliationTask   *ReconciliationTaskConfig   `mapstructure:"reconciliationTaskConfig"`
 }
