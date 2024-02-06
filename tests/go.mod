@@ -5,7 +5,7 @@ go 1.21.3
 toolchain go1.21.5
 
 require (
-	github.com/armosec/armoapi-go v0.0.292
+	github.com/armosec/armoapi-go v0.0.315
 	github.com/armosec/armosec-infra v0.0.16
 	github.com/armosec/event-ingester-service v0.1.1-0.20240103121040-e464c2791b07
 	github.com/armosec/postgres-connector v0.0.181
