@@ -5,16 +5,16 @@ go 1.21.3
 toolchain go1.21.5
 
 require (
-	github.com/armosec/armoapi-go v0.0.315
+	github.com/armosec/armoapi-go v0.0.292
 	github.com/armosec/armosec-infra v0.0.16
 	github.com/armosec/event-ingester-service v0.1.1-0.20240103121040-e464c2791b07
-	github.com/armosec/postgres-connector v0.0.260
+	github.com/armosec/postgres-connector v0.0.181
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/deckarep/golang-set/v2 v2.6.0
 	github.com/kubescape/go-logger v0.0.22
 	github.com/kubescape/messaging v0.0.22
 	github.com/kubescape/storage v0.0.57
-	github.com/kubescape/synchronizer v0.0.43
+	github.com/kubescape/synchronizer v0.0.9
 	github.com/stretchr/testify v1.8.4
 	github.com/testcontainers/testcontainers-go v0.27.0
 	github.com/testcontainers/testcontainers-go/modules/k3s v0.27.0
@@ -50,7 +50,7 @@ require (
 	github.com/ardielle/ardielle-go v1.5.2 // indirect
 	github.com/armosec/gojay v1.2.17 // indirect
 	github.com/armosec/utils-go v0.0.56 // indirect
-	github.com/armosec/utils-k8s-go v0.0.25 // indirect
+	github.com/armosec/utils-k8s-go v0.0.24 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/aws/aws-sdk-go v1.48.2 // indirect
 	github.com/becheran/wildmatch-go v1.0.0 // indirect
@@ -75,7 +75,7 @@ require (
 	github.com/distribution/reference v0.5.0 // indirect
 	github.com/docker/cli v24.0.0+incompatible // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect
-	github.com/docker/docker v25.0.0+incompatible // indirect
+	github.com/docker/docker v24.0.7+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
@@ -139,7 +139,7 @@ require (
 	github.com/klauspost/compress v1.17.0 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
 	github.com/kubescape/backend v0.0.14 // indirect
-	github.com/kubescape/k8s-interface v0.0.158 // indirect
+	github.com/kubescape/k8s-interface v0.0.154 // indirect
 	github.com/kubescape/opa-utils v0.0.272 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/linkedin/goavro/v2 v2.12.0 // indirect
@@ -159,7 +159,6 @@ require (
 	github.com/moby/sys/mountinfo v0.6.2 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/moby/sys/signal v0.7.0 // indirect
-	github.com/moby/sys/user v0.1.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -246,7 +245,7 @@ require (
 	golang.org/x/term v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
-	golang.org/x/tools v0.16.1 // indirect
+	golang.org/x/tools v0.15.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto v0.0.0-20231120223509-83a465c0220f // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20231120223509-83a465c0220f // indirect
