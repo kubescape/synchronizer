@@ -1,7 +1,8 @@
 {
   "backend": {
     "subscription": "synchronizer-server",
-    "topic": "synchronizer",
+    "producerTopic": "synchronizer",
+    "consumerTopic": "synchronizer",
     "pulsarConfig": {
       "url": "pulsar://localhost:6650",
       "tenant": "armo",
