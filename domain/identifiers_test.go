@@ -39,9 +39,10 @@ func TestClientIdentifier_String(t *testing.T) {
 
 func TestKindName_String(t *testing.T) {
 	type fields struct {
-		Kind      *Kind
-		Name      string
-		Namespace string
+		Kind            *Kind
+		Name            string
+		Namespace       string
+		ResourceVersion int
 	}
 	tests := []struct {
 		name   string
@@ -73,9 +74,10 @@ func TestKindName_String(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := KindName{
-				Kind:      tt.fields.Kind,
-				Name:      tt.fields.Name,
-				Namespace: tt.fields.Namespace,
+				Kind:            tt.fields.Kind,
+				Name:            tt.fields.Name,
+				Namespace:       tt.fields.Namespace,
+				ResourceVersion: tt.fields.ResourceVersion,
 			}
 			if got := c.String(); got != tt.want {
 				t.Errorf("String() = %v, want %v", got, tt.want)

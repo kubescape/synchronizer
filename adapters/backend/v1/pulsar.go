@@ -17,6 +17,7 @@ import (
 	"github.com/kubescape/synchronizer/messaging"
 	"github.com/kubescape/synchronizer/utils"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/multierr"
 )
 
 const (
@@ -142,6 +143,55 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 		helpers.String("msgId", msgID))
 
 	switch msgProperties[messaging.MsgPropEvent] {
+	case messaging.MsgPropEventValueReconciliationRequestMessage:
+		var data messaging.ReconciliationRequestMessage
+		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
+			return fmt.Errorf("failed to unmarshal message: %w", err)
+		}
+
+		ctx := utils.ContextFromGeneric(ctx, domain.Generic{
+			Depth: data.Depth,
+			MsgId: data.MsgId,
+		})
+		ctx = utils.ContextFromIdentifiers(ctx, domain.ClientIdentifier{
+			Account: data.Account,
+			Cluster: data.Cluster,
+		})
+
+		callbacks, err := adapter.Callbacks(ctx)
+		if err != nil {
+			return err
+		}
+
+		// unwrap the reconciliation request and send batches of NewChecksum for each kind
+		event := domain.EventNewChecksum
+
+		for kindStr, objects := range data.KindToObjects {
+			kind := domain.KindFromString(ctx, kindStr)
+			if kind == nil {
+				err = multierr.Append(err, fmt.Errorf("unknown kind %s in batch", kindStr))
+				continue
+			}
+
+			items := domain.BatchItems{}
+			items.NewChecksum = []domain.NewChecksum{}
+
+			for _, object := range objects {
+				items.NewChecksum = append(items.NewChecksum, domain.NewChecksum{
+					Name:            object.Name,
+					Namespace:       object.Namespace,
+					ResourceVersion: object.ResourceVersion,
+					Checksum:        object.Checksum,
+					Kind:            kind,
+					Event:           &event,
+				})
+			}
+
+			err = multierr.Append(err, callbacks.Batch(ctx, *kind, domain.ReconciliationBatch, items))
+		}
+		if err != nil {
+			return fmt.Errorf("failed to handle ReconciliationRequest message: %w", err)
+		}
 	case messaging.MsgPropEventValueGetObjectMessage:
 		var data messaging.GetObjectMessage
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
@@ -160,9 +210,10 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			return err
 		}
 		if err := callbacks.GetObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(ctx, data.Kind),
-			Name:      data.Name,
-			Namespace: data.Namespace,
+			Kind:            domain.KindFromString(ctx, data.Kind),
+			Name:            data.Name,
+			Namespace:       data.Namespace,
+			ResourceVersion: data.ResourceVersion,
 		}, data.BaseObject); err != nil {
 			return fmt.Errorf("failed to send GetObject message: %w", err)
 		}
@@ -184,9 +235,10 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			return err
 		}
 		if err := callbacks.PatchObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(ctx, data.Kind),
-			Name:      data.Name,
-			Namespace: data.Namespace,
+			Kind:            domain.KindFromString(ctx, data.Kind),
+			Name:            data.Name,
+			Namespace:       data.Namespace,
+			ResourceVersion: data.ResourceVersion,
 		}, data.Checksum, data.Patch); err != nil {
 			return fmt.Errorf("failed to send PatchObject message: %w", err)
 		}
@@ -208,9 +260,10 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			return err
 		}
 		if err := callbacks.VerifyObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(ctx, data.Kind),
-			Name:      data.Name,
-			Namespace: data.Namespace,
+			Kind:            domain.KindFromString(ctx, data.Kind),
+			Name:            data.Name,
+			Namespace:       data.Namespace,
+			ResourceVersion: data.ResourceVersion,
 		}, data.Checksum); err != nil {
 			return fmt.Errorf("failed to send VerifyObject message: %w", err)
 		}
@@ -232,9 +285,10 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			return err
 		}
 		if err := callbacks.PutObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(ctx, data.Kind),
-			Name:      data.Name,
-			Namespace: data.Namespace,
+			Kind:            domain.KindFromString(ctx, data.Kind),
+			Name:            data.Name,
+			Namespace:       data.Namespace,
+			ResourceVersion: data.ResourceVersion,
 		}, data.Object); err != nil {
 			return fmt.Errorf("failed to send PutObject message: %w", err)
 		}
@@ -256,9 +310,10 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			return err
 		}
 		if err := callbacks.DeleteObject(ctx, domain.KindName{
-			Kind:      domain.KindFromString(ctx, data.Kind),
-			Name:      data.Name,
-			Namespace: data.Namespace,
+			Kind:            domain.KindFromString(ctx, data.Kind),
+			Name:            data.Name,
+			Namespace:       data.Namespace,
+			ResourceVersion: data.ResourceVersion,
 		}); err != nil {
 			return fmt.Errorf("failed to send DeleteObject message: %w", err)
 		}
@@ -302,6 +357,13 @@ func NewPulsarMessageProducer(cfg config.Config, pulsarClient pulsarconnector.Cl
 
 func (p *PulsarMessageProducer) ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte) error {
 	producerMessage := NewProducerMessage(SynchronizerServerProducerKey, id.Account, id.Cluster, eventType, payload)
+	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
+	return nil
+}
+
+// ProduceMessageForTest is a helper method to produce messages for testing purposes only using a specific producerMessageKey
+func (p *PulsarMessageProducer) ProduceMessageForTest(ctx context.Context, producerMessageKey string, id domain.ClientIdentifier, eventType string, payload []byte) error {
+	producerMessage := NewProducerMessage(producerMessageKey, id.Account, id.Cluster, eventType, payload)
 	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
 	return nil
 }

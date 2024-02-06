@@ -17,6 +17,8 @@
             "mode": "debug",
             "program": "${workspaceFolder}/cmd/client/main.go",
             "env": {
+                "SERVICES": "${workspaceFolder}/configuration/services.json",
+                "CLUSTER_CONFIG" : "${workspaceFolder}/configuration/clusterData.json",
                 "CONFIG": "${workspaceFolder}/configuration/client"
             }
         }

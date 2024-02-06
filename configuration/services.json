@@ -6,6 +6,6 @@
     "gateway": "https://gw.test.com",
     "api-server": "https://api.test.com",
     "metrics": "https://metrics.test.com",
-    "synchronizer": "wss://synchronizer.test.com"
+    "synchronizer": "ws://127.0.0.1:8080"
   }
 }

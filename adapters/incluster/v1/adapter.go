@@ -36,17 +36,22 @@ func (a *Adapter) GetClient(id domain.KindName) (adapters.Client, error) {
 	if id.Kind == nil {
 		return nil, fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
 	}
-	client, ok := a.clients[id.Kind.String()]
+
+	return a.GetClientByKind(*id.Kind), nil
+}
+
+func (a *Adapter) GetClientByKind(kind domain.Kind) adapters.Client {
+	client, ok := a.clients[kind.String()]
 	if !ok {
 		client = NewClient(a.k8sclient, a.cfg.Account, a.cfg.ClusterName, config.Resource{
-			Group:    id.Kind.Group,
-			Version:  id.Kind.Version,
-			Resource: id.Kind.Resource,
+			Group:    kind.Group,
+			Version:  kind.Version,
+			Resource: kind.Resource,
 			Strategy: "copy",
 		})
-		a.clients[id.Kind.String()] = client
+		a.clients[kind.String()] = client
 	}
-	return client, nil
+	return client
 }
 
 func (a *Adapter) DeleteObject(ctx context.Context, id domain.KindName) error {
@@ -87,6 +92,10 @@ func (a *Adapter) VerifyObject(ctx context.Context, id domain.KindName, checksum
 		return fmt.Errorf("failed to get client for resource %s: %w", id.Kind, err)
 	}
 	return client.VerifyObject(ctx, id, checksum)
+}
+
+func (a *Adapter) Batch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+	return a.GetClientByKind(kind).Batch(ctx, kind, batchType, items)
 }
 
 func (a *Adapter) RegisterCallbacks(_ context.Context, callbacks domain.Callbacks) {

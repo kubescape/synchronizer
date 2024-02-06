@@ -46,5 +46,5 @@ flowchart LR
 3. Start synchronizer client:
 
     ```sh
-    CONFIG=./configuration/client go run cmd/client/main.go
+    SERVICES=./configuration/services.json CLUSTER_CONFIG=./configuration/clusterData.json CONFIG=./configuration/client go run cmd/client/main.go
     ```

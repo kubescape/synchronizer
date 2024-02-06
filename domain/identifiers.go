@@ -1,14 +1,19 @@
 package domain
 
 import (
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kubescape/go-logger"
+	"github.com/kubescape/go-logger/helpers"
 )
 
 type KindName struct {
-	Kind      *Kind
-	Name      string
-	Namespace string
+	Kind            *Kind
+	Name            string
+	Namespace       string
+	ResourceVersion int
 }
 
 func (c KindName) String() string {
@@ -19,6 +24,15 @@ func (c KindName) String() string {
 		kind = c.Kind.String()
 	}
 	return strings.Join([]string{kind, c.Namespace, c.Name}, "/")
+}
+
+func ToResourceVersion(version string) int {
+	if v, err := strconv.Atoi(version); err == nil {
+		return v
+	}
+
+	logger.L().Error("Unable to convert version to int", helpers.String("version", version))
+	return 0
 }
 
 type ClientIdentifier struct {

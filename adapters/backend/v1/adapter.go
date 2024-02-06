@@ -173,3 +173,12 @@ func (b *Adapter) VerifyObject(ctx context.Context, id domain.KindName, checksum
 
 	return client.VerifyObject(ctx, id, checksum)
 }
+
+func (b *Adapter) Batch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+	client, err := b.getClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	return client.Batch(ctx, kind, batchType, items)
+}

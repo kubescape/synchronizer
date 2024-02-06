@@ -25,6 +25,7 @@ import (
 	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
 	"github.com/kubescape/synchronizer/adapters/backend/v1"
 	"github.com/kubescape/synchronizer/config"
+	"github.com/kubescape/synchronizer/messaging"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/k3s"
@@ -73,6 +74,7 @@ type Test struct {
 }
 
 type TestSynchronizerServer struct {
+	ctx                       context.Context
 	serverUrl                 string
 	syncServer                *Synchronizer
 	syncServerContextCancelFn context.CancelFunc
@@ -538,6 +540,7 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 	}()
 
 	return &TestSynchronizerServer{
+		ctx:                       ctx,
 		pulsarProducer:            pulsarProducer,
 		pulsarReader:              pulsarReader,
 		syncServerContextCancelFn: cancel,
@@ -1063,6 +1066,91 @@ func TestSynchronizer_TC11(t *testing.T) {
 	_, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
 	assert.NoError(t, err)
 	assert.True(t, objFound)
+	// tear down
+	tearDown(td)
+}
+
+// TestSynchronizer_TC12: Reconciliation flow
+// we have one application profile in k8s cluster, then, we delete this resource from postgres and create a dummy resource to postgres,
+// a reconciliation message is produced by the ingester with the two resources (one that exists in k8s with a different resource version and one that does not exist in k8s)
+// we expect to see the resource that exists in k8s to be back in postgres and the resource that does not exist in k8s to be deleted from postgres
+func TestSynchronizer_TC12(t *testing.T) {
+	td := initIntegrationTest(t)
+
+	cluster := td.clusters[0]
+	clusterName := cluster.cluster
+	account := cluster.account
+	kind := "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles"
+
+	// add applicationprofile to k8s
+	createdAppProfileObj, err := cluster.storageclient.ApplicationProfiles(namespace).Create(context.TODO(), cluster.applicationprofile, metav1.CreateOptions{})
+
+	// wait for the object to be created in postgres
+	time.Sleep(10 * time.Second)
+	_, objFound, err := td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, name)
+	assert.NoError(t, err)
+	assert.True(t, objFound)
+
+	// create a new dummy object directly in postgres (which does not exist in k8s) and confirm it is there
+	toBeDeletedName := name + "test"
+	bytes, _ := json.Marshal(createdAppProfileObj)
+	err = td.processor.Store(account, clusterName, kind, namespace, toBeDeletedName, bytes)
+	assert.NoError(t, err)
+	_, objFound, err = td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, toBeDeletedName)
+	assert.NoError(t, err)
+	assert.True(t, objFound)
+
+	// delete the resource that exists in k8s from postgres and confirm it is deleted
+	err = td.processor.Delete(account, clusterName, kind, namespace, name)
+	assert.NoError(t, err)
+	_, objFound, err = td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, name)
+	assert.Error(t, err)
+	assert.False(t, objFound)
+
+	// produce a reconciliation message with the two resources from postgres
+	msg := messaging.ReconciliationRequestMessage{
+		Cluster:         clusterName,
+		Account:         account,
+		Depth:           1,
+		MsgId:           "test-msg-id",
+		ServerInitiated: true,
+		KindToObjects: map[string][]messaging.ReconciliationRequestObject{
+			"spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles": {
+				{
+					Namespace:       namespace,
+					Name:            name,
+					ResourceVersion: 0,
+				},
+				{
+					Namespace:       namespace,
+					Name:            toBeDeletedName,
+					ResourceVersion: 0,
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(msg)
+	assert.NoError(t, err)
+	err = td.syncServers[0].pulsarProducer.ProduceMessageForTest(td.syncServers[0].ctx,
+		"ingester",
+		domain.ClientIdentifier{
+			Cluster: clusterName,
+			Account: account,
+		}, messaging.MsgPropEventValueReconciliationRequestMessage, data)
+	assert.NoError(t, err)
+
+	time.Sleep(10 * time.Second)
+
+	// check that object is back in postgres
+	_, objFound, err = td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, name)
+	assert.NoError(t, err)
+	assert.True(t, objFound)
+	// check that object deleted from postgres
+	_, objFound, err = td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, toBeDeletedName)
+	assert.Error(t, err)
+	assert.False(t, objFound)
+
 	// tear down
 	tearDown(td)
 }

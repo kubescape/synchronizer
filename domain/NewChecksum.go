@@ -2,6 +2,7 @@ package domain
 
 // NewChecksum represents a NewChecksum model.
 type NewChecksum struct {
+	ResourceVersion      int
 	Checksum             string
 	Depth                int
 	Event                *Event

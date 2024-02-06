@@ -8,4 +8,5 @@ type Callbacks struct {
 	PatchObject  func(ctx context.Context, id KindName, checksum string, patch []byte) error
 	PutObject    func(ctx context.Context, id KindName, object []byte) error
 	VerifyObject func(ctx context.Context, id KindName, checksum string) error
+	Batch        func(ctx context.Context, kind Kind, batchType BatchType, items BatchItems) error
 }

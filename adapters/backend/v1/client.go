@@ -11,6 +11,7 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
 	"github.com/kubescape/synchronizer/utils"
+	"go.uber.org/multierr"
 )
 
 type Client struct {
@@ -102,6 +103,60 @@ func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum s
 func (c *Client) PutObject(ctx context.Context, id domain.KindName, object []byte) error {
 	// putting the object into the data store is delegated to the ingester
 	return c.sendPutObjectMessage(ctx, id, object)
+}
+
+func (c *Client) Batch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+	var err error
+	for _, item := range items.GetObject {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.GetObject(ctx, id, []byte(item.BaseObject)))
+	}
+
+	for _, item := range items.NewChecksum {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.VerifyObject(ctx, id, item.Checksum))
+	}
+
+	for _, item := range items.ObjectDeleted {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.DeleteObject(ctx, id))
+	}
+
+	for _, item := range items.PatchObject {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.PatchObject(ctx, id, item.Checksum, []byte(item.Patch)))
+	}
+
+	for _, item := range items.PutObject {
+		id := domain.KindName{
+			Kind:            &kind,
+			Name:            item.Name,
+			Namespace:       item.Namespace,
+			ResourceVersion: item.ResourceVersion,
+		}
+		err = multierr.Append(err, c.PutObject(ctx, id, []byte(item.Object)))
+	}
+	return err
 }
 
 func (c *Client) RegisterCallbacks(_ context.Context, callbacks domain.Callbacks) {
@@ -270,4 +325,32 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName
 	}
 
 	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValueVerifyObjectMessage, data)
+}
+
+// TODO: should be called periodically for each client
+func (c *Client) SendReconciliationRequestMessage(ctx context.Context) error {
+	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
+
+	depth := ctx.Value(domain.ContextKeyDepth).(int)
+	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	id := utils.ClientIdentifierFromContext(ctx)
+
+	msg := messaging.ReconciliationRequestMessage{
+		Cluster:         id.Cluster,
+		Account:         id.Account,
+		Depth:           depth + 1,
+		MsgId:           msgId,
+		ServerInitiated: true,
+	}
+	logger.L().Debug("sending reconciliation request message to producer",
+		helpers.String("account", msg.Account),
+		helpers.String("cluster", msg.Cluster),
+		helpers.String("msgid", msg.MsgId))
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("marshal reconciliation request message: %w", err)
+	}
+
+	return c.messageProducer.ProduceMessage(ctx, id, messaging.MsgPropEventValueReconciliationRequestMessage, data)
 }

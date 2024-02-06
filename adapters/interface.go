@@ -17,6 +17,7 @@ type Adapter interface {
 	PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error
 	PutObject(ctx context.Context, id domain.KindName, object []byte) error
 	VerifyObject(ctx context.Context, id domain.KindName, checksum string) error
+	Batch(ctx context.Context, id domain.Kind, batchType domain.BatchType, items domain.BatchItems) error
 }
 
 type Client Adapter

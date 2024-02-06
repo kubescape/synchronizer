@@ -69,6 +69,7 @@ func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net
 		PatchObject:  s.PatchObjectCallback,
 		PutObject:    s.PutObjectCallback,
 		VerifyObject: s.VerifyObjectCallback,
+		Batch:        s.BatchCallback,
 	}
 	adapter.RegisterCallbacks(mainCtx, callbacks)
 	return s, nil
@@ -106,6 +107,14 @@ func (s *Synchronizer) DeleteObjectCallback(ctx context.Context, id domain.KindN
 	err := s.sendObjectDeleted(ctx, id)
 	if err != nil {
 		return fmt.Errorf("send delete: %w", err)
+	}
+	return nil
+}
+
+func (s *Synchronizer) BatchCallback(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+	err := s.sendBatch(ctx, kind, batchType, items)
+	if err != nil {
+		return fmt.Errorf("send batch: %w", err)
 	}
 	return nil
 }
@@ -246,10 +255,33 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				helpers.Int("depth", generic.Depth))
 			return
 		}
+
 		// store in context
-		ctx := utils.ContextFromGeneric(ctx, generic)
+		ctx = utils.ContextFromGeneric(ctx, generic)
 		// handle message
 		switch *generic.Event {
+		case domain.EventBatch:
+			var msg domain.Batch
+			err = json.Unmarshal(data, &msg)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", generic.Event.Value()),
+					helpers.String("kind", generic.Kind.String()),
+					helpers.String("msgid", generic.MsgId))
+				return
+			}
+
+			err := s.handleSyncBatch(ctx, *msg.Kind, domain.BatchType(msg.BatchType), *msg.Items)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", msg.Event.Value()),
+					helpers.String("msgid", msg.MsgId))
+				return
+			}
 		case domain.EventGetObject:
 			var msg domain.GetObject
 			err = json.Unmarshal(data, &msg)
@@ -263,9 +295,10 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				return
 			}
 			id := domain.KindName{
-				Kind:      msg.Kind,
-				Name:      msg.Name,
-				Namespace: msg.Namespace,
+				Kind:            msg.Kind,
+				Name:            msg.Name,
+				Namespace:       msg.Namespace,
+				ResourceVersion: msg.ResourceVersion,
 			}
 			err := s.handleSyncGetObject(ctx, id, []byte(msg.BaseObject))
 			if err != nil {
@@ -290,9 +323,10 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				return
 			}
 			id := domain.KindName{
-				Kind:      msg.Kind,
-				Name:      msg.Name,
-				Namespace: msg.Namespace,
+				Kind:            msg.Kind,
+				Name:            msg.Name,
+				Namespace:       msg.Namespace,
+				ResourceVersion: msg.ResourceVersion,
 			}
 			err := s.handleSyncNewChecksum(ctx, id, msg.Checksum)
 			if err != nil {
@@ -317,9 +351,10 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				return
 			}
 			id := domain.KindName{
-				Kind:      msg.Kind,
-				Name:      msg.Name,
-				Namespace: msg.Namespace,
+				Kind:            msg.Kind,
+				Name:            msg.Name,
+				Namespace:       msg.Namespace,
+				ResourceVersion: msg.ResourceVersion,
 			}
 			err := s.handleSyncObjectDeleted(ctx, id)
 			if err != nil {
@@ -344,9 +379,10 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				return
 			}
 			id := domain.KindName{
-				Kind:      msg.Kind,
-				Name:      msg.Name,
-				Namespace: msg.Namespace,
+				Kind:            msg.Kind,
+				Name:            msg.Name,
+				Namespace:       msg.Namespace,
+				ResourceVersion: msg.ResourceVersion,
 			}
 			err := s.handleSyncPatchObject(ctx, id, msg.Checksum, []byte(msg.Patch))
 			if err != nil {
@@ -371,9 +407,10 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				return
 			}
 			id := domain.KindName{
-				Kind:      msg.Kind,
-				Name:      msg.Name,
-				Namespace: msg.Namespace,
+				Kind:            msg.Kind,
+				Name:            msg.Name,
+				Namespace:       msg.Namespace,
+				ResourceVersion: msg.ResourceVersion,
 			}
 			err := s.handleSyncPutObject(ctx, id, []byte(msg.Object))
 			if err != nil {
@@ -418,6 +455,14 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			return fmt.Errorf("giving up process incoming messages: %w", err)
 		}
 	}
+}
+
+func (s *Synchronizer) handleSyncBatch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+	err := s.adapter.Batch(ctx, kind, batchType, items)
+	if err != nil {
+		return fmt.Errorf("batch: %w", err)
+	}
+	return nil
 }
 
 func (s *Synchronizer) handleSyncGetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
@@ -614,6 +659,37 @@ func (s *Synchronizer) sendPing(ctx context.Context) {
 		}
 		time.Sleep(50 * time.Second)
 	}
+}
+
+func (s *Synchronizer) sendBatch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+	event := domain.EventBatch
+	depth := ctx.Value(domain.ContextKeyDepth).(int)
+	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	msg := domain.Batch{
+		Depth:     depth + 1,
+		Event:     &event,
+		Kind:      &kind,
+		MsgId:     msgId,
+		BatchType: string(batchType),
+		Items:     &items,
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("marshal batch message: %w", err)
+	}
+	err = s.outPool.Invoke(data)
+	if err != nil {
+		return fmt.Errorf("invoke outPool on batch message: %w", err)
+	}
+	clientId := utils.ClientIdentifierFromContext(ctx)
+	logger.L().Debug("sent batch message",
+		helpers.String("account", clientId.Account),
+		helpers.String("cluster", clientId.Cluster),
+		helpers.String("batchType", msg.BatchType),
+		helpers.String("kind", msg.Kind.String()),
+		helpers.String("msgid", msg.MsgId),
+		helpers.Int("items", msg.Items.Length()))
+	return nil
 }
 
 func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, object []byte) error {
