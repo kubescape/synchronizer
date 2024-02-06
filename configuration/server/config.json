@@ -2,7 +2,6 @@
   "backend": {
     "subscription": "synchronizer-server",
     "topic": "synchronizer",
-    "reconciliationIntervalMinutes": 1,
     "pulsarConfig": {
       "url": "pulsar://localhost:6650",
       "tenant": "armo",
