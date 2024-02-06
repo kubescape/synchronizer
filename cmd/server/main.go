@@ -64,7 +64,7 @@ func main() {
 			logger.L().Fatal("failed to create pulsar reader", helpers.Error(err), helpers.String("config", fmt.Sprintf("%+v", cfg.Backend.PulsarConfig)))
 		}
 
-		adapter = backend.NewBackendAdapter(ctx, pulsarProducer)
+		adapter = backend.NewBackendAdapter(ctx, pulsarProducer, cfg.Backend.ReconciliationTask)
 		pulsarReader.Start(ctx, adapter)
 	} else {
 		// mock adapter

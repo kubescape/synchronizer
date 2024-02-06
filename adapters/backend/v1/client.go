@@ -31,6 +31,7 @@ func (c *Client) Start(ctx context.Context) error {
 	if err := c.sendServerConnectedMessage(ctx); err != nil {
 		return fmt.Errorf("failed to produce server connected message: %w", err)
 	}
+
 	return nil
 }
 
@@ -327,7 +328,6 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName
 	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValueVerifyObjectMessage, data)
 }
 
-// TODO: should be called periodically for each client
 func (c *Client) SendReconciliationRequestMessage(ctx context.Context) error {
 	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
 
