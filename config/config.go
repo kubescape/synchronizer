@@ -27,6 +27,7 @@ type Backend struct {
 	PulsarConfig         *pulsarconfig.PulsarConfig  `mapstructure:"pulsarConfig"`
 	Topic                pulsarconnector.TopicName   `mapstructure:"topic"`
 	Prometheus           *PrometheusConfig           `mapstructure:"prometheusConfig"`
+	ReconciliationTask   *ReconciliationTaskConfig   `mapstructure:"reconciliationTaskConfig"`
 }
 
 type InCluster struct {
@@ -53,6 +54,11 @@ type AuthenticationServerConfig struct {
 type PrometheusConfig struct {
 	Enabled bool `mapstructure:"enabled"`
 	Port    int  `mapstructure:"port"`
+}
+
+type ReconciliationTaskConfig struct {
+	TaskIntervalSeconds           int `mapstructure:"taskIntervalSeconds"`
+	IntervalFromConnectionSeconds int `mapstructure:"intervalFromConnectionSeconds"`
 }
 
 // Kind returns group/version/resource as a string.

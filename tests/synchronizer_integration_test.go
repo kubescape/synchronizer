@@ -530,7 +530,7 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
-	serverAdapter := backend.NewBackendAdapter(ctx, pulsarProducer)
+	serverAdapter := backend.NewBackendAdapter(ctx, pulsarProducer, nil)
 	pulsarReader.Start(ctx, serverAdapter)
 	synchronizerServer, err := core.NewSynchronizerServer(ctx, serverAdapter, serverConn)
 	require.NoError(t, err)

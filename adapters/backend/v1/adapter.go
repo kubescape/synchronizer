@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/goradd/maps"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/adapters"
+	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
 	"github.com/kubescape/synchronizer/utils"
@@ -16,21 +18,22 @@ import (
 
 type Adapter struct {
 	callbacksMap maps.SafeMap[string, domain.Callbacks]
-	clientsMap   maps.SafeMap[string, adapters.Client]
+	clientsMap   maps.SafeMap[string, *Client]
 
 	connMapMutex  sync.RWMutex
 	connectionMap map[string]domain.ClientIdentifier // <cluster, account> -> <connection string>
 	producer      messaging.MessageProducer
-	once          sync.Once
 	mainContext   context.Context
 }
 
-func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer) *Adapter {
+func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, rtc *config.ReconciliationTaskConfig) *Adapter {
 	adapter := &Adapter{
 		producer:      messageProducer,
 		mainContext:   mainContext,
 		connectionMap: make(map[string]domain.ClientIdentifier),
 	}
+
+	adapter.startReconciliationPeriodicTask(mainContext, rtc)
 	return adapter
 }
 
@@ -181,4 +184,51 @@ func (b *Adapter) Batch(ctx context.Context, kind domain.Kind, batchType domain.
 	}
 
 	return client.Batch(ctx, kind, batchType, items)
+}
+
+// startReconciliationPeriodicTask starts a periodic task that sends reconciliation request messages to connected clients
+// every configurable minutes (interval). If interval is 0 (not set), the task is disabled.
+// intervalFromConnection is the minimum interval time in minutes from the connection time that the reconciliation task will be sent.
+func (a *Adapter) startReconciliationPeriodicTask(mainCtx context.Context, cfg *config.ReconciliationTaskConfig) {
+	if cfg == nil || cfg.TaskIntervalSeconds == 0 || cfg.IntervalFromConnectionSeconds == 0 {
+		logger.L().Warning("reconciliation task is disabled (intervals are not set)")
+		return
+	}
+
+	go func() {
+		logger.L().Info("starting reconciliation periodic task",
+			helpers.Int("TaskIntervalSeconds", cfg.TaskIntervalSeconds),
+			helpers.Int("IntervalFromConnectionSeconds", cfg.IntervalFromConnectionSeconds))
+		ticker := time.NewTicker(time.Duration(cfg.TaskIntervalSeconds) * time.Second)
+		for {
+			select {
+			case <-mainCtx.Done():
+				ticker.Stop()
+				return
+			case <-ticker.C:
+				a.connMapMutex.Lock()
+				logger.L().Info("running reconciliation task for connected clients", helpers.Int("clients", a.clientsMap.Len()))
+				for connId, clientId := range a.connectionMap {
+					if time.Since(clientId.ConnectionTime) < time.Duration(cfg.IntervalFromConnectionSeconds)*time.Second {
+						logger.L().Info("skipping reconciliation request for client because it was connected recently", helpers.Interface("clientId", clientId.String()))
+						continue
+					}
+
+					client, ok := a.clientsMap.Load(connId)
+					if !ok {
+						logger.L().Error("expected to find client for reconciliation in clients map", helpers.String("clientId", clientId.String()))
+						continue
+					}
+					clientCtx := utils.ContextFromIdentifiers(mainCtx, clientId)
+					err := client.SendReconciliationRequestMessage(clientCtx)
+					if err != nil {
+						logger.L().Error("failed to send reconciliation request message", helpers.String("error", err.Error()))
+					} else {
+						logger.L().Info("sent reconciliation request message", helpers.Interface("clientId", clientId))
+					}
+				}
+				a.connMapMutex.Unlock()
+			}
+		}
+	}()
 }
