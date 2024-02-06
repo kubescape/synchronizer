@@ -1,6 +1,8 @@
 module github.com/kubescape/synchronizer/tests
 
-go 1.21.6
+go 1.21.3
+
+toolchain go1.21.5
 
 require (
 	github.com/armosec/armoapi-go v0.0.292
@@ -16,11 +18,11 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/testcontainers/testcontainers-go v0.27.0
 	github.com/testcontainers/testcontainers-go/modules/k3s v0.27.0
-	k8s.io/api v0.29.1
-	k8s.io/apimachinery v0.29.1
-	k8s.io/client-go v0.29.1
-	k8s.io/kube-aggregator v0.29.1
-	k8s.io/utils v0.0.0-20240102154912-e7106e64919e
+	k8s.io/api v0.29.0
+	k8s.io/apimachinery v0.29.0
+	k8s.io/client-go v0.29.0
+	k8s.io/kube-aggregator v0.29.0
+	k8s.io/utils v0.0.0-20231121161247-cf03d44ff3cf
 )
 
 require (
