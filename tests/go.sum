@@ -564,8 +564,6 @@ github.com/kubescape/opa-utils v0.0.272 h1:hqEuYGf/B2HuqbdVUtSsUGJopfXbQOgl3+KvF
 github.com/kubescape/opa-utils v0.0.272/go.mod h1:VmplJnkhei6mDna+6z183k/HX6GOPgsXiwIlDW8mhKw=
 github.com/kubescape/storage v0.0.66 h1:mp3bh2bTh1ki+9VeofU+hoKYPwvquRGh7WYU1Oltkqo=
 github.com/kubescape/storage v0.0.66/go.mod h1:U27QNwTwRrOoFRQL7Whz6WC5rxonytuwHg4G/wEvH/A=
-github.com/kubescape/synchronizer v0.0.43 h1:jLi4CVVknzhlHsUtPMj5YXmySlks/IM1Z5IgTZbs8lk=
-github.com/kubescape/synchronizer v0.0.43/go.mod h1:aq9lFqtOjEhOSIXYpiaTaiS2a70bNprZ1JIds+dtxsI=
 github.com/lib/pq v1.10.9 h1:YXG7RB+JIjhP29X+OtkiDnYaXQwpS4JEWq7dtCCRUEw=
 github.com/lib/pq v1.10.9/go.mod h1:AlVN5x4E4T544tWzH6hKfbfQvm3HdbOxrmggDNAPY9o=
 github.com/linkedin/goavro/v2 v2.12.0 h1:rIQQSj8jdAUlKQh6DttK8wCRv4t4QO09g1C4aBWXslg=
