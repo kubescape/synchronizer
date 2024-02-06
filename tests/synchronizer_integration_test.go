@@ -1,7 +1,7 @@
 //go:build integration
 // +build integration
 
-package core
+package tests
 
 import (
 	"context"
@@ -25,6 +25,7 @@ import (
 	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
 	"github.com/kubescape/synchronizer/adapters/backend/v1"
 	"github.com/kubescape/synchronizer/config"
+	"github.com/kubescape/synchronizer/core"
 	"github.com/kubescape/synchronizer/messaging"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -76,7 +77,7 @@ type Test struct {
 type TestSynchronizerServer struct {
 	ctx                       context.Context
 	serverUrl                 string
-	syncServer                *Synchronizer
+	syncServer                *core.Synchronizer
 	syncServerContextCancelFn context.CancelFunc
 	conn                      net.Conn
 	pulsarProducer            *backend.PulsarMessageProducer
@@ -102,7 +103,7 @@ type TestKubernetesCluster struct {
 	ss                            *appsv1.StatefulSet
 
 	// synchronizer
-	syncClient                *Synchronizer
+	syncClient                *core.Synchronizer
 	syncClientAdapter         *incluster.Adapter
 	syncClientContextCancelFn context.CancelFunc
 
@@ -497,7 +498,7 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
 
-	cluster.syncClient, err = NewSynchronizerClient(ctx, clientAdapter, clientConn, newConn)
+	cluster.syncClient, err = core.NewSynchronizerClient(ctx, clientAdapter, clientConn, newConn)
 	require.NoError(t, err)
 	cluster.syncClientAdapter = clientAdapter
 	cluster.clientConn = clientConn
@@ -531,7 +532,7 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 	ctx, cancel := context.WithCancel(cluster.ctx)
 	serverAdapter := backend.NewBackendAdapter(ctx, pulsarProducer)
 	pulsarReader.Start(ctx, serverAdapter)
-	synchronizerServer, err := NewSynchronizerServer(ctx, serverAdapter, serverConn)
+	synchronizerServer, err := core.NewSynchronizerServer(ctx, serverAdapter, serverConn)
 	require.NoError(t, err)
 
 	// start server
