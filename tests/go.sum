@@ -128,8 +128,8 @@ github.com/armosec/event-ingester-service v0.1.1-0.20240103121040-e464c2791b07 h
 github.com/armosec/event-ingester-service v0.1.1-0.20240103121040-e464c2791b07/go.mod h1:zXQwv4qCf5F3WYrmfEgEjgju2j7AAkzP9yd7cayMc3U=
 github.com/armosec/gojay v1.2.17 h1:VSkLBQzD1c2V+FMtlGFKqWXNsdNvIKygTKJI9ysY8eM=
 github.com/armosec/gojay v1.2.17/go.mod h1:vuvX3DlY0nbVrJ0qCklSS733AWMoQboq3cFyuQW9ybc=
-github.com/armosec/postgres-connector v0.0.181 h1:/2eljBMXvEPxjHcR766ajZnvcq9B1rMmLcdeu3a+zqE=
-github.com/armosec/postgres-connector v0.0.181/go.mod h1:UIgSGyvroeJ9bj1bcR7K1gOxRUICQyae62mpl7LrVnU=
+github.com/armosec/postgres-connector v0.0.260 h1:UlV88OtIltI2iZMhozWrovmZkMm4G6nmiMnJ56klL5Q=
+github.com/armosec/postgres-connector v0.0.260/go.mod h1:P8fhaaXzuh5aXpMkqoDFpHz5QHcX6NGZVewUQ4v3aAk=
 github.com/armosec/utils-go v0.0.56 h1:fxn+xH0hxfvyKOTTotl0s+UWPNPPajgHX0mrTW8qhFc=
 github.com/armosec/utils-go v0.0.56/go.mod h1:1HwWqN+gi13UoouZpv+6PXxTNPK1WjvHH/bx69P25X8=
 github.com/armosec/utils-k8s-go v0.0.25 h1:hnfk8oZQqiXxHvYyOaUHjm+r3RV6CIimAVmGIpiOe3A=

@@ -8,7 +8,7 @@ require (
 	github.com/armosec/armoapi-go v0.0.315
 	github.com/armosec/armosec-infra v0.0.16
 	github.com/armosec/event-ingester-service v0.1.1-0.20240103121040-e464c2791b07
-	github.com/armosec/postgres-connector v0.0.181
+	github.com/armosec/postgres-connector v0.0.260
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/deckarep/golang-set/v2 v2.6.0
 	github.com/kubescape/go-logger v0.0.22
