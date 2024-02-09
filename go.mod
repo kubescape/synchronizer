@@ -11,6 +11,7 @@ require (
 	github.com/armosec/utils-k8s-go v0.0.24
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
+	github.com/deckarep/golang-set/v2 v2.6.0
 	github.com/evanphx/json-patch v5.7.0+incompatible
 	github.com/gobwas/ws v1.3.1
 	github.com/google/uuid v1.4.0

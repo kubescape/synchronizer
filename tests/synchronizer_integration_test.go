@@ -1115,26 +1115,11 @@ func TestSynchronizer_TC12(t *testing.T) {
 		Depth:           1,
 		MsgId:           "test-msg-id",
 		ServerInitiated: true,
-		KindToObjects: map[string][]messaging.ReconciliationRequestObject{
-			"spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles": {
-				{
-					Namespace:       namespace,
-					Name:            name,
-					ResourceVersion: 0,
-				},
-				{
-					Namespace:       namespace,
-					Name:            toBeDeletedName,
-					ResourceVersion: 0,
-				},
-			},
-		},
 	}
 
 	data, err := json.Marshal(msg)
 	assert.NoError(t, err)
-	err = td.syncServers[0].pulsarProducer.ProduceMessageForTest(td.syncServers[0].ctx,
-		"ingester",
+	err = td.syncServers[0].pulsarProducer.ProduceMessage(td.syncServers[0].ctx,
 		domain.ClientIdentifier{
 			Cluster: clusterName,
 			Account: account,
