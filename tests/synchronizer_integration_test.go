@@ -923,7 +923,11 @@ func TestSynchronizer_TC06(t *testing.T) {
 	k8sAppProfile, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 
 	id := domain.KindName{
-		Kind:      "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles",
+		Kind: &domain.Kind{
+			Group:    "spdx.softwarecomposition.kubescape.io",
+			Version:  "v1beta1",
+			Resource: "applicationprofiles",
+		},
 		Name:      name,
 		Namespace: namespace,
 	}
