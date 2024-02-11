@@ -245,9 +245,9 @@ func (m *MockAdapter) TestCallPutOrPatch(ctx context.Context, id domain.KindName
 	if m.patchStrategy {
 		if len(baseObject) > 0 {
 			// update reference object
-			m.shadowObjects[id.Name] = baseObject
+			m.shadowObjects[id.String()] = baseObject
 		}
-		if oldObject, ok := m.shadowObjects[id.Name]; ok {
+		if oldObject, ok := m.shadowObjects[id.String()]; ok {
 			// calculate checksum
 			checksum, err := utils.CanonicalHash(newObject)
 			if err != nil {
@@ -269,7 +269,7 @@ func (m *MockAdapter) TestCallPutOrPatch(ctx context.Context, id domain.KindName
 			}
 		}
 		// add/update known resources
-		m.shadowObjects[id.Name] = newObject
+		m.shadowObjects[id.String()] = newObject
 	} else {
 		err := m.callbacks.PutObject(ctx, id, newObject)
 		if err != nil {
