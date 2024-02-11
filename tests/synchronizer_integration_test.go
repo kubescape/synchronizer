@@ -921,10 +921,17 @@ func TestSynchronizer_TC06(t *testing.T) {
 	require.NoError(t, err)
 	// modify applicationprofile in k8s
 	k8sAppProfile, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+
+	id := domain.KindName{
+		Kind:      "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles",
+		Name:      name,
+		Namespace: namespace,
+	}
+
 	require.NoError(t, err)
 	k8sAppProfile.Spec.Containers[0].Name = "nginx2"
 	// alter shadow object in client before updating k8s, the patch won't include the image change
-	appClient.(*incluster.Client).ShadowObjects[name], err = json.Marshal(k8sAppProfile)
+	appClient.(*incluster.Client).ShadowObjects[id.String()], err = json.Marshal(k8sAppProfile)
 	require.NoError(t, err)
 	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Update(context.TODO(), k8sAppProfile, metav1.UpdateOptions{})
 	require.NoError(t, err)

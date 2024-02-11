@@ -130,7 +130,7 @@ func (c *Client) Start(ctx context.Context) error {
 			}
 			if c.Strategy == domain.PatchStrategy {
 				// remove from known resources
-				delete(c.ShadowObjects, id.Name)
+				delete(c.ShadowObjects, id.String())
 			}
 		case event.Type == watch.Modified:
 			logger.L().Debug("modified resource", helpers.String("id", id.String()))
@@ -225,9 +225,9 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObj
 	if c.Strategy == domain.PatchStrategy {
 		if len(baseObject) > 0 {
 			// update reference object
-			c.ShadowObjects[id.Name] = baseObject
+			c.ShadowObjects[id.String()] = baseObject
 		}
-		if oldObject, ok := c.ShadowObjects[id.Name]; ok {
+		if oldObject, ok := c.ShadowObjects[id.String()]; ok {
 			// calculate checksum
 			checksum, err := utils.CanonicalHash(newObject)
 			if err != nil {
@@ -249,7 +249,7 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObj
 			}
 		}
 		// add/update known resources
-		c.ShadowObjects[id.Name] = newObject
+		c.ShadowObjects[id.String()] = newObject
 	} else {
 		err := c.callbacks.PutObject(ctx, id, newObject)
 		if err != nil {
@@ -327,7 +327,7 @@ func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum s
 		return object, fmt.Errorf("checksum mismatch: %s != %s", newChecksum, checksum)
 	}
 	// update known resources
-	c.ShadowObjects[id.Name] = modified
+	c.ShadowObjects[id.String()] = modified
 	// save object
 	return object, c.PutObject(ctx, id, modified)
 }
