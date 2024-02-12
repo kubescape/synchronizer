@@ -90,7 +90,7 @@ func TestClient_watchRetry(t *testing.T) {
 				res:    schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
 			},
 			args: args{
-				eventQueue: utils.NewCooldownQueue(utils.DefaultQueueSize, utils.DefaultTTL),
+				eventQueue: utils.NewCooldownQueue(),
 				watchOpts:  metav1.ListOptions{TimeoutSeconds: ptr.To(int64(1))},
 			},
 		},
@@ -114,7 +114,7 @@ func TestClient_watchRetry(t *testing.T) {
 			time.Sleep(1 * time.Second)
 			var found bool
 			for event := range tt.args.eventQueue.ResultChan {
-				if event.Type == watch.Added && event.Object.(*unstructured.Unstructured).GetName() == "test" {
+				if event.Type == watch.Modified && event.Object.(*unstructured.Unstructured).GetName() == "test" {
 					found = true
 					break
 				}

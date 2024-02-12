@@ -90,7 +90,7 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 	}
 	// begin watch
-	eventQueue := utils.NewCooldownQueue(utils.DefaultQueueSize, utils.DefaultTTL)
+	eventQueue := utils.NewCooldownQueue()
 	go c.watchRetry(ctx, watchOpts, eventQueue)
 	// process events
 	for event := range eventQueue.ResultChan {
