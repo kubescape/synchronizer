@@ -86,6 +86,10 @@ func (m *MockAdapter) Batch(ctx context.Context, kind domain.Kind, _ domain.Batc
 	return err
 }
 
+func (m *MockAdapter) HandlePing(_ context.Context, _ domain.AppInfo) error {
+	return nil
+}
+
 func (m *MockAdapter) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
 	return true
 }

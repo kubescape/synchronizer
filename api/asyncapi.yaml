@@ -26,6 +26,8 @@ channels:
           - $ref: '#/components/messages/patchObject'
           - $ref: '#/components/messages/putObject'
           - $ref: '#/components/messages/batch'
+          - $ref: '#/components/messages/ping'
+          - $ref: '#/components/messages/exit'
     subscribe:
       description: Messages that you receive from the API
       message:
@@ -36,6 +38,8 @@ channels:
           - $ref: '#/components/messages/patchObject'
           - $ref: '#/components/messages/putObject'
           - $ref: '#/components/messages/batch'
+          - $ref: '#/components/messages/ping'
+          - $ref: '#/components/messages/exit'
 components:
   messages:
     generic:
@@ -66,6 +70,14 @@ components:
       description: Send a batch of messages
       payload:
         $ref: '#/components/schemas/batch'
+    ping:
+      description: Periodically phone home
+      payload:
+        $ref: '#/components/schemas/ping'
+    exit:
+      description: Call os.Exit() on the client side
+      payload:
+        $ref: '#/components/schemas/exit'
   schemas:
     generic:
       type: object
@@ -154,6 +166,19 @@ components:
           $ref: '#/components/schemas/namespace'
         patch:
           $ref: '#/components/schemas/object'
+    ping:
+      type: object
+      properties:
+        depth:
+          $ref: '#/components/schemas/depth'
+        event:
+          $ref: '#/components/schemas/event'
+        kind:
+          $ref: '#/components/schemas/kind'
+        msgID:
+          $ref: '#/components/schemas/msgID'
+        appInfo:
+          $ref: '#/components/schemas/appInfo'
     putObject:
       type: object
       properties:
@@ -183,12 +208,23 @@ components:
         - newChecksum
         - objectAdded # deprecated
         - objectDeleted
-        - objectModified # deprecated 
+        - objectModified # deprecated
         - getObject
         - patchObject
         - putObject
         - ping
         - batch
+        - exit
+    appInfo:
+      type: object
+      description: reports the version of the application
+      properties:
+        helmChart:
+          type: string
+          description: version of the helm chart
+        version:
+          type: string
+          description: version of the application
     kind:
       type: object
       description: unambiguously identifies a resource
@@ -256,3 +292,20 @@ components:
           description: batch type could be used to distinguish between different types of batches which require different processing
         items:
           $ref: '#/components/schemas/batchItems'
+    exit:
+      type: object
+      properties:
+        depth:
+          $ref: '#/components/schemas/depth'
+        event:
+          $ref: '#/components/schemas/event'
+        kind:
+          $ref: '#/components/schemas/kind'
+        msgID:
+          $ref: '#/components/schemas/msgID'
+        reason:
+          type: string
+          description: text of the last log message before exit
+        statusCode:
+          type: integer
+          description: code to use when calling os.Exit()

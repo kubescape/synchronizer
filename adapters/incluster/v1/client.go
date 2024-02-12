@@ -293,6 +293,10 @@ func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject [
 	return c.callPutOrPatch(ctx, id, baseObject, newObject)
 }
 
+func (c *Client) HandlePing(_ context.Context, _ domain.AppInfo) error {
+	return nil
+}
+
 func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	baseObject, err := c.patchObject(ctx, id, checksum, patch)
 	if err != nil {

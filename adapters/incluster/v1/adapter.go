@@ -70,6 +70,10 @@ func (a *Adapter) GetObject(ctx context.Context, id domain.KindName, baseObject 
 	return client.GetObject(ctx, id, baseObject)
 }
 
+func (a *Adapter) HandlePing(_ context.Context, _ domain.AppInfo) error {
+	return nil
+}
+
 func (a *Adapter) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	client, err := a.GetClient(id)
 	if err != nil {

@@ -422,6 +422,50 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 					helpers.String("msgid", msg.MsgId))
 				return
 			}
+		case domain.EventPing:
+			if s.isClient {
+				// client side should not receive ping messages
+				return
+			}
+			var msg domain.Ping
+			err = json.Unmarshal(data, &msg)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", generic.Event.Value()),
+					helpers.String("kind", generic.Kind.String()),
+					helpers.String("msgid", generic.MsgId))
+				return
+			}
+			if msg.AppInfo != nil {
+				err := s.handleSyncPing(ctx, *msg.AppInfo)
+				if err != nil {
+					logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
+						helpers.String("account", clientId.Account),
+						helpers.String("cluster", clientId.Cluster),
+						helpers.Interface("event", msg.Event.Value()),
+						helpers.String("msgid", msg.MsgId))
+					return
+				}
+			}
+		case domain.EventExit:
+			if !s.isClient {
+				// server side should not receive exit messages
+				return
+			}
+			var msg domain.Exit
+			err = json.Unmarshal(data, &msg)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
+					helpers.String("account", clientId.Account),
+					helpers.String("cluster", clientId.Cluster),
+					helpers.Interface("event", generic.Event.Value()),
+					helpers.String("kind", generic.Kind.String()),
+					helpers.String("msgid", generic.MsgId))
+				return
+			}
+			s.handleSyncKill(msg.StatusCode, msg.Reason)
 		}
 	})
 	if err != nil {
@@ -503,6 +547,26 @@ func (s *Synchronizer) handleSyncPutObject(ctx context.Context, id domain.KindNa
 		return fmt.Errorf("put object: %w", err)
 	}
 	return nil
+}
+
+func (s *Synchronizer) handleSyncPing(ctx context.Context, appInfo domain.AppInfo) error {
+	err := s.adapter.HandlePing(ctx, appInfo)
+	if err != nil {
+		return fmt.Errorf("handle ping: %w", err)
+	}
+	if appInfo.Version == "killme" {
+		err := s.sendKill(ctx, 1, "killed by server")
+		if err != nil {
+			return fmt.Errorf("send kill: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Synchronizer) handleSyncKill(statusCode int, message string) {
+	logger.L().Error("received kill message, exiting",
+		helpers.String("reason", message))
+	os.Exit(statusCode)
 }
 
 func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
@@ -645,8 +709,12 @@ func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.KindName, 
 
 func (s *Synchronizer) sendPing(ctx context.Context) {
 	event := domain.EventPing
-	msg := domain.Generic{
+	msg := domain.Ping{
 		Event: &event,
+		AppInfo: &domain.AppInfo{
+			HelmChart: os.Getenv("HELM_RELEASE"),
+			Version:   os.Getenv("RELEASE"),
+		},
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -723,5 +791,29 @@ func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, ob
 		helpers.String("namespace", msg.Namespace),
 		helpers.String("name", msg.Name),
 		helpers.Int("object size", len(msg.Object)))
+	return nil
+}
+
+func (s *Synchronizer) sendKill(ctx context.Context, statusCode int, message string) error {
+	event := domain.EventExit
+	msg := domain.Exit{
+		Event:      &event,
+		Reason:     message,
+		StatusCode: statusCode,
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("marshal kill message: %w", err)
+	}
+	err = s.outPool.Invoke(data)
+	if err != nil {
+		return fmt.Errorf("invoke outPool on kill message: %w", err)
+	}
+	clientId := utils.ClientIdentifierFromContext(ctx)
+	logger.L().Warning("sent kill message",
+		helpers.String("account", clientId.Account),
+		helpers.String("cluster", clientId.Cluster),
+		helpers.String("reason", msg.Reason),
+		helpers.Int("statusCode", msg.StatusCode))
 	return nil
 }

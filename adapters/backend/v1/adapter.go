@@ -71,6 +71,14 @@ func (b *Adapter) GetObject(ctx context.Context, id domain.KindName, baseObject 
 	return client.GetObject(ctx, id, baseObject)
 }
 
+func (b *Adapter) HandlePing(ctx context.Context, info domain.AppInfo) error {
+	client, err := b.getClient(ctx)
+	if err != nil {
+		return err
+	}
+	return client.HandlePing(ctx, info)
+}
+
 func (b *Adapter) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	client, err := b.getClient(ctx)
 	if err != nil {

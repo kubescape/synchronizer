@@ -18,6 +18,7 @@ type Adapter interface {
 	PutObject(ctx context.Context, id domain.KindName, object []byte) error
 	VerifyObject(ctx context.Context, id domain.KindName, checksum string) error
 	Batch(ctx context.Context, id domain.Kind, batchType domain.BatchType, items domain.BatchItems) error
+	HandlePing(ctx context.Context, info domain.AppInfo) error
 }
 
 type Client Adapter

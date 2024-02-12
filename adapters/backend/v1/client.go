@@ -96,6 +96,12 @@ func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject [
 	return c.sendGetObjectMessage(ctx, id, baseObject)
 }
 
+func (c *Client) HandlePing(ctx context.Context, info domain.AppInfo) error {
+	//TODO Amir implement me
+	logger.L().Info("handling ping message", helpers.String("helm chart", info.HelmChart), helpers.String("version", info.Version))
+	return nil
+}
+
 func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	// patching the object is delegated to the ingester, it might emit a GetObject message if the patching fails
 	return c.sendPatchObjectMessage(ctx, id, checksum, patch)
