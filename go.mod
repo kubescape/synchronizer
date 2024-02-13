@@ -16,7 +16,6 @@ require (
 	github.com/gobwas/ws v1.3.1
 	github.com/google/uuid v1.4.0
 	github.com/goradd/maps v0.1.5
-	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/kinbiko/jsonassert v1.1.1
 	github.com/kubescape/backend v0.0.14
 	github.com/kubescape/go-logger v0.0.22
@@ -30,6 +29,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/k3s v0.27.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/net v0.19.0
+	istio.io/pkg v0.0.0-20231221211216-7635388a563e
 	k8s.io/api v0.29.0
 	k8s.io/apimachinery v0.29.0
 	k8s.io/client-go v0.29.0

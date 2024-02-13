@@ -3,28 +3,24 @@ package utils
 import (
 	"time"
 
-	lru "github.com/hashicorp/golang-lru/v2/expirable"
+	"istio.io/pkg/cache"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/watch"
 )
 
 const (
-	// Default size for the cooldown queue
-	DefaultQueueSize = 512
-	// Default TTL for events put in the queue
-	DefaultTTL = 5 * time.Second
+	defaultExpiration = 5 * time.Second
+	evictionInterval  = 1 * time.Second
 )
 
 // CooldownQueue is a queue that lets clients put events into it with a cooldown
 //
-// When a client puts an event into a queue, it forwards the event to its
-// output channel and starts a cooldown for this event. If a client attempts to
-// put the same event into the queue while the cooldown is running, the queue
-// will silently drop the event. When the cooldown resets and a client puts the
-// same event into the queue, it will be forwarded to the output channel
+// When a client puts an event into a queue, it waits for a cooldown period before
+// the event is forwarded to the consumer. If and event for the same key is put into the queue
+// again before the cooldown period is over, the event is overridden and the cooldown period is reset.
 type CooldownQueue struct {
 	closed     bool
-	seenEvents *lru.LRU[string, bool]
+	seenEvents cache.ExpiringCache
 	// inner channel for producing events
 	innerChan chan watch.Event
 	// public channel for reading events
@@ -32,11 +28,14 @@ type CooldownQueue struct {
 }
 
 // NewCooldownQueue returns a new Cooldown Queue
-func NewCooldownQueue(size int, cooldown time.Duration) *CooldownQueue {
-	cache := lru.NewLRU[string, bool](size, nil, cooldown)
+func NewCooldownQueue() *CooldownQueue {
 	events := make(chan watch.Event)
+	callback := func(key, value any) {
+		events <- value.(watch.Event)
+	}
+	c := cache.NewTTLWithCallback(defaultExpiration, evictionInterval, callback)
 	return &CooldownQueue{
-		seenEvents: cache,
+		seenEvents: c,
 		innerChan:  events,
 		ResultChan: events,
 	}
@@ -48,7 +47,7 @@ func makeEventKey(e watch.Event) string {
 	if !ok {
 		return ""
 	}
-	eventKey := string(e.Type) + "-" + string(object.GetUID())
+	eventKey := string(object.GetUID())
 	return eventKey
 }
 
@@ -62,14 +61,7 @@ func (q *CooldownQueue) Enqueue(e watch.Event) {
 		return
 	}
 	eventKey := makeEventKey(e)
-	_, exists := q.seenEvents.Get(eventKey)
-	if exists {
-		return
-	}
-	go func() {
-		q.innerChan <- e
-	}()
-	q.seenEvents.Add(eventKey, true)
+	q.seenEvents.Set(eventKey, e)
 }
 
 func (q *CooldownQueue) Stop() {
