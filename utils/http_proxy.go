@@ -77,7 +77,9 @@ func (s *httpProxy) Dial(_, addr string) (net.Conn, error) {
 
 	resp, err := http.ReadResponse(bufio.NewReader(c), req)
 	if err != nil {
-		_ = resp.Body.Close()
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
 		_ = c.Close()
 		return nil, fmt.Errorf("read CONNECT response: %w", err)
 	}

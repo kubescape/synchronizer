@@ -79,6 +79,8 @@ func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
 	if err := backoff.RetryNotify(func() error {
 		err := s.writeDataFunc(*s.Conn, data)
 		if err != nil {
+			// close connection
+			_ = (*s.Conn).Close()
 			if s.isClient {
 				// try to reconnect
 				conn, err := s.newConn()
@@ -87,6 +89,7 @@ func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
 				}
 				logger.L().Ctx(ctx).Info("outgoing connection refreshed, synchronization will resume")
 				s.Conn = &conn
+				return s.writeDataFunc(*s.Conn, data)
 			} else {
 				return backoff.Permanent(fmt.Errorf("cannot send message: %w", err))
 			}
@@ -432,14 +435,11 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 		if err := backoff.RetryNotify(func() error {
 			data, err := s.readDataFunc(*s.Conn)
 			if err != nil {
+				// close connection
+				_ = (*s.Conn).Close()
 				if s.isClient {
-					// try to reconnect
-					conn, err := s.newConn()
-					if err != nil {
-						return fmt.Errorf("refreshing incoming connection: %w", err)
-					}
-					logger.L().Ctx(ctx).Info("incoming connection refreshed, synchronization will resume")
-					s.Conn = &conn
+					// let sendData() reconnect and return an error to retry
+					return fmt.Errorf("cannot read data: %w", err)
 				} else {
 					return backoff.Permanent(fmt.Errorf("cannot read data: %w", err))
 				}
