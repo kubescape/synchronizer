@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"time"
@@ -82,11 +84,14 @@ func main() {
 	adapter := incluster.NewInClusterAdapter(cfg.InCluster, k8sclient)
 
 	// authentication headers
+	version := os.Getenv("RELEASE")
 	dialer := ws.Dialer{
 		Header: ws.HandshakeHeaderHTTP(map[string][]string{
 			core.AccessKeyHeader:   {cfg.InCluster.AccessKey},
 			core.AccountHeader:     {cfg.InCluster.Account},
 			core.ClusterNameHeader: {cfg.InCluster.ClusterName},
+			core.HelmVersionHeader: {os.Getenv("HELM_RELEASE")},
+			core.VersionHeader:     {version},
 		}),
 		NetDial: utils.GetDialer(),
 	}
@@ -102,6 +107,10 @@ func main() {
 		var conn net.Conn
 		if err := backoff.RetryNotify(func() error {
 			conn, _, _, err = dialer.Dial(ctx, cfg.InCluster.ServerUrl)
+			var status ws.StatusError
+			if errors.As(err, &status) && status == http.StatusFailedDependency {
+				return backoff.Permanent(fmt.Errorf("server rejected our client version <%s>, please update", version))
+			}
 			return err
 		}, utils.NewBackOff(), func(err error, d time.Duration) {
 			logger.L().Ctx(ctx).Warning("connection error", helpers.Error(err),

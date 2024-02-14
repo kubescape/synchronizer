@@ -40,6 +40,8 @@ type ClientIdentifier struct {
 	Cluster        string
 	ConnectionId   string
 	ConnectionTime time.Time
+	HelmVersion    string
+	Version        string
 }
 
 func (c ClientIdentifier) String() string {
