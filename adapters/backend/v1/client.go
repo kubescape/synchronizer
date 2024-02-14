@@ -35,7 +35,7 @@ func (c *Client) Start(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) Stop(ctx context.Context) error {
+func (c *Client) Stop(_ context.Context) error {
 	return nil
 }
 
@@ -45,17 +45,12 @@ func (c *Client) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool
 }
 
 func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
-	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
-
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	id := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.ServerConnectedMessage{
 		Cluster: id.Cluster,
 		Account: id.Account,
-		Depth:   depth + 1,
-		MsgId:   msgId,
+		MsgId:   utils.NewMsgId(),
 	}
 	logger.L().Debug("sending server connected message to producer",
 		helpers.String("account", msg.Account),
@@ -174,8 +169,7 @@ func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, checksum 
 }
 
 func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName) error {
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	cId := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.DeleteObjectMessage{
@@ -203,8 +197,7 @@ func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName
 }
 
 func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, baseObject []byte) error {
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	cId := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.GetObjectMessage{
@@ -234,8 +227,7 @@ func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, b
 }
 
 func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	cId := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.PatchObjectMessage{
@@ -267,8 +259,7 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 }
 
 func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, object []byte) error {
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	cId := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.PutObjectMessage{
@@ -298,8 +289,7 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, o
 }
 
 func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName, checksum string) error {
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	cId := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.VerifyObjectMessage{
@@ -329,17 +319,12 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName
 }
 
 func (c *Client) SendReconciliationRequestMessage(ctx context.Context) error {
-	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
-
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
 	id := utils.ClientIdentifierFromContext(ctx)
 
 	msg := messaging.ReconciliationRequestMessage{
 		Cluster:         id.Cluster,
 		Account:         id.Account,
-		Depth:           depth + 1,
-		MsgId:           msgId,
+		MsgId:           utils.NewMsgId(),
 		ServerInitiated: true,
 	}
 	logger.L().Debug("sending reconciliation request message to producer",

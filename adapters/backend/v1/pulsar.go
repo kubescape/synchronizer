@@ -140,8 +140,17 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 	logger.L().Debug("received message from pulsar",
 		helpers.String("account", msgProperties[messaging.MsgPropAccount]),
 		helpers.String("cluster", msgProperties[messaging.MsgPropCluster]),
+		helpers.Interface("event", msgProperties[messaging.MsgPropEvent]),
 		helpers.String("msgId", msgID))
 
+	// store in context
+	ctx = utils.ContextFromIdentifiers(ctx, clientIdentifier)
+	// get callbacks
+	callbacks, err := adapter.Callbacks(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get callbacks: %w", err)
+	}
+	// handle message
 	switch msgProperties[messaging.MsgPropEvent] {
 	case messaging.MsgPropEventValueReconciliationRequestMessage:
 		var data messaging.ReconciliationRequestMessage
@@ -153,15 +162,6 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			Depth: data.Depth,
 			MsgId: data.MsgId,
 		})
-		ctx = utils.ContextFromIdentifiers(ctx, domain.ClientIdentifier{
-			Account: data.Account,
-			Cluster: data.Cluster,
-		})
-
-		callbacks, err := adapter.Callbacks(ctx)
-		if err != nil {
-			return err
-		}
 
 		// unwrap the reconciliation request and send batches of NewChecksum for each kind
 		event := domain.EventNewChecksum
@@ -201,14 +201,6 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			Depth: data.Depth,
 			MsgId: data.MsgId,
 		})
-		ctx = utils.ContextFromIdentifiers(ctx, domain.ClientIdentifier{
-			Account: data.Account,
-			Cluster: data.Cluster,
-		})
-		callbacks, err := adapter.Callbacks(ctx)
-		if err != nil {
-			return err
-		}
 		if err := callbacks.GetObject(ctx, domain.KindName{
 			Kind:            domain.KindFromString(ctx, data.Kind),
 			Name:            data.Name,
@@ -226,14 +218,6 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			Depth: data.Depth,
 			MsgId: data.MsgId,
 		})
-		ctx = utils.ContextFromIdentifiers(ctx, domain.ClientIdentifier{
-			Account: data.Account,
-			Cluster: data.Cluster,
-		})
-		callbacks, err := adapter.Callbacks(ctx)
-		if err != nil {
-			return err
-		}
 		if err := callbacks.PatchObject(ctx, domain.KindName{
 			Kind:            domain.KindFromString(ctx, data.Kind),
 			Name:            data.Name,
@@ -251,14 +235,6 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			Depth: data.Depth,
 			MsgId: data.MsgId,
 		})
-		ctx = utils.ContextFromIdentifiers(ctx, domain.ClientIdentifier{
-			Account: data.Account,
-			Cluster: data.Cluster,
-		})
-		callbacks, err := adapter.Callbacks(ctx)
-		if err != nil {
-			return err
-		}
 		if err := callbacks.VerifyObject(ctx, domain.KindName{
 			Kind:            domain.KindFromString(ctx, data.Kind),
 			Name:            data.Name,
@@ -276,14 +252,6 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			Depth: data.Depth,
 			MsgId: data.MsgId,
 		})
-		ctx = utils.ContextFromIdentifiers(ctx, domain.ClientIdentifier{
-			Account: data.Account,
-			Cluster: data.Cluster,
-		})
-		callbacks, err := adapter.Callbacks(ctx)
-		if err != nil {
-			return err
-		}
 		if err := callbacks.PutObject(ctx, domain.KindName{
 			Kind:            domain.KindFromString(ctx, data.Kind),
 			Name:            data.Name,
@@ -301,14 +269,6 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			Depth: data.Depth,
 			MsgId: data.MsgId,
 		})
-		ctx = utils.ContextFromIdentifiers(ctx, domain.ClientIdentifier{
-			Account: data.Account,
-			Cluster: data.Cluster,
-		})
-		callbacks, err := adapter.Callbacks(ctx)
-		if err != nil {
-			return err
-		}
 		if err := callbacks.DeleteObject(ctx, domain.KindName{
 			Kind:            domain.KindFromString(ctx, data.Kind),
 			Name:            data.Name,
