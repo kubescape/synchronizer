@@ -35,6 +35,8 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 		accessKey := r.Header.Get(core.AccessKeyHeader)
 		account := r.Header.Get(core.AccountHeader)
 		cluster := r.Header.Get(core.ClusterNameHeader)
+		helmVersion := r.Header.Get(core.HelmVersionHeader)
+		version := r.Header.Get(core.VersionHeader)
 
 		if accessKey == "" || account == "" || cluster == "" {
 			logger.L().Error("missing headers on incoming connection",
@@ -43,6 +45,11 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 				helpers.String("cluster", cluster))
 
 			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		if version == "invalid" {
+			w.WriteHeader(http.StatusFailedDependency)
 			return
 		}
 
@@ -115,6 +122,8 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 			Cluster:        cluster,
 			ConnectionId:   connectionId,
 			ConnectionTime: connectionTime,
+			HelmVersion:    helmVersion,
+			Version:        version,
 		})
 
 		// create new request using the new context
