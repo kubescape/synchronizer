@@ -59,6 +59,7 @@ func main() {
 	}
 
 	cfg.InCluster.ValidateConfig()
+	updateClusterName(&cfg)
 
 	// to enable otel, set OTEL_COLLECTOR_SVC=otel-collector:4317
 	if otelHost, present := os.LookupEnv("OTEL_COLLECTOR_SVC"); present {
@@ -134,5 +135,14 @@ func main() {
 	err = synchronizer.Start(ctx)
 	if err != nil {
 		logger.L().Ctx(ctx).Fatal("error during sync, exiting", helpers.Error(err))
+	}
+}
+
+func updateClusterName(cfg *config.Config) {
+	// get cluster name from env
+	clusterName, present := os.LookupEnv("CLUSTER_NAME")
+	if present && clusterName != "" {
+		logger.L().Debug("cluster name from env", helpers.String("clusterName", clusterName))
+		cfg.InCluster.ClusterName = clusterName
 	}
 }
