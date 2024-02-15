@@ -520,7 +520,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 	// create a map of resources from the client
 	list, err := c.client.Resource(c.res).Namespace("").List(context.Background(), metav1.ListOptions{})
 	if err != nil {
-		return fmt.Errorf("list resources: %w", err)
+		return fmt.Errorf("reconciliation: list resources: %w", err)
 	}
 	clientItems := map[string]unstructured.Unstructured{}
 	clientItemsSet := mapset.NewSet[string]()
@@ -550,7 +550,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 			ResourceVersion: item.ResourceVersion,
 		}
 
-		logger.L().Debug("resource should not be in server, sending delete message",
+		logger.L().Debug("reconciliation: resource should not be in server, sending delete message",
 			helpers.String("resource", item.Kind.String()),
 			helpers.String("name", item.Name),
 			helpers.String("namespace", item.Namespace))
@@ -564,7 +564,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 		currentVersion := domain.ToResourceVersion(resource.GetResourceVersion())
 		if currentVersion == item.ResourceVersion {
 			// resource has same version, skipping
-			logger.L().Debug("resource has same version, skipping",
+			logger.L().Debug("reconciliation: resource has same version, skipping",
 				helpers.String("resource", item.Kind.String()),
 				helpers.String("name", item.Name),
 				helpers.String("namespace", item.Namespace),
@@ -573,7 +573,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 		}
 
 		// resource has changed, sending a put message
-		logger.L().Debug("resource has changed, sending put message",
+		logger.L().Debug("reconciliation: resource has changed, sending put message",
 			helpers.String("resource", item.Kind.String()),
 			helpers.String("name", item.Name),
 			helpers.String("namespace", item.Namespace),
@@ -597,6 +597,14 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 	for _, k := range clientItemsSet.Difference(serverItemsSet).ToSlice() {
 		item := clientItems[k]
 
+		if hasParent(&item) {
+			logger.L().Debug("reconciliation: resource missing in server has parent, skipping",
+				helpers.String("resource", c.kind.String()),
+				helpers.String("name", item.GetName()),
+				helpers.String("namespace", item.GetNamespace()))
+			continue
+		}
+
 		resourceVersion := domain.ToResourceVersion(item.GetResourceVersion())
 		id := domain.KindName{
 			Kind:            c.kind,
@@ -611,7 +619,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 			continue
 		}
 
-		logger.L().Debug("resource missing in server, sending verify message",
+		logger.L().Debug("reconciliation: resource missing in server, sending verify message",
 			helpers.String("resource", c.res.Resource),
 			helpers.String("name", item.GetName()),
 			helpers.String("namespace", item.GetNamespace()))
@@ -622,16 +630,6 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 	}
 
 	return nil
-}
-
-func findResourceInList(list []unstructured.Unstructured, namespace, name string) int {
-	for i, resource := range list {
-		if resource.GetName() == name && resource.GetNamespace() == namespace {
-			return i
-		}
-	}
-
-	return -1
 }
 
 func defaultBatchProcessingFunc(ctx context.Context, c *Client, items domain.BatchItems) error {
