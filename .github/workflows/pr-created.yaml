@@ -40,7 +40,7 @@ jobs:
         id: list-tests
         run: |
           echo "machine github.com login git password ${{ secrets.INGESTERS_READ_TOKEN }}" > ~/.netrc
-          echo "::set-output name=tests::$(go test ./tests -list . --tags=integration | jq -R -s -c 'split("\n")')"
+          echo "::set-output name=tests::$(cd tests && go test ./... -list . --tags=integration | grep '^TestSynchronizer' | jq -R -s -c 'split("\n")')"
 
       - name: Set matrix for next job
         id: set-matrix
@@ -66,4 +66,4 @@ jobs:
       - name: Run test
         run: |
           echo "machine github.com login git password ${{ secrets.INGESTERS_READ_TOKEN }}" > ~/.netrc
-          go test -run ${{ matrix.test }} ./tests --timeout=20m --tags=integration
+          cd tests && go test ./... -run ${{ matrix.test }} --timeout=20m --tags=integration
