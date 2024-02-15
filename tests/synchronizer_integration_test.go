@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -68,6 +69,7 @@ type Test struct {
 	containers   map[string]testcontainers.Container
 	files        []string
 	clusters     []TestKubernetesCluster
+	ingesterConf ingesterutils.Configuration
 	pulsarClient pulsarconnector.Client
 	processor    *resourceprocessor.KubernetesResourceProcessor
 	s3           *s3connector.S3Mock
@@ -404,7 +406,7 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 		}, metav1.CreateOptions{})
 	require.NoError(t, err)
 
-	return &TestKubernetesCluster{
+	kubernetesCluster := &TestKubernetesCluster{
 		account:                       account,
 		cluster:                       cluster,
 		ctx:                           ctx,
@@ -419,6 +421,8 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 		secret:                        secret,
 		ss:                            ss,
 	}
+	waitForStorage(t, kubernetesCluster)
+	return kubernetesCluster
 }
 
 func createPulsar(t *testing.T, ctx context.Context, brokerPort, adminPort string) (pulsarC testcontainers.Container, pulsarUrl, pulsarAdminUrl string) {
@@ -479,6 +483,9 @@ func waitForStorage(t *testing.T, cluster *TestKubernetesCluster) {
 		logger.L().Info("waiting for storage to be ready", helpers.Error(err), helpers.String("retry in", d.String()))
 	})
 	require.NoError(t, err)
+	// cleanup
+	err = storageclient.ApplicationProfiles(namespace).Delete(context.TODO(), cluster.applicationprofile.Name, metav1.DeleteOptions{})
+	require.NoError(t, err)
 }
 
 func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesCluster, clientConn net.Conn, syncServer *TestSynchronizerServer) {
@@ -503,9 +510,6 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 	cluster.syncClientAdapter = clientAdapter
 	cluster.clientConn = clientConn
 	cluster.syncClientContextCancelFn = cancel
-
-	// wait until storage is ready
-	waitForStorage(t, cluster)
 
 	// start synchronizer client
 	go func() {
@@ -633,6 +637,7 @@ func initIntegrationTest(t *testing.T) *Test {
 		},
 		files:        []string{rdsFile.Name()},
 		clusters:     []TestKubernetesCluster{*cluster_1, *cluster_2},
+		ingesterConf: ingesterConf,
 		pulsarClient: pulsarClient,
 		processor:    ingesterProcessor,
 		s3:           &s3,
@@ -653,17 +658,31 @@ func tearDown(td *Test) {
 	}
 }
 
+// grepCount returns the number of matches of a regex in a file, like grep -c regex file
+func grepCount(filename, regex string) int {
+	re := regexp.MustCompile(regex)
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return 0
+	}
+	matches := re.FindAllStringIndex(string(data), -1)
+	return len(matches)
+}
+
 // TestSynchronizer_TC01_InCluster: Initial synchronization of a single entity
 func TestSynchronizer_TC01_InCluster(t *testing.T) {
+	logFile, err := os.CreateTemp("", "test-logs")
+	require.NoError(t, err)
+	logger.L().SetWriter(logFile)
 	td := initIntegrationTest(t)
 	// add applicationprofile to k8s
-	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
-	time.Sleep(10 * time.Second)
+	time.Sleep(20 * time.Second)
 	// check object in postgres
 	objMetadata, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
-	assert.NoError(t, err)
-	assert.True(t, objFound)
+	require.NoError(t, err)
+	require.True(t, objFound)
 	assert.Equal(t, td.clusters[0].applicationprofileDesignators, objMetadata.Designators)
 	// check object in s3
 	var objPath s3connector.S3ObjectPath
@@ -687,6 +706,20 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	k8sAppProfile.SetManagedFields(nil)
 	delete(k8sAppProfile.Annotations, "kubectl.kubernetes.io/last-applied-configuration")
 	assert.Equal(t, k8sAppProfile, &s3AppProfile)
+	// check how many times the get object message was sent
+	sentGetObject := grepCount(logFile.Name(), "sent get object message")
+	sentNewChecksum := grepCount(logFile.Name(), "sent new checksum message")
+	// create a new client/server pair for cluster1
+	clientConn, serverConn := net.Pipe()
+	// FIXME hope randomPorts(1)[0] is not the same as one of the previous ports
+	synchronizerServer := createAndStartSynchronizerServer(t, td.ingesterConf.Pulsar.URL, td.ingesterConf.Pulsar.AdminUrl, td.pulsarClient, serverConn, randomPorts(1)[0], &td.clusters[0])
+	createAndStartSynchronizerClient(t, &td.clusters[0], clientConn, synchronizerServer)
+	time.Sleep(20 * time.Second)
+	// make sure we didn't request the same object again (as an answer to the verify object messages)
+	sentGetObjectAfter := grepCount(logFile.Name(), "sent get object message")
+	sentNewChecksumAfter := grepCount(logFile.Name(), "sent new checksum message")
+	assert.Equal(t, sentGetObject, sentGetObjectAfter)
+	assert.Greater(t, sentNewChecksumAfter, sentNewChecksum)
 	// tear down
 	tearDown(td)
 }
@@ -844,7 +877,7 @@ func TestSynchronizer_TC05_InCluster(t *testing.T) {
 	require.NoError(t, err)
 	_, err = td.clusters[0].k8sclient.AppsV1().StatefulSets(namespace).Create(context.TODO(), td.clusters[0].ss, metav1.CreateOptions{})
 	require.NoError(t, err)
-	time.Sleep(10 * time.Second)
+	time.Sleep(20 * time.Second)
 	// check objects in postgres
 	for _, kind := range []string{"spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", "apps/v1/deployments", "apps/v1/statefulsets"} {
 		_, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, kind, namespace, name)
@@ -915,7 +948,7 @@ func TestSynchronizer_TC06(t *testing.T) {
 	// add applicationprofile to k8s
 	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
-	time.Sleep(10 * time.Second)
+	time.Sleep(20 * time.Second)
 	// prepare to alter shadow object in client
 	appClient, err := td.clusters[0].syncClientAdapter.GetClient(domain.KindName{Kind: domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles")})
 	require.NoError(t, err)
@@ -930,7 +963,9 @@ func TestSynchronizer_TC06(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// get object path from postgres
-	objMetadata, _, _ := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	objMetadata, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	require.NoError(t, err)
+	require.True(t, objFound)
 	var objPath s3connector.S3ObjectPath
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
 	require.NoError(t, err)
