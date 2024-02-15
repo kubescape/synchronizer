@@ -38,6 +38,8 @@ jobs:
       - name: Generate go test Slice
         id: test_split
         uses: dwertent/go-test-split-action@v1.0.0
+        env:
+          GOPRIVATE: github.com/armosec/*
         with:
           index: ${{ matrix.index }}
           total: ${{ matrix.parallel }}
