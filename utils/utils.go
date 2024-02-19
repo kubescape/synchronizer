@@ -41,11 +41,11 @@ func CanonicalHash(in []byte) (string, error) {
 	return hex.EncodeToString(hash[:]), nil
 }
 
-func ContextFromGeneric(parent context.Context, generic domain.Generic) context.Context {
-	if generic.MsgId == "" {
-		generic.MsgId = uuid.NewString()
-	}
+func NewMsgId() string {
+	return uuid.NewString()
+}
 
+func ContextFromGeneric(parent context.Context, generic domain.Generic) context.Context {
 	ctx := context.WithValue(parent, domain.ContextKeyDepth, generic.Depth)
 	ctx = context.WithValue(ctx, domain.ContextKeyMsgId, generic.MsgId)
 	return ctx
@@ -60,6 +60,18 @@ func ContextFromIdentifiers(parent context.Context, id domain.ClientIdentifier) 
 
 func ClientIdentifierFromContext(ctx context.Context) domain.ClientIdentifier {
 	return ctx.Value(domain.ContextKeyClientIdentifier).(domain.ClientIdentifier)
+}
+
+func DeptMsgIdFromContext(ctx context.Context) (int, string) {
+	depth := ctx.Value(domain.ContextKeyDepth)
+	if depth == nil {
+		depth = 0
+	}
+	msgId := ctx.Value(domain.ContextKeyMsgId)
+	if msgId == nil {
+		msgId = NewMsgId()
+	}
+	return depth.(int), msgId.(string)
 }
 
 //goland:noinspection GoUnusedExportedFunction

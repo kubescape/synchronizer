@@ -80,7 +80,6 @@ func NewClient(client dynamic.Interface, account, cluster string, r config.Resou
 var _ adapters.Client = (*Client)(nil)
 
 func (c *Client) Start(ctx context.Context) error {
-	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
 	logger.L().Info("starting incluster client", helpers.String("resource", c.res.Resource))
 	watchOpts := metav1.ListOptions{}
 	// for our storage, we need to list all resources and get them one by one

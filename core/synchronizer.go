@@ -507,8 +507,7 @@ func (s *Synchronizer) handleSyncPutObject(ctx context.Context, id domain.KindNa
 
 func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
 	event := domain.EventGetObject
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	msg := domain.GetObject{
 		BaseObject: string(baseObject),
 		Depth:      depth + 1,
@@ -540,8 +539,7 @@ func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.KindName, ba
 
 func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.KindName, checksum string) error {
 	event := domain.EventNewChecksum
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	msg := domain.NewChecksum{
 		Checksum:  checksum,
 		Depth:     depth + 1,
@@ -576,8 +574,7 @@ func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.KindName, 
 
 func (s *Synchronizer) sendObjectDeleted(ctx context.Context, id domain.KindName) error {
 	event := domain.EventObjectDeleted
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	msg := domain.ObjectDeleted{
 		Depth:     depth + 1,
 		Event:     &event,
@@ -607,8 +604,7 @@ func (s *Synchronizer) sendObjectDeleted(ctx context.Context, id domain.KindName
 
 func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
 	event := domain.EventPatchObject
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 
 	msg := domain.PatchObject{
 		Checksum:  checksum,
@@ -645,14 +641,15 @@ func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.KindName, 
 
 func (s *Synchronizer) sendPing(ctx context.Context) {
 	event := domain.EventPing
-	msg := domain.Generic{
-		Event: &event,
-	}
-	data, err := json.Marshal(msg)
-	if err != nil {
-		logger.L().Fatal("marshal ping message", helpers.Error(err))
-	}
 	for {
+		msg := domain.Generic{
+			Event: &event,
+			MsgId: utils.NewMsgId(),
+		}
+		data, err := json.Marshal(msg)
+		if err != nil {
+			logger.L().Fatal("marshal ping message", helpers.Error(err))
+		}
 		err = s.outPool.Invoke(data)
 		if err != nil {
 			logger.L().Ctx(ctx).Error("invoke outPool on ping message", helpers.Error(err))
@@ -663,8 +660,7 @@ func (s *Synchronizer) sendPing(ctx context.Context) {
 
 func (s *Synchronizer) sendBatch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
 	event := domain.EventBatch
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	msg := domain.Batch{
 		Depth:     depth + 1,
 		Event:     &event,
@@ -694,8 +690,7 @@ func (s *Synchronizer) sendBatch(ctx context.Context, kind domain.Kind, batchTyp
 
 func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, object []byte) error {
 	event := domain.EventPutObject
-	depth := ctx.Value(domain.ContextKeyDepth).(int)
-	msgId := ctx.Value(domain.ContextKeyMsgId).(string)
+	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	msg := domain.PutObject{
 		Depth:     depth + 1,
 		Event:     &event,
