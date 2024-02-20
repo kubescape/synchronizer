@@ -40,18 +40,17 @@ jobs:
         id: list-tests
         run: |
           echo "machine github.com login git password ${{ secrets.INGESTERS_READ_TOKEN }}" > ~/.netrc
-          echo "::set-output name=tests::$(cd tests && go test ./... -list . --tags=integration | grep '^TestSynchronizer' | jq -R -s -c 'split("\n")')"
-
-      - name: Set matrix for next job
-        id: set-matrix
-        run: echo "::set-output name=matrix::{\"test\":${{ steps.list-tests.outputs.tests }}}"
+          tests=$(cd tests && go test ./... -list . --tags=integration | grep '^TestSynchronizer' | jq -R -s -c 'split("\n")')
+          echo "tests=${tests}" >> $GITHUB_ENV
+          matrix=$(echo $tests | jq -c 'map({test: .}) | join(" ")')
+          echo "matrix=${matrix}" >> $GITHUB_ENV
 
   component-tests:
     needs: list-tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        test: ${{fromJson(needs.list-tests.outputs.matrix).test}}
+        test: ${{fromJson(needs.list-tests.outputs.matrix)}}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
