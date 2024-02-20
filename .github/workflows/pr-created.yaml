@@ -41,9 +41,9 @@ jobs:
         run: |
           echo "machine github.com login git password ${{ secrets.INGESTERS_READ_TOKEN }}" > ~/.netrc
           tests=$(cd tests && go test ./... -list . --tags=integration | grep '^TestSynchronizer' | jq -R -s -c 'split("\n")')
-          echo "tests=${tests}" >> $GITHUB_ENV
-          matrix=$(echo $tests | jq -c 'map({test: .}) | join(" ")')
-          echo "matrix=${matrix}" >> $GITHUB_ENV
+          echo "::set-output name=tests::$tests"
+          matrix=$(echo $tests | jq -c 'map({test: .}) | join(" ")' | sed 's/\"/\\\"/g')
+          echo "::set-output name=matrix::$matrix"
 
   component-tests:
     needs: list-tests
