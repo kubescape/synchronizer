@@ -2,6 +2,7 @@ package httpendpoint
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type Adapter struct {
@@ -108,16 +110,16 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.L().Ctx(r.Context()).Warning("httpendpoint request body read error", helpers.Error(err))
 		return
 	}
-
-	// get the KindName from the request path and validate it exists in the body
-	kindName := domain.KindName{}
-	if err := kindName.UnmarshalJSON(bodyBytes); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		logger.L().Ctx(r.Context()).Warning("httpendpoint request body unmarshal error", helpers.Error(err))
+	obj := &unstructured.Unstructured{}
+	if err := json.Unmarshal(bodyBytes, obj); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint request body read error", helpers.Error(err))
 		return
 	}
+	kindName := domain.FromUnstructured(obj)
+
 	// call the PutObject callback
-	if err := a.callbacks.PutObject(r.Context(), domain.KindName{}, bodyBytes); err != nil {
+	if err := a.callbacks.PutObject(r.Context(), kindName, bodyBytes); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		logger.L().Ctx(r.Context()).Warning("httpendpoint PutObject callback error", helpers.Error(err))
 		return

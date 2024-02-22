@@ -7,6 +7,7 @@ import (
 
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type KindName struct {
@@ -24,6 +25,33 @@ func (c KindName) String() string {
 		kind = c.Kind.String()
 	}
 	return strings.Join([]string{kind, c.Namespace, c.Name}, "/")
+}
+
+func FromUnstructured(u *unstructured.Unstructured) KindName {
+	if u == nil {
+		logger.L().Error("Unable to convert nil unstructured to KindName")
+		return KindName{}
+	}
+	apiVerSlices := strings.Split(u.GetAPIVersion(), "/")
+	if len(apiVerSlices) == 0 {
+		logger.L().Error("Unable to convert apiVersion to KindName", helpers.String("apiVersion", u.GetAPIVersion()))
+		return KindName{}
+	}
+	if len(apiVerSlices) == 1 {
+		apiVerSlices = append(apiVerSlices, "v1")
+	}
+
+	return KindName{
+		Kind: &Kind{
+			Resource: u.GetKind(),
+			Group:    apiVerSlices[0],
+			Version:  apiVerSlices[1],
+		},
+		Name:            u.GetName(),
+		Namespace:       u.GetNamespace(),
+		ResourceVersion: ToResourceVersion(u.GetResourceVersion()),
+	}
+
 }
 
 func ToResourceVersion(version string) int {
