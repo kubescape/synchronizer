@@ -24,6 +24,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
+	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/adapters/backend/v1"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/core"
@@ -505,7 +506,7 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
 
-	cluster.syncClient, err = core.NewSynchronizerClient(ctx, clientAdapter, clientConn, newConn)
+	cluster.syncClient, err = core.NewSynchronizerClient(ctx, []adapters.Adapter{clientAdapter}, clientConn, newConn)
 	require.NoError(t, err)
 	cluster.syncClientAdapter = clientAdapter
 	cluster.clientConn = clientConn
@@ -536,7 +537,7 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 	ctx, cancel := context.WithCancel(cluster.ctx)
 	serverAdapter := backend.NewBackendAdapter(ctx, pulsarProducer, nil)
 	pulsarReader.Start(ctx, serverAdapter)
-	synchronizerServer, err := core.NewSynchronizerServer(ctx, serverAdapter, serverConn)
+	synchronizerServer, err := core.NewSynchronizerServer(ctx, []adapters.Adapter{serverAdapter}, serverConn)
 	require.NoError(t, err)
 
 	// start server
