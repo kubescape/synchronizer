@@ -101,7 +101,7 @@ func main() {
 				go func() {
 					defer conn.Close()
 					id := utils.ClientIdentifierFromContext(r.Context())
-					synchronizer, err := core.NewSynchronizerServer(r.Context(), adapter, conn)
+					synchronizer, err := core.NewSynchronizerServer(r.Context(), []adapters.Adapter{adapter}, conn)
 					if err != nil {
 						logger.L().Error("error during creating synchronizer server instance",
 							helpers.String("account", id.Account),

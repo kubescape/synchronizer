@@ -15,6 +15,7 @@ import (
 	backendUtils "github.com/kubescape/backend/pkg/utils"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/adapters/incluster/v1"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/core"
@@ -128,7 +129,7 @@ func main() {
 	}
 
 	// synchronizer
-	synchronizer, err := core.NewSynchronizerClient(ctx, adapter, conn, newConn)
+	synchronizer, err := core.NewSynchronizerClient(ctx, []adapters.Adapter{adapter}, conn, newConn)
 	if err != nil {
 		logger.L().Ctx(ctx).Fatal("failed to create synchronizer", helpers.Error(err))
 	}

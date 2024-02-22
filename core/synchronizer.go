@@ -23,7 +23,7 @@ import (
 const maxMessageDepth = 8
 
 type Synchronizer struct {
-	adapter       adapters.Adapter
+	adapters      []adapters.Adapter
 	isClient      bool // which side of the connection is this?
 	Conn          *net.Conn
 	newConn       func() (net.Conn, error)
@@ -33,7 +33,7 @@ type Synchronizer struct {
 	writeDataFunc func(w io.Writer, p []byte) error
 }
 
-func NewSynchronizerClient(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn, newConn func() (net.Conn, error)) (*Synchronizer, error) {
+func NewSynchronizerClient(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn, newConn func() (net.Conn, error)) (*Synchronizer, error) {
 	s, err := newSynchronizer(mainCtx, adapter, conn, true, wsutil.ReadServerBinary, wsutil.WriteClientBinary)
 	if err != nil {
 		return nil, err
@@ -42,13 +42,13 @@ func NewSynchronizerClient(mainCtx context.Context, adapter adapters.Adapter, co
 	return s, nil
 }
 
-func NewSynchronizerServer(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn) (*Synchronizer, error) {
+func NewSynchronizerServer(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn) (*Synchronizer, error) {
 	return newSynchronizer(mainCtx, adapter, conn, false, wsutil.ReadClientBinary, wsutil.WriteServerBinary)
 }
 
-func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net.Conn, isClient bool, readDataFunc func(rw io.ReadWriter) ([]byte, error), writeDataFunc func(w io.Writer, p []byte) error) (*Synchronizer, error) {
+func newSynchronizer(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn, isClient bool, readDataFunc func(rw io.ReadWriter) ([]byte, error), writeDataFunc func(w io.Writer, p []byte) error) (*Synchronizer, error) {
 	s := &Synchronizer{
-		adapter:       adapter,
+		adapters:      adapter,
 		isClient:      isClient,
 		Conn:          &conn,
 		readDataFunc:  readDataFunc,
@@ -71,7 +71,9 @@ func newSynchronizer(mainCtx context.Context, adapter adapters.Adapter, conn net
 		VerifyObject: s.VerifyObjectCallback,
 		Batch:        s.BatchCallback,
 	}
-	adapter.RegisterCallbacks(mainCtx, callbacks)
+	for _, adapter := range s.adapters {
+		adapter.RegisterCallbacks(mainCtx, callbacks)
+	}
 	return s, nil
 }
 
@@ -172,13 +174,15 @@ func (s *Synchronizer) Start(ctx context.Context) error {
 		go s.sendPing(ctx)
 	}
 	// adapter events
-	err := s.adapter.Start(ctx)
-	if err != nil {
-		return fmt.Errorf("start adapter: %w", err)
+	for _, adapter := range s.adapters {
+		err := adapter.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("start adapter: %w", err)
+		}
 	}
 	// synchronizer events
-	err = s.listenForSyncEvents(ctx)
-	if err != nil {
+
+	if err := s.listenForSyncEvents(ctx); err != nil {
 		return fmt.Errorf("listen for sync events: %w", err)
 	}
 	return nil
@@ -210,7 +214,17 @@ func (s *Synchronizer) Stop(ctx context.Context) error {
 		s.inPool.Release()
 	}
 
-	return s.adapter.Stop(ctx)
+	return s.stopAdapters(ctx)
+}
+
+func (s *Synchronizer) stopAdapters(ctx context.Context) error {
+	for idx, adapter := range s.adapters {
+		err := adapter.Stop(ctx)
+		if err != nil {
+			return fmt.Errorf("stop adapter[%d]: %w", idx, err)
+		}
+	}
+	return nil
 }
 
 func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
@@ -458,49 +472,61 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 }
 
 func (s *Synchronizer) handleSyncBatch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
-	err := s.adapter.Batch(ctx, kind, batchType, items)
-	if err != nil {
-		return fmt.Errorf("batch: %w", err)
+	for _, adapter := range s.adapters {
+		err := adapter.Batch(ctx, kind, batchType, items)
+		if err != nil {
+			return fmt.Errorf("batch: %w", err)
+		}
 	}
 	return nil
 }
 
 func (s *Synchronizer) handleSyncGetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
-	err := s.adapter.GetObject(ctx, id, baseObject)
-	if err != nil {
-		return fmt.Errorf("get object: %w", err)
+	for _, adapter := range s.adapters {
+		err := adapter.GetObject(ctx, id, baseObject)
+		if err != nil {
+			return fmt.Errorf("get object: %w", err)
+		}
 	}
 	return nil
 }
 
 func (s *Synchronizer) handleSyncNewChecksum(ctx context.Context, id domain.KindName, newChecksum string) error {
-	err := s.adapter.VerifyObject(ctx, id, newChecksum)
-	if err != nil {
-		return fmt.Errorf("verify object: %w", err)
+	for _, adapter := range s.adapters {
+		err := adapter.VerifyObject(ctx, id, newChecksum)
+		if err != nil {
+			return fmt.Errorf("verify object: %w", err)
+		}
 	}
 	return nil
 }
 
 func (s *Synchronizer) handleSyncObjectDeleted(ctx context.Context, id domain.KindName) error {
-	err := s.adapter.DeleteObject(ctx, id)
-	if err != nil {
-		return fmt.Errorf("delete object: %w", err)
+	for _, adapter := range s.adapters {
+		err := adapter.DeleteObject(ctx, id)
+		if err != nil {
+			return fmt.Errorf("delete object: %w", err)
+		}
 	}
 	return nil
 }
 
 func (s *Synchronizer) handleSyncPatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
-	err := s.adapter.PatchObject(ctx, id, checksum, patch)
-	if err != nil {
-		return fmt.Errorf("patch object: %w", err)
+	for _, adapter := range s.adapters {
+		err := adapter.PatchObject(ctx, id, checksum, patch)
+		if err != nil {
+			return fmt.Errorf("patch object: %w", err)
+		}
 	}
 	return nil
 }
 
 func (s *Synchronizer) handleSyncPutObject(ctx context.Context, id domain.KindName, object []byte) error {
-	err := s.adapter.PutObject(ctx, id, object)
-	if err != nil {
-		return fmt.Errorf("put object: %w", err)
+	for _, adapter := range s.adapters {
+		err := adapter.PutObject(ctx, id, object)
+		if err != nil {
+			return fmt.Errorf("put object: %w", err)
+		}
 	}
 	return nil
 }
