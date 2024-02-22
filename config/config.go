@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -8,7 +9,6 @@ import (
 	"github.com/kubescape/backend/pkg/servicediscovery"
 	"github.com/kubescape/backend/pkg/servicediscovery/schema"
 	v2 "github.com/kubescape/backend/pkg/servicediscovery/v2"
-	"github.com/kubescape/go-logger"
 	pulsarconfig "github.com/kubescape/messaging/pulsar/config"
 	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
 	"github.com/kubescape/synchronizer/domain"
@@ -122,20 +122,40 @@ func LoadServiceURLs(filePath string) (schema.IBackendServices, error) {
 	)
 }
 
-func (c *InCluster) ValidateConfig() {
+func (c *InCluster) ValidateConfig() error {
 	if c.AccessKey == "" {
-		logger.L().Fatal("access key is missing")
+		return fmt.Errorf("access key is missing")
 	}
 	if c.Account == "" {
-		logger.L().Fatal("account is missing")
+		return fmt.Errorf("account is missing")
 	}
 	if c.ClusterName == "" {
-		logger.L().Fatal("cluster name is missing")
+		return fmt.Errorf("cluster name is missing")
 	}
 	if c.ServerUrl == "" {
-		logger.L().Fatal("server url is missing")
+		return fmt.Errorf("server url is missing")
 	}
 	if len(c.Resources) == 0 {
-		logger.L().Fatal("resources are missing")
+		return fmt.Errorf("resources are missing")
 	}
+	return nil
+}
+
+func (c *HTTPEndpoint) ValidateConfig() error {
+	if c.AccessKey == "" {
+		return fmt.Errorf("access key is missing")
+	}
+	if c.Account == "" {
+		return fmt.Errorf("account is missing")
+	}
+	if c.ClusterName == "" {
+		return fmt.Errorf("cluster name is missing")
+	}
+	if c.ServerPort == "" {
+		return fmt.Errorf("server port is missing")
+	}
+	if len(c.Resources) == 0 {
+		return fmt.Errorf("resources are missing")
+	}
+	return nil
 }
