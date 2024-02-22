@@ -16,8 +16,9 @@ import (
 )
 
 type Config struct {
-	Backend   Backend   `mapstructure:"backend"`
-	InCluster InCluster `mapstructure:"inCluster"`
+	Backend      Backend      `mapstructure:"backend"`
+	InCluster    InCluster    `mapstructure:"inCluster"`
+	HTTPEndpoint HTTPEndpoint `mapstructure:"httpEndpoint"`
 }
 
 type Backend struct {
@@ -33,6 +34,14 @@ type Backend struct {
 
 type InCluster struct {
 	ServerUrl   string     `mapstructure:"serverUrl"`
+	ClusterName string     `mapstructure:"clusterName"`
+	Account     string     `mapstructure:"account"`
+	AccessKey   string     `mapstructure:"accessKey"`
+	Resources   []Resource `mapstructure:"resources"`
+}
+
+type HTTPEndpoint struct {
+	ServerPort  string     `mapstructure:"serverPort"`
 	ClusterName string     `mapstructure:"clusterName"`
 	Account     string     `mapstructure:"account"`
 	AccessKey   string     `mapstructure:"accessKey"`
