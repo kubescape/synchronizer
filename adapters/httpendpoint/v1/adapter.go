@@ -3,6 +3,8 @@ package httpendpoint
 import (
 	"context"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -17,6 +19,7 @@ type Adapter struct {
 	callbacks  domain.Callbacks
 	cfg        config.HTTPEndpoint
 	clients    map[string]adapters.Client
+	httpMux    *http.ServeMux
 	httpServer *http.Server
 }
 
@@ -33,37 +36,18 @@ func NewHTTPEndpointAdapter(cfg config.HTTPEndpoint) *Adapter {
 		IdleTimeout:  120 * time.Second,
 		Handler:      httpMux,
 	}
-	return &Adapter{
+	a := &Adapter{
 		cfg:        cfg,
 		clients:    map[string]adapters.Client{},
+		httpMux:    httpMux,
 		httpServer: server,
 	}
+	httpMux.Handle("/", a)
+	return a
 }
 
 // ensure that the Adapter struct satisfies the adapters.Adapter interface at compile-time
 var _ adapters.Adapter = (*Adapter)(nil)
-
-// func (a *Adapter) GetClient(id domain.KindName) (adapters.Client, error) {
-// 	if id.Kind == nil {
-// 		return nil, fmt.Errorf("invalid resource kind. resource name: %s", id.Name)
-// 	}
-
-// 	return a.GetClientByKind(*id.Kind), nil
-// }
-
-// func (a *Adapter) GetClientByKind(kind domain.Kind) adapters.Client {
-// 	client, ok := a.clients[kind.String()]
-// 	if !ok {
-// 		client = NewClient(a.k8sclient, a.cfg.Account, a.cfg.ClusterName, config.Resource{
-// 			Group:    kind.Group,
-// 			Version:  kind.Version,
-// 			Resource: kind.Resource,
-// 			Strategy: "copy",
-// 		})
-// 		a.clients[kind.String()] = client
-// 	}
-// 	return client
-// }
 
 // No-OP functions for functions needed only for backend re-sync
 func (a *Adapter) DeleteObject(ctx context.Context, id domain.KindName) error {
@@ -90,7 +74,10 @@ func (a *Adapter) Batch(ctx context.Context, kind domain.Kind, batchType domain.
 	return nil
 }
 
-func (a *Adapter) RegisterCallbacks(_ context.Context, callbacks domain.Callbacks) {
+func (a *Adapter) RegisterCallbacks(mainCtx context.Context, callbacks domain.Callbacks) {
+	a.httpServer.BaseContext = func(_ net.Listener) context.Context {
+		return mainCtx
+	}
 	a.callbacks = callbacks
 }
 
@@ -98,8 +85,44 @@ func (a *Adapter) Callbacks(_ context.Context) (domain.Callbacks, error) {
 	return a.callbacks, nil
 }
 
-func (a *Adapter) ServeHttp(w http.ResponseWriter, r *http.Request) {
-	logger.L().Info("httpendpoint request", helpers.String("path", r.URL.Path))
+func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	logger.L().Ctx(r.Context()).Info("httpendpoint request", helpers.String("path", r.URL.Path))
+	// TODO: add tracing span
+	switch r.Method {
+	case http.MethodPost:
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint method not allowed", helpers.String("method", r.Method))
+		return
+	}
+	// read the request body
+	if r.Body == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint request body is empty")
+		return
+	}
+	defer r.Body.Close()
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint request body read error", helpers.Error(err))
+		return
+	}
+
+	// get the KindName from the request path and validate it exists in the body
+	kindName := domain.KindName{}
+	if err := kindName.UnmarshalJSON(bodyBytes); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint request body unmarshal error", helpers.Error(err))
+		return
+	}
+	// call the PutObject callback
+	if err := a.callbacks.PutObject(r.Context(), domain.KindName{}, bodyBytes); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint PutObject callback error", helpers.Error(err))
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (a *Adapter) Start(ctx context.Context) error {

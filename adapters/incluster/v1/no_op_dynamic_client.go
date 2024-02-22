@@ -18,10 +18,16 @@ type NoOpDynamicClient struct {
 }
 
 type NoOpDynamicResource struct {
+	gvr schema.GroupVersionResource
 }
 
-func (n *NoOpDynamicClient) Resource(schema.GroupVersionResource) dynamic.NamespaceableResourceInterface {
-	return &NoOpDynamicResource{}
+// watch.Interface
+type NoOpWatch struct {
+	eventChan chan watch.Event
+}
+
+func (n *NoOpDynamicClient) Resource(gvr schema.GroupVersionResource) dynamic.NamespaceableResourceInterface {
+	return &NoOpDynamicResource{gvr: gvr}
 }
 
 func (n *NoOpDynamicResource) Namespace(namespace string) dynamic.ResourceInterface {
@@ -29,13 +35,13 @@ func (n *NoOpDynamicResource) Namespace(namespace string) dynamic.ResourceInterf
 }
 
 func (n *NoOpDynamicResource) Create(ctx context.Context, obj *unstructured.Unstructured, options metav1.CreateOptions, subresources ...string) (*unstructured.Unstructured, error) {
-	return nil, nil
+	return obj, nil
 }
 func (n *NoOpDynamicResource) Update(ctx context.Context, obj *unstructured.Unstructured, options metav1.UpdateOptions, subresources ...string) (*unstructured.Unstructured, error) {
-	return nil, nil
+	return obj, nil
 }
 func (n *NoOpDynamicResource) UpdateStatus(ctx context.Context, obj *unstructured.Unstructured, options metav1.UpdateOptions) (*unstructured.Unstructured, error) {
-	return nil, nil
+	return obj, nil
 }
 func (n *NoOpDynamicResource) Delete(ctx context.Context, name string, options metav1.DeleteOptions, subresources ...string) error {
 	return nil
@@ -44,20 +50,27 @@ func (n *NoOpDynamicResource) DeleteCollection(ctx context.Context, options meta
 	return nil
 }
 func (n *NoOpDynamicResource) Get(ctx context.Context, name string, options metav1.GetOptions, subresources ...string) (*unstructured.Unstructured, error) {
-	return nil, nil
+	return &unstructured.Unstructured{Object: map[string]interface{}{}}, nil
 }
 func (n *NoOpDynamicResource) List(ctx context.Context, opts metav1.ListOptions) (*unstructured.UnstructuredList, error) {
-	return nil, nil
+	return &unstructured.UnstructuredList{Object: map[string]interface{}{}, Items: []unstructured.Unstructured{{Object: map[string]interface{}{}}}}, nil
 }
 func (n *NoOpDynamicResource) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
-	return nil, nil
+	return &NoOpWatch{eventChan: make(chan watch.Event)}, nil
 }
 func (n *NoOpDynamicResource) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, options metav1.PatchOptions, subresources ...string) (*unstructured.Unstructured, error) {
-	return nil, nil
+	return &unstructured.Unstructured{Object: map[string]interface{}{}}, nil
 }
 func (n *NoOpDynamicResource) Apply(ctx context.Context, name string, obj *unstructured.Unstructured, options metav1.ApplyOptions, subresources ...string) (*unstructured.Unstructured, error) {
-	return nil, nil
+	return obj, nil
 }
 func (n *NoOpDynamicResource) ApplyStatus(ctx context.Context, name string, obj *unstructured.Unstructured, options metav1.ApplyOptions) (*unstructured.Unstructured, error) {
-	return nil, nil
+	return obj, nil
+}
+
+func (n *NoOpWatch) Stop() {
+	close(n.eventChan)
+}
+func (n *NoOpWatch) ResultChan() <-chan watch.Event {
+	return n.eventChan
 }
