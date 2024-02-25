@@ -116,7 +116,14 @@ func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
 			continue
 		}
 
-		c.messageChannel <- msg
+		msgID := utils.PulsarMessageIDtoString(msg.ID())
+
+		select {
+		case c.messageChannel <- msg:
+			logger.L().Ctx(ctx).Debug("pulsar message enqueued", helpers.String("msgId", msgID))
+		default:
+			logger.L().Ctx(ctx).Warning("pulsar message will not be processed because channel was closed", helpers.String("msgId", msgID))
+		}
 	}
 }
 
