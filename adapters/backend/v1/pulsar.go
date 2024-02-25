@@ -26,8 +26,6 @@ const (
 	SynchronizerServerProducerKey = "SynchronizerServerProducer"
 )
 
-var readersWg sync.WaitGroup
-
 // ******************************
 // * Pulsar Message Reader  *//
 // ******************************
@@ -36,6 +34,7 @@ type PulsarMessageReader struct {
 	name           string
 	reader         pulsar.Reader
 	messageChannel chan pulsar.Message
+	wg             sync.WaitGroup
 	workers        int
 }
 
@@ -88,11 +87,11 @@ func (c *PulsarMessageReader) Start(mainCtx context.Context, adapter adapters.Ad
 	go func() {
 		for w := 1; w <= c.workers; w++ {
 			logger.L().Info("starting to listening on pulsar message channel", helpers.Int("worker", w))
-			readersWg.Add(1)
+			c.wg.Add(1)
 			go c.listenOnMessageChannel(mainCtx, adapter)
 		}
 
-		readersWg.Wait()
+		c.wg.Wait()
 		c.stop()
 	}()
 }
@@ -128,7 +127,7 @@ func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
 }
 
 func (c *PulsarMessageReader) listenOnMessageChannel(ctx context.Context, adapter adapters.Adapter) {
-	defer readersWg.Done()
+	defer c.wg.Done()
 	for {
 		select {
 		case <-ctx.Done():
