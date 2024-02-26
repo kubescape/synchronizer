@@ -627,7 +627,7 @@ func initIntegrationTest(t *testing.T) *Test {
 	// synchronizer clients
 	createAndStartSynchronizerClient(t, cluster_1, clientConn1, synchronizerServer1)
 	createAndStartSynchronizerClient(t, cluster_2, clientConn2, synchronizerServer2)
-
+	time.Sleep(10 * time.Second)
 	return &Test{
 		ctx: ctx,
 		containers: map[string]testcontainers.Container{
