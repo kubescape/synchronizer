@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/kubescape/go-logger"
@@ -18,11 +19,12 @@ import (
 )
 
 type Adapter struct {
-	callbacks  domain.Callbacks
-	cfg        config.HTTPEndpoint
-	clients    map[string]adapters.Client
-	httpMux    *http.ServeMux
-	httpServer *http.Server
+	callbacks      domain.Callbacks
+	cfg            config.HTTPEndpoint
+	clients        map[string]adapters.Client
+	httpMux        *http.ServeMux
+	httpServer     *http.Server
+	supportedPaths map[string]map[string]map[string]map[string]bool
 }
 
 func NewHTTPEndpointAdapter(cfg config.HTTPEndpoint) *Adapter {
@@ -90,13 +92,62 @@ func (a *Adapter) Callbacks(_ context.Context) (domain.Callbacks, error) {
 func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logger.L().Ctx(r.Context()).Info("httpendpoint request", helpers.String("path", r.URL.Path))
 	// TODO: add tracing span
-	switch r.Method {
-	case http.MethodPost:
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		logger.L().Ctx(r.Context()).Warning("httpendpoint method not allowed", helpers.String("method", r.Method))
+	// 1. validate the request verb + path
+	if a.supportedPaths == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint supportedPaths is nil")
 		return
 	}
+	// 1. validate the request verb + path
+	// URL path should be in the format of /apis/v1/<group>/<version>/<resource-kind>
+	// 1.1. validate the request verb
+	if r.Method != http.MethodPut {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint request method not allowed", helpers.String("method", r.Method))
+		return
+	}
+	// 1.2. validate the request path
+	pathSlices := strings.Split(r.URL.Path, "/")
+	if len(pathSlices) != 6 {
+		w.WriteHeader(http.StatusBadRequest)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint request path is invalid", helpers.String("path", r.URL.Path))
+		return
+	}
+	if pathSlices[0] != "" || pathSlices[1] != "apis" || pathSlices[2] != "v1" || pathSlices[3] == "" || pathSlices[4] == "" || pathSlices[5] == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint error #2. Request path is invalid", helpers.String("path", r.URL.Path))
+		return
+	}
+	pathSlices = pathSlices[3:]
+	// 1.3. validate the request path against the supported paths
+	strategy := r.Method
+	switch r.Method {
+	case http.MethodPut:
+		strategy = string(domain.PatchStrategy)
+	case http.MethodPost:
+		strategy = string(domain.CopyStrategy)
+	}
+	if _, ok := a.supportedPaths[strategy]; !ok {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint request method is not supported", helpers.String("method", r.Method))
+		return
+	}
+	if _, ok := a.supportedPaths[strategy][pathSlices[0]]; !ok {
+		w.WriteHeader(http.StatusNotFound)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint request group path is not supported", helpers.String("path", r.URL.Path))
+		return
+	}
+	if _, ok := a.supportedPaths[strategy][pathSlices[0]][pathSlices[1]]; !ok {
+		w.WriteHeader(http.StatusNotFound)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint request version path is not supported", helpers.String("path", r.URL.Path))
+		return
+	}
+	if _, ok := a.supportedPaths[strategy][pathSlices[0]][pathSlices[1]][pathSlices[2]]; !ok {
+		w.WriteHeader(http.StatusNotFound)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint request resource path is not supported", helpers.String("path", r.URL.Path))
+		return
+	}
+
 	// read the request body
 	if r.Body == nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -117,6 +168,13 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	kindName := domain.FromUnstructured(obj)
+	// validate the request body against the URL path
+	// URL path should be in the format of /apis/v1/<group>/<version>/<resource-kind>
+	if kindName.Kind.Group != pathSlices[0] || kindName.Kind.Version != pathSlices[1] || kindName.Kind.Resource != pathSlices[2] {
+		w.WriteHeader(http.StatusBadRequest)
+		logger.L().Ctx(r.Context()).Warning("httpendpoint request body does not match the URL path", helpers.String("path", r.URL.Path), helpers.Interface("kindName", kindName))
+		return
+	}
 
 	// call the PutObject callback
 	if err := a.callbacks.PutObject(r.Context(), kindName, bodyBytes); err != nil {
@@ -128,22 +186,21 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Adapter) Start(ctx context.Context) error {
-	// for _, r := range a.cfg.Resources {
-	// 	client.RegisterCallbacks(ctx, a.callbacks)
-
-	// 	go func() {
-	// 		if err := backoff.RetryNotify(func() error {
-	// 			return client.Start(ctx)
-	// 		}, utils.NewBackOff(), func(err error, d time.Duration) {
-	// 			logger.L().Ctx(ctx).Warning("start client", helpers.Error(err),
-	// 				helpers.String("resource", client.res.Resource),
-	// 				helpers.String("retry in", d.String()))
-	// 		}); err != nil {
-	// 			logger.L().Ctx(ctx).Fatal("giving up start client", helpers.Error(err),
-	// 				helpers.String("resource", client.res.Resource))
-	// 		}
-	// 	}()
-	// }
+	// In order to validate the kind is supported by resources list in the config we will build a map of supported verbs, group, version and resource
+	// build the map:
+	a.supportedPaths = map[string]map[string]map[string]map[string]bool{}
+	for _, resource := range a.cfg.Resources {
+		if _, ok := a.supportedPaths[string(resource.Strategy)]; !ok {
+			a.supportedPaths[string(resource.Strategy)] = map[string]map[string]map[string]bool{}
+		}
+		if _, ok := a.supportedPaths[string(resource.Strategy)][resource.Group]; !ok {
+			a.supportedPaths[string(resource.Strategy)][resource.Group] = map[string]map[string]bool{}
+		}
+		if _, ok := a.supportedPaths[string(resource.Strategy)][resource.Group][resource.Version]; !ok {
+			a.supportedPaths[string(resource.Strategy)][resource.Group][resource.Version] = map[string]bool{}
+		}
+		a.supportedPaths[string(resource.Strategy)][resource.Group][resource.Version][resource.Resource] = true
+	}
 	go func() {
 		if err := a.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.L().Ctx(ctx).Fatal("httpendpoint server error", helpers.Error(err))
