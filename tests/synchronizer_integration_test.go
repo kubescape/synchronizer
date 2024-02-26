@@ -382,7 +382,7 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 						},
 						Containers: []corev1.Container{{
 							Name:  "apiserver",
-							Image: "quay.io/kubescape/storage:v0.0.57",
+							Image: "quay.io/kubescape/storage:v0.0.69",
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "data", MountPath: "/data"},
 								{Name: "ks-cloud-config", MountPath: "/etc/config"},
@@ -627,7 +627,7 @@ func initIntegrationTest(t *testing.T) *Test {
 	// synchronizer clients
 	createAndStartSynchronizerClient(t, cluster_1, clientConn1, synchronizerServer1)
 	createAndStartSynchronizerClient(t, cluster_2, clientConn2, synchronizerServer2)
-
+	time.Sleep(10 * time.Second) // important that we wait before starting the test because we might miss events if the watcher hasn't started yet
 	return &Test{
 		ctx: ctx,
 		containers: map[string]testcontainers.Container{
@@ -699,11 +699,6 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	var s3AppProfile v1beta1.ApplicationProfile
 	err = json.Unmarshal(bytes, &s3AppProfile)
 	require.NoError(t, err)
-	// full applicationprofile should not match
-	assert.NotEqual(t, k8sAppProfile, &s3AppProfile)
-	// remove managed fields and last-applied-configuration annotation
-	k8sAppProfile.SetManagedFields(nil)
-	delete(k8sAppProfile.Annotations, "kubectl.kubernetes.io/last-applied-configuration")
 	assert.Equal(t, k8sAppProfile, &s3AppProfile)
 	// check how many times the get object message was sent
 	sentGetObject := grepCount(logFile.Name(), "sent get object message")
