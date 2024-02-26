@@ -56,4 +56,4 @@ jobs:
       - name: Run test
         run: |
           echo "machine github.com login git password ${{ secrets.INGESTERS_READ_TOKEN }}" > ~/.netrc
-          cd tests && go test ./... -run ${{ matrix.test }} --timeout=20m --tags=integration
+          cd tests && go test -v ./... -run ${{ matrix.test }} --timeout=20m --tags=integration
