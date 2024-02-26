@@ -27,6 +27,7 @@ type Backend struct {
 	PulsarConfig         *pulsarconfig.PulsarConfig  `mapstructure:"pulsarConfig"`
 	ProducerTopic        pulsarconnector.TopicName   `mapstructure:"producerTopic"`
 	ConsumerTopic        pulsarconnector.TopicName   `mapstructure:"consumerTopic"`
+	ConsumerWorkers      int                         `mapstructure:"consumerWorkers"`
 	Prometheus           *PrometheusConfig           `mapstructure:"prometheusConfig"`
 	ReconciliationTask   *ReconciliationTaskConfig   `mapstructure:"reconciliationTaskConfig"`
 }
