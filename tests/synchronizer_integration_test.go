@@ -699,11 +699,6 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	var s3AppProfile v1beta1.ApplicationProfile
 	err = json.Unmarshal(bytes, &s3AppProfile)
 	require.NoError(t, err)
-	// full applicationprofile should not match
-	assert.NotEqual(t, k8sAppProfile, &s3AppProfile)
-	// remove managed fields and last-applied-configuration annotation
-	k8sAppProfile.SetManagedFields(nil)
-	delete(k8sAppProfile.Annotations, "kubectl.kubernetes.io/last-applied-configuration")
 	assert.Equal(t, k8sAppProfile, &s3AppProfile)
 	// check how many times the get object message was sent
 	sentGetObject := grepCount(logFile.Name(), "sent get object message")
