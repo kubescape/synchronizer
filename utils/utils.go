@@ -7,13 +7,15 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/cenkalti/backoff/v4"
 	"net/http"
 	"net/http/pprof"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"time"
+
+	"github.com/cenkalti/backoff/v4"
+	"golang.org/x/mod/semver"
 
 	"github.com/SergJa/jsonhash"
 	"github.com/apache/pulsar-client-go/pulsar"
@@ -271,4 +273,19 @@ func NewBackOff() backoff.BackOff {
 	// never stop retrying (unless PermanentError is returned)
 	b.MaxElapsedTime = 0
 	return b
+}
+
+// GreaterOrEqualVersion returns true if a version is greater or equal to b
+func GreaterOrEqualVersion(a string, b string) bool {
+	return semver.Compare(a, b) >= 0
+}
+
+func IsBatchMessageSupported(version string) bool {
+	const minimumSupportedVersion = "v0.0.57"
+
+	if version == "" {
+		return false
+	}
+
+	return GreaterOrEqualVersion(version, minimumSupportedVersion)
 }
