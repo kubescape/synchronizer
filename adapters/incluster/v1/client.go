@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -30,6 +31,13 @@ import (
 )
 
 const envMultiplier = "EVENT_MULTIPLIER"
+
+var fieldsToRemove = map[string][][]string{
+	"default":   {},
+	"/v1/nodes": {{"status", "conditions"}},
+}
+
+var emptyPatch = regexp.MustCompile(`\{"metadata":\{"resourceVersion":"(\d+)"\}\}`)
 
 type BatchProcessingFunc func(context.Context, *Client, domain.BatchItems) error
 
@@ -282,6 +290,10 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObj
 			if err != nil {
 				return fmt.Errorf("create merge patch: %w", err)
 			}
+			// skip patch containing only resource version
+			if emptyPatch.Match(patch) {
+				return nil
+			}
 			err = c.callbacks.PatchObject(ctx, id, checksum, patch)
 			if err != nil {
 				return fmt.Errorf("send patch object: %w", err)
@@ -329,7 +341,7 @@ func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject [
 	if err != nil {
 		return fmt.Errorf("get resource: %w", err)
 	}
-	newObject, err := utils.FilterAndMarshal(obj)
+	newObject, err := c.filterAndMarshal(obj)
 	if err != nil {
 		return fmt.Errorf("marshal resource: %w", err)
 	}
@@ -353,7 +365,7 @@ func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum s
 	if err != nil {
 		return nil, fmt.Errorf("get resource: %w", err)
 	}
-	object, err := utils.FilterAndMarshal(obj)
+	object, err := c.filterAndMarshal(obj)
 	if err != nil {
 		return nil, fmt.Errorf("marshal resource: %w", err)
 	}
@@ -421,7 +433,7 @@ func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, e
 	if err != nil {
 		return nil, fmt.Errorf("get resource: %w", err)
 	}
-	object, err := utils.FilterAndMarshal(obj)
+	object, err := c.filterAndMarshal(obj)
 	if err != nil {
 		return nil, fmt.Errorf("marshal resource: %w", err)
 	}
@@ -456,7 +468,7 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 		if c.multiplier > 0 {
 			c.multiplyVerifyObject(ctx, id, obj)
 		} else {
-			newObject, err := utils.FilterAndMarshal(obj)
+			newObject, err := c.filterAndMarshal(obj)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
 				continue
@@ -485,7 +497,7 @@ func (c *Client) multiplyVerifyObject(ctx context.Context, id domain.KindName, o
 				obj.SetLabels(labels)
 			}
 		}
-		newObject, err := utils.FilterAndMarshal(obj)
+		newObject, err := c.filterAndMarshal(obj)
 		if err != nil {
 			logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
 			continue
@@ -498,15 +510,27 @@ func (c *Client) multiplyVerifyObject(ctx context.Context, id domain.KindName, o
 	}
 }
 
+func (c *Client) filterAndMarshal(d *unstructured.Unstructured) ([]byte, error) {
+	utils.RemoveManagedFields(d)
+	fields, ok := fieldsToRemove[c.kind.String()]
+	if !ok {
+		fields = fieldsToRemove["default"]
+	}
+	if err := utils.RemoveSpecificFields(d, fields); err != nil {
+		return nil, fmt.Errorf("remove specific fields: %w", err)
+	}
+	return d.MarshalJSON()
+}
+
 func (c *Client) getObjectFromUnstructured(d *unstructured.Unstructured) ([]byte, error) {
 	if c.res.Group == "spdx.softwarecomposition.kubescape.io" {
 		obj, err := c.getResource(d.GetNamespace(), d.GetName())
 		if err != nil {
 			return nil, fmt.Errorf("get resource: %w", err)
 		}
-		return utils.FilterAndMarshal(obj)
+		return c.filterAndMarshal(obj)
 	}
-	return utils.FilterAndMarshal(d)
+	return c.filterAndMarshal(d)
 }
 
 // Batch processing functions
@@ -612,7 +636,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 			ResourceVersion: resourceVersion,
 		}
 
-		newObject, marshalErr := utils.FilterAndMarshal(&item)
+		newObject, marshalErr := c.filterAndMarshal(&item)
 		if marshalErr != nil {
 			err = multierr.Append(err, fmt.Errorf("marshal resource: %w", marshalErr))
 			continue

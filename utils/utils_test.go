@@ -3,7 +3,6 @@ package utils
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"testing"
 
 	"github.com/kinbiko/jsonassert"
@@ -11,17 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
-
-func fileContent(path string) []byte {
-	b, _ := os.ReadFile(path)
-	return b
-}
-func fileToUnstructured(path string) *unstructured.Unstructured {
-	b, _ := os.ReadFile(path)
-	u := &unstructured.Unstructured{}
-	_ = u.UnmarshalJSON(b)
-	return u
-}
 
 func TestCanonicalHash(t *testing.T) {
 	tests := []struct {
@@ -47,7 +35,7 @@ func TestCanonicalHash(t *testing.T) {
 		},
 		{
 			name: "pod",
-			in:   fileContent("testdata/pod.json"),
+			in:   FileContent("testdata/pod.json"),
 			want: "1ae52b23166388144c602360fb73dd68736e88943f6e16fab1bf07347484f8e8",
 		},
 	}
@@ -115,18 +103,50 @@ func TestRemoveManagedFields(t *testing.T) {
 	}{
 		{
 			name: "Remove fields from networkPolicy",
-			obj:  fileToUnstructured("testdata/networkPolicy.json"),
-			want: fileContent("testdata/networkPolicyCleaned.json"),
+			obj:  FileToUnstructured("testdata/networkPolicy.json"),
+			want: FileContent("testdata/networkPolicyCleaned.json"),
 		},
 		{
 			name: "Do nothing if no managedFields",
-			obj:  fileToUnstructured("testdata/pod.json"),
-			want: fileContent("testdata/pod.json"),
+			obj:  FileToUnstructured("testdata/pod.json"),
+			want: FileContent("testdata/pod.json"),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			removeManagedFields(tt.obj)
+			RemoveManagedFields(tt.obj)
+			ja := jsonassert.New(t)
+			b, err := json.Marshal(tt.obj.Object)
+			assert.NoError(t, err)
+			ja.Assertf(string(b), string(tt.want))
+		})
+	}
+}
+
+func TestRemoveSpecificFields(t *testing.T) {
+	tests := []struct {
+		name   string
+		fields [][]string
+		obj    *unstructured.Unstructured
+		want   []byte
+	}{
+		{
+			name:   "remove fields from node",
+			fields: [][]string{{"status", "conditions"}},
+			obj:    FileToUnstructured("testdata/node.json"),
+			want:   FileContent("testdata/nodeCleaned.json"),
+		},
+		{
+			name:   "remove no fields from pod",
+			fields: [][]string{},
+			obj:    FileToUnstructured("testdata/pod.json"),
+			want:   FileContent("testdata/pod.json"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := RemoveSpecificFields(tt.obj, tt.fields)
+			assert.NoError(t, err)
 			ja := jsonassert.New(t)
 			b, err := json.Marshal(tt.obj.Object)
 			assert.NoError(t, err)

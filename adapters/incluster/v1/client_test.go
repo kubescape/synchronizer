@@ -2,6 +2,10 @@ package incluster
 
 import (
 	"context"
+	"testing"
+	"time"
+
+	"github.com/kinbiko/jsonassert"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
 	"github.com/stretchr/testify/assert"
@@ -18,8 +22,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
-	"testing"
-	"time"
 )
 
 var (
@@ -120,6 +122,76 @@ func TestClient_watchRetry(t *testing.T) {
 				}
 			}
 			assert.True(t, found)
+		})
+	}
+}
+
+func TestClient_filterAndMarshal(t *testing.T) {
+	type fields struct {
+		client              dynamic.Interface
+		account             string
+		cluster             string
+		kind                *domain.Kind
+		multiplier          int
+		callbacks           domain.Callbacks
+		res                 schema.GroupVersionResource
+		ShadowObjects       map[string][]byte
+		Strategy            domain.Strategy
+		batchProcessingFunc map[domain.BatchType]BatchProcessingFunc
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		obj     *unstructured.Unstructured
+		want    []byte
+		wantErr bool
+	}{
+		{
+			name: "filter pod (no modifications)",
+			fields: fields{
+				kind: domain.KindFromString(context.TODO(), "/v1/pods"),
+			},
+			obj:  utils.FileToUnstructured("../../../utils/testdata/pod.json"),
+			want: utils.FileContent("../../../utils/testdata/pod.json"),
+		},
+		{
+			name: "filter node",
+			fields: fields{
+				kind: domain.KindFromString(context.TODO(), "/v1/nodes"),
+			},
+			obj:  utils.FileToUnstructured("../../../utils/testdata/node.json"),
+			want: utils.FileContent("testdata/nodeFiltered.json"),
+		},
+		{
+			name: "filter networkPolicy",
+			fields: fields{
+				kind: domain.KindFromString(context.TODO(), "networking.k8s.io/v1/NetworkPolicy"),
+			},
+			obj:  utils.FileToUnstructured("../../../utils/testdata/networkPolicy.json"),
+			want: utils.FileContent("../../../utils/testdata/networkPolicyCleaned.json"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Client{
+				client:              tt.fields.client,
+				account:             tt.fields.account,
+				cluster:             tt.fields.cluster,
+				kind:                tt.fields.kind,
+				multiplier:          tt.fields.multiplier,
+				callbacks:           tt.fields.callbacks,
+				res:                 tt.fields.res,
+				ShadowObjects:       tt.fields.ShadowObjects,
+				Strategy:            tt.fields.Strategy,
+				batchProcessingFunc: tt.fields.batchProcessingFunc,
+			}
+			got, err := c.filterAndMarshal(tt.obj)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("filterAndMarshal() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			ja := jsonassert.New(t)
+			ja.Assertf(string(got), string(tt.want))
 		})
 	}
 }
