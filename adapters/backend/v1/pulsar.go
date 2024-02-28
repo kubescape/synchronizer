@@ -339,13 +339,13 @@ func NewPulsarMessageProducer(cfg config.Config, pulsarClient pulsarconnector.Cl
 }
 
 func (p *PulsarMessageProducer) ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte) error {
-	producerMessage := newProducerMessage(SynchronizerServerProducerKey, id.Account, id.Cluster, eventType, payload)
+	producerMessage := NewProducerMessage(SynchronizerServerProducerKey, id.Account, id.Cluster, eventType, payload)
 	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
 	return nil
 }
 
 func (p *PulsarMessageProducer) ProduceMessageWithoutIdentifier(ctx context.Context, eventType string, payload []byte) error {
-	producerMessage := newProducerMessage(SynchronizerServerProducerKey, "", "", eventType, payload)
+	producerMessage := NewProducerMessage(SynchronizerServerProducerKey, "", "", eventType, payload)
 	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
 	return nil
 }
@@ -370,7 +370,7 @@ func logPulsarSyncAsyncErrors(msgID pulsar.MessageID, message *pulsar.ProducerMe
 	}
 }
 
-func newProducerMessage(producerMessageKey, account, cluster, eventType string, payload []byte) *pulsar.ProducerMessage {
+func NewProducerMessage(producerMessageKey, account, cluster, eventType string, payload []byte) *pulsar.ProducerMessage {
 	producerMessageProperties := map[string]string{
 		messaging.MsgPropTimestamp: time.Now().Format(time.RFC3339Nano),
 		messaging.MsgPropEvent:     eventType,
