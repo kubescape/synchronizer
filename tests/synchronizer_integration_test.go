@@ -4,12 +4,14 @@
 package tests
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -49,6 +51,7 @@ import (
 	"github.com/kubescape/go-logger/helpers"
 	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
 	spdxv1beta1client "github.com/kubescape/storage/pkg/generated/clientset/versioned/typed/softwarecomposition/v1beta1"
+	"github.com/kubescape/synchronizer/adapters/httpendpoint/v1"
 	"github.com/kubescape/synchronizer/adapters/incluster/v1"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/stretchr/testify/assert"
@@ -108,6 +111,7 @@ type TestKubernetesCluster struct {
 	// synchronizer
 	syncClient                *core.Synchronizer
 	syncClientAdapter         *incluster.Adapter
+	syncHTTPAdpater           *httpendpoint.Adapter
 	syncClientContextCancelFn context.CancelFunc
 
 	clientConn net.Conn
@@ -503,12 +507,14 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 	newConn := func() (net.Conn, error) {
 		return clientConn, nil
 	}
+	httpAdapter := httpendpoint.NewHTTPEndpointAdapter(clientCfg.HTTPEndpoint)
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
 
-	cluster.syncClient, err = core.NewSynchronizerClient(ctx, []adapters.Adapter{clientAdapter}, clientConn, newConn)
+	cluster.syncClient, err = core.NewSynchronizerClient(ctx, []adapters.Adapter{clientAdapter, httpAdapter}, clientConn, newConn)
 	require.NoError(t, err)
 	cluster.syncClientAdapter = clientAdapter
+	cluster.syncHTTPAdpater = httpAdapter
 	cluster.clientConn = clientConn
 	cluster.syncClientContextCancelFn = cancel
 
@@ -1175,4 +1181,17 @@ func TestSynchronizer_TC12(t *testing.T) {
 
 	// tear down
 	tearDown(td)
+}
+
+// TestSynchronizer_TC13_HTTPEndpoint: Test the HTTP endpoint of the synchronizer
+// Try to send an alert and see the message in Pulsar (we have example of producing)
+func TestSynchronizer_TC13_HTTPEndpoint(t *testing.T) {
+	td := initIntegrationTest(t)
+	defer tearDown(td)
+	// send tests/mockdata/alert.yaml to the synchronizer
+	alertBytes, err := os.ReadFile("../tests/mockdata/alert.json")
+	require.NoError(t, err)
+	resp, err := http.Post("http://localhost:8089/apis/v1/test-ks/v1/alerts", "application/json", bytes.NewReader(alertBytes))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 }

@@ -92,21 +92,21 @@ func (a *Adapter) Callbacks(_ context.Context) (domain.Callbacks, error) {
 func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logger.L().Ctx(r.Context()).Info("httpendpoint request", helpers.String("path", r.URL.Path))
 	// TODO: add tracing span
-	// 1. validate the request verb + path
+	// validate the request verb + path
 	if a.supportedPaths == nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		logger.L().Ctx(r.Context()).Warning("httpendpoint supportedPaths is nil")
 		return
 	}
-	// 1. validate the request verb + path
+	// validate the request verb + path
 	// URL path should be in the format of /apis/v1/<group>/<version>/<resource-kind>
-	// 1.1. validate the request verb
+	// validate the request verb
 	if r.Method != http.MethodPut {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		logger.L().Ctx(r.Context()).Warning("httpendpoint request method not allowed", helpers.String("method", r.Method))
 		return
 	}
-	// 1.2. validate the request path
+	// validate the request path
 	pathSlices := strings.Split(r.URL.Path, "/")
 	if len(pathSlices) != 6 {
 		w.WriteHeader(http.StatusBadRequest)
@@ -119,7 +119,7 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pathSlices = pathSlices[3:]
-	// 1.3. validate the request path against the supported paths
+	// validate the request path against the supported paths
 	strategy := r.Method
 	switch r.Method {
 	case http.MethodPut:
@@ -177,10 +177,19 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// call the PutObject callback
-	if err := a.callbacks.PutObject(r.Context(), kindName, bodyBytes); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		logger.L().Ctx(r.Context()).Warning("httpendpoint PutObject callback error", helpers.Error(err))
-		return
+	switch strategy {
+	case string(domain.PatchStrategy):
+		if err := a.callbacks.PatchObject(r.Context(), kindName, "", bodyBytes); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			logger.L().Ctx(r.Context()).Warning("httpendpoint PatchObject callback error", helpers.Error(err))
+			return
+		}
+	case string(domain.CopyStrategy):
+		if err := a.callbacks.PutObject(r.Context(), kindName, bodyBytes); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			logger.L().Ctx(r.Context()).Warning("httpendpoint PutObject callback error", helpers.Error(err))
+			return
+		}
 	}
 	w.WriteHeader(http.StatusAccepted)
 }
