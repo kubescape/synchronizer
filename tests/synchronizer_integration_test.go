@@ -125,14 +125,21 @@ func randomPorts(n int) []string {
 	for {
 		// random port number between lowPort and highPort
 		port := strconv.Itoa(rand.Intn(highPort-lowPort+1) + lowPort)
-		// try to listen on the port
-		listener, err := net.Listen("tcp", "0.0.0.0:"+port)
-		if err != nil {
-			// try again
-			continue
+		isFreePort := true
+		address := fmt.Sprintf("localhost:%s", port)
+		conn, err := net.DialTimeout("tcp", address, 1*time.Second)
+		if conn != nil {
+			conn.Close()
 		}
-		_ = listener.Close()
-		if err == nil && !ports.Contains(port) {
+		isFreePort = err != nil // port is available since we got no response
+		// try to listen on the port
+		// listener, err := net.Listen("tcp", "0.0.0.0:"+port)
+		// if err != nil {
+		// 	// try again
+		// 	continue
+		// }
+		// _ = listener.Close()
+		if isFreePort && !ports.Contains(port) {
 			// port is available
 			ports.Add(port)
 		}
