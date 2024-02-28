@@ -1188,10 +1188,12 @@ func TestSynchronizer_TC12(t *testing.T) {
 func TestSynchronizer_TC13_HTTPEndpoint(t *testing.T) {
 	td := initIntegrationTest(t)
 	defer tearDown(td)
-	// send tests/mockdata/alert.yaml to the synchronizer
+
 	alertBytes, err := os.ReadFile("../tests/mockdata/alert.json")
 	require.NoError(t, err)
+	http.DefaultClient.Timeout = 10 * time.Second
 	resp, err := http.Post("http://localhost:8089/apis/v1/test-ks/v1/alerts", "application/json", bytes.NewReader(alertBytes))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+
 }
