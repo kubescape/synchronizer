@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -26,14 +27,15 @@ type Adapter struct {
 	mainContext   context.Context
 }
 
-func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, rtc *config.ReconciliationTaskConfig) *Adapter {
+func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, cfg config.Backend) *Adapter {
 	adapter := &Adapter{
 		producer:      messageProducer,
 		mainContext:   mainContext,
 		connectionMap: make(map[string]domain.ClientIdentifier),
 	}
 
-	adapter.startReconciliationPeriodicTask(mainContext, rtc)
+	adapter.startReconciliationPeriodicTask(mainContext, cfg.ReconciliationTask)
+	adapter.startKeepalivePeriodicTask(mainContext, cfg.KeepAliveTask)
 	return adapter
 }
 
@@ -236,6 +238,64 @@ func (a *Adapter) startReconciliationPeriodicTask(mainCtx context.Context, cfg *
 					}
 				}
 				a.connMapMutex.Unlock()
+			}
+		}
+	}()
+}
+
+// startKeepalivePeriodicTask starts a periodic task that sends connected clients message every configurable minutes (interval).
+// If interval is 0 (not set), the task is disabled.
+func (a *Adapter) startKeepalivePeriodicTask(mainCtx context.Context, cfg *config.KeepAliveTaskConfig) {
+	if cfg == nil || cfg.TaskIntervalSeconds == 0 {
+		logger.L().Warning("keepalive task is disabled (interval is not set)")
+		return
+	}
+
+	go func() {
+		logger.L().Info("starting keepalive periodic task",
+			helpers.Int("TaskIntervalSeconds", cfg.TaskIntervalSeconds))
+		ticker := time.NewTicker(time.Duration(cfg.TaskIntervalSeconds) * time.Second)
+		for {
+			select {
+			case <-mainCtx.Done():
+				ticker.Stop()
+				return
+			case <-ticker.C:
+				a.connMapMutex.Lock()
+				logger.L().Info("running keepalive task for connected clients", helpers.Int("clients", len(a.connectionMap)))
+
+				msg := messaging.ConnectedClientsMessage{
+					Clients:   make([]messaging.ConnectedClient, len(a.connectionMap)),
+					Timestamp: time.Now(),
+					MsgId:     utils.NewMsgId(),
+				}
+				i := 0
+				for _, clientId := range a.connectionMap {
+					msg.Clients[i] = messaging.ConnectedClient{
+						Account:             clientId.Account,
+						Cluster:             clientId.Cluster,
+						SynchronizerVersion: clientId.Version,
+						HelmVersion:         clientId.HelmVersion,
+						ConnectionId:        clientId.ConnectionId,
+						ConnectionTime:      clientId.ConnectionTime,
+					}
+					i += 1
+				}
+				a.connMapMutex.Unlock()
+
+				logger.L().Debug("sending connected clients message to producer", helpers.String("msgid", msg.MsgId))
+				data, err := json.Marshal(msg)
+				if err != nil {
+					logger.L().Error("marshal connected clients message: %w", helpers.Error(err))
+					continue
+				}
+
+				err = a.producer.ProduceMessageWithoutIdentifier(mainCtx, messaging.MsgPropEventValueConnectedClientsMessage, data)
+				if err != nil {
+					logger.L().Error("failed to send connected clients message", helpers.String("error", err.Error()))
+				} else {
+					logger.L().Info("sent connected clients message", helpers.Int("clients", len(msg.Clients)))
+				}
 			}
 		}
 	}()

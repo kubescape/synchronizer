@@ -1,5 +1,7 @@
 package messaging
 
+import "time"
+
 const (
 	MsgPropTimestamp = "timestamp"
 	// MsgPropCluster is the property name for the cluster name
@@ -15,6 +17,7 @@ const (
 	MsgPropEventValuePutObjectMessage             = "PutObject"
 	MsgPropEventValueServerConnectedMessage       = "ServerConnected"
 	MsgPropEventValueReconciliationRequestMessage = "ReconciliationRequest"
+	MsgPropEventValueConnectedClientsMessage      = "ConnectedClients"
 )
 
 type DeleteObjectMessage struct {
@@ -122,4 +125,20 @@ type ReconciliationRequestObject struct {
 	ResourceVersion int    `json:"resourceVersion"`
 	Name            string `json:"name"`
 	Namespace       string `json:"namespace"`
+}
+
+type ConnectedClientsMessage struct {
+	Clients   []ConnectedClient `json:"clients"`
+	Timestamp time.Time         `json:"keepalive"`
+	Depth     int               `json:"depth"`
+	MsgId     string            `json:"msgId"`
+}
+
+type ConnectedClient struct {
+	Cluster             string    `json:"cluster"`
+	Account             string    `json:"account"`
+	SynchronizerVersion string    `json:"synchronizerVersion"`
+	HelmVersion         string    `json:"helmVersion"`
+	ConnectionId        string    `json:"connectionId"`
+	ConnectionTime      time.Time `json:"connectionTime"`
 }

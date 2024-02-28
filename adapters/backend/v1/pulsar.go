@@ -339,14 +339,13 @@ func NewPulsarMessageProducer(cfg config.Config, pulsarClient pulsarconnector.Cl
 }
 
 func (p *PulsarMessageProducer) ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte) error {
-	producerMessage := NewProducerMessage(SynchronizerServerProducerKey, id.Account, id.Cluster, eventType, payload)
+	producerMessage := newProducerMessage(SynchronizerServerProducerKey, id.Account, id.Cluster, eventType, payload)
 	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
 	return nil
 }
 
-// ProduceMessageForTest is a helper method to produce messages for testing purposes only using a specific producerMessageKey
-func (p *PulsarMessageProducer) ProduceMessageForTest(ctx context.Context, producerMessageKey string, id domain.ClientIdentifier, eventType string, payload []byte) error {
-	producerMessage := NewProducerMessage(producerMessageKey, id.Account, id.Cluster, eventType, payload)
+func (p *PulsarMessageProducer) ProduceMessageWithoutIdentifier(ctx context.Context, eventType string, payload []byte) error {
+	producerMessage := newProducerMessage(SynchronizerServerProducerKey, "", "", eventType, payload)
 	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
 	return nil
 }
@@ -371,13 +370,20 @@ func logPulsarSyncAsyncErrors(msgID pulsar.MessageID, message *pulsar.ProducerMe
 	}
 }
 
-func NewProducerMessage(producerMessageKey, account, cluster, eventType string, payload []byte) *pulsar.ProducerMessage {
+func newProducerMessage(producerMessageKey, account, cluster, eventType string, payload []byte) *pulsar.ProducerMessage {
 	producerMessageProperties := map[string]string{
 		messaging.MsgPropTimestamp: time.Now().Format(time.RFC3339Nano),
-		messaging.MsgPropAccount:   account,
-		messaging.MsgPropCluster:   cluster,
 		messaging.MsgPropEvent:     eventType,
 	}
+
+	if account != "" {
+		producerMessageProperties[messaging.MsgPropAccount] = account
+	}
+
+	if cluster != "" {
+		producerMessageProperties[messaging.MsgPropCluster] = cluster
+	}
+
 	return &pulsar.ProducerMessage{
 		Payload:    payload,
 		Properties: producerMessageProperties,
