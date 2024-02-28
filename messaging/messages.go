@@ -128,10 +128,11 @@ type ReconciliationRequestObject struct {
 }
 
 type ConnectedClientsMessage struct {
-	Clients   []ConnectedClient `json:"clients"`
-	Timestamp time.Time         `json:"keepalive"`
-	Depth     int               `json:"depth"`
-	MsgId     string            `json:"msgId"`
+	ServerName string            `json:"serverName"`
+	Clients    []ConnectedClient `json:"clients"`
+	Timestamp  time.Time         `json:"keepalive"`
+	Depth      int               `json:"depth"`
+	MsgId      string            `json:"msgId"`
 }
 
 type ConnectedClient struct {

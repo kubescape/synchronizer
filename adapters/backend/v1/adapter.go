@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -264,10 +265,12 @@ func (a *Adapter) startKeepalivePeriodicTask(mainCtx context.Context, cfg *confi
 				a.connMapMutex.Lock()
 				logger.L().Info("running keepalive task for connected clients", helpers.Int("clients", len(a.connectionMap)))
 
+				hostname, _ := os.Hostname()
 				msg := messaging.ConnectedClientsMessage{
-					Clients:   make([]messaging.ConnectedClient, len(a.connectionMap)),
-					Timestamp: time.Now(),
-					MsgId:     utils.NewMsgId(),
+					ServerName: hostname,
+					Clients:    make([]messaging.ConnectedClient, len(a.connectionMap)),
+					Timestamp:  time.Now(),
+					MsgId:      utils.NewMsgId(),
 				}
 				i := 0
 				for _, clientId := range a.connectionMap {
