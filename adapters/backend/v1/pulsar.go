@@ -354,6 +354,7 @@ func NewProducerMessage(producerMessageKey, account, cluster, eventType string, 
 		messaging.MsgPropAccount:   account,
 		messaging.MsgPropCluster:   cluster,
 		messaging.MsgPropEvent:     eventType,
+		// TODO: add gvr?
 	}
 	return &pulsar.ProducerMessage{
 		Payload:    payload,
