@@ -75,6 +75,15 @@ func TestLoadConfig(t *testing.T) {
 						{Group: "spdx.softwarecomposition.kubescape.io", Version: "v1beta1", Resource: "applicationprofiles", Strategy: "patch"},
 					},
 				},
+				HTTPEndpoint: HTTPEndpoint{
+					ServerPort:  "8089",
+					ClusterName: "cluster-1",
+					Account:     "11111111-2222-3333-4444-11111111",
+					AccessKey:   "xxxxxxxx-1111-1111-1111-xxxxxxxx",
+					Resources: []Resource{
+						{Group: "test-ks", Version: "v1", Resource: "alerts", Strategy: "copy"},
+					},
+				},
 			},
 		},
 		{
