@@ -1185,6 +1185,7 @@ func TestSynchronizer_TC13_HTTPEndpoint(t *testing.T) {
 	resp, err := http.Post("http://localhost:8089/apis/v1/test-ks/v1/alerts", "application/json", bytes.NewReader(alertBytes))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
 
 // waitForObjectInPostgres waits for the object to be present in postgres and returns the object metadata
 func waitForObjectInPostgres(t *testing.T, td *Test, account, clusterName, kind, namespace, name string) *armotypes.KubernetesObject {
