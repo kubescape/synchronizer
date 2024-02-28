@@ -219,6 +219,14 @@ func (a *Adapter) startReconciliationPeriodicTask(mainCtx context.Context, cfg *
 						logger.L().Error("expected to find client for reconciliation in clients map", helpers.String("clientId", clientId.String()))
 						continue
 					}
+
+					if !utils.IsBatchMessageSupported(clientId.Version) {
+						logger.L().Info("skipping reconciliation request for client because it does not support batch messages",
+							helpers.String("version", clientId.Version),
+							helpers.Interface("clientId", clientId.String()))
+						continue
+					}
+
 					clientCtx := utils.ContextFromIdentifiers(mainCtx, clientId)
 					err := client.SendReconciliationRequestMessage(clientCtx)
 					if err != nil {

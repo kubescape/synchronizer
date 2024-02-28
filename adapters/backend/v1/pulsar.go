@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
@@ -33,12 +34,19 @@ type PulsarMessageReader struct {
 	name           string
 	reader         pulsar.Reader
 	messageChannel chan pulsar.Message
+	wg             sync.WaitGroup
+	workers        int
 }
 
 var _ messaging.MessageReader = (*PulsarMessageReader)(nil)
 
 func NewPulsarMessageReader(cfg config.Config, pulsarClient pulsarconnector.Client) (*PulsarMessageReader, error) {
-	msgChannel := make(chan pulsar.Message)
+	workers := 10 // default
+	if cfg.Backend.ConsumerWorkers > 0 {
+		workers = cfg.Backend.ConsumerWorkers
+	}
+
+	msgChannel := make(chan pulsar.Message, workers)
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -66,6 +74,7 @@ func NewPulsarMessageReader(cfg config.Config, pulsarClient pulsarconnector.Clie
 		name:           readerName,
 		reader:         reader,
 		messageChannel: msgChannel,
+		workers:        workers,
 	}, nil
 }
 
@@ -74,9 +83,16 @@ func (c *PulsarMessageReader) Start(mainCtx context.Context, adapter adapters.Ad
 		logger.L().Info("starting to read messages from pulsar")
 		c.readerLoop(mainCtx)
 	}()
+
 	go func() {
-		logger.L().Info("starting to listening on pulsar message channel")
-		c.listenOnMessageChannel(mainCtx, adapter)
+		for w := 1; w <= c.workers; w++ {
+			logger.L().Info("starting to listening on pulsar message channel", helpers.Int("worker", w))
+			c.wg.Add(1)
+			go c.listenOnMessageChannel(mainCtx, adapter)
+		}
+
+		c.wg.Wait()
+		c.stop()
 	}()
 }
 
@@ -99,12 +115,19 @@ func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
 			continue
 		}
 
-		c.messageChannel <- msg
+		msgID := utils.PulsarMessageIDtoString(msg.ID())
+
+		select {
+		case c.messageChannel <- msg:
+			logger.L().Ctx(ctx).Debug("pulsar message enqueued", helpers.String("msgId", msgID))
+		default:
+			logger.L().Ctx(ctx).Warning("pulsar message will not be processed because channel was closed", helpers.String("msgId", msgID))
+		}
 	}
 }
 
 func (c *PulsarMessageReader) listenOnMessageChannel(ctx context.Context, adapter adapters.Adapter) {
-	defer c.stop()
+	defer c.wg.Done()
 	for {
 		select {
 		case <-ctx.Done():

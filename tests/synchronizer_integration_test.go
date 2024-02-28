@@ -42,6 +42,7 @@ import (
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"k8s.io/utils/ptr"
 
+	"github.com/armosec/armoapi-go/armotypes"
 	"github.com/armosec/armoapi-go/identifiers"
 	"github.com/armosec/armosec-infra/resourceprocessor"
 	"github.com/armosec/armosec-infra/s3connector"
@@ -386,7 +387,7 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 						},
 						Containers: []corev1.Container{{
 							Name:  "apiserver",
-							Image: "quay.io/kubescape/storage:v0.0.57",
+							Image: "quay.io/kubescape/storage:v0.0.69",
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "data", MountPath: "/data"},
 								{Name: "ks-cloud-config", MountPath: "/etc/config"},
@@ -633,7 +634,7 @@ func initIntegrationTest(t *testing.T) *Test {
 	// synchronizer clients
 	createAndStartSynchronizerClient(t, cluster_1, clientConn1, synchronizerServer1)
 	createAndStartSynchronizerClient(t, cluster_2, clientConn2, synchronizerServer2)
-
+	time.Sleep(10 * time.Second) // important that we wait before starting the test because we might miss events if the watcher hasn't started yet
 	return &Test{
 		ctx: ctx,
 		containers: map[string]testcontainers.Container{
@@ -685,11 +686,9 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	// add applicationprofile to k8s
 	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
-	time.Sleep(20 * time.Second)
+
 	// check object in postgres
-	objMetadata, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
-	require.NoError(t, err)
-	require.True(t, objFound)
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
 	assert.Equal(t, td.clusters[0].applicationprofileDesignators, objMetadata.Designators)
 	// check object in s3
 	var objPath s3connector.S3ObjectPath
@@ -707,11 +706,6 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	var s3AppProfile v1beta1.ApplicationProfile
 	err = json.Unmarshal(bytes, &s3AppProfile)
 	require.NoError(t, err)
-	// full applicationprofile should not match
-	assert.NotEqual(t, k8sAppProfile, &s3AppProfile)
-	// remove managed fields and last-applied-configuration annotation
-	k8sAppProfile.SetManagedFields(nil)
-	delete(k8sAppProfile.Annotations, "kubectl.kubernetes.io/last-applied-configuration")
 	assert.Equal(t, k8sAppProfile, &s3AppProfile)
 	// check how many times the get object message was sent
 	sentGetObject := grepCount(logFile.Name(), "sent get object message")
@@ -756,6 +750,10 @@ func TestSynchronizer_TC02_InCluster(t *testing.T) {
 	// add applicationprofile to k8s
 	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
+
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	checksumInPostgresBeforeModify := objMetadata.Checksum
+
 	time.Sleep(10 * time.Second)
 	// modify applicationprofile in k8s
 	k8sAppProfile, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
@@ -763,9 +761,10 @@ func TestSynchronizer_TC02_InCluster(t *testing.T) {
 	k8sAppProfile.Spec.Containers[0].Name = "nginx2"
 	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Update(context.TODO(), k8sAppProfile, metav1.UpdateOptions{})
 	require.NoError(t, err)
-	time.Sleep(10 * time.Second)
-	// get object path from postgres
-	objMetadata, _, _ := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+
+	// get object path from postgres, wait for checksum to change (we don't rely on resourceVersion because it's not implemented for ApplicationProfile)
+	objMetadata = waitForObjectInPostgresWithDifferentChecksum(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name, checksumInPostgresBeforeModify)
+
 	var objPath s3connector.S3ObjectPath
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
 	require.NoError(t, err)
@@ -833,17 +832,15 @@ func TestSynchronizer_TC04_InCluster(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in postgres
-	_, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
-	assert.NoError(t, err)
-	assert.True(t, objFound)
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	assert.NotNil(t, objMetadata)
 	// delete applicationprofile from k8s
 	err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
 	require.NoError(t, err)
-	time.Sleep(10 * time.Second)
+
 	// check object not in postgres
-	_, objFound, err = td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
-	assert.Error(t, err)
-	assert.False(t, objFound)
+	waitForObjectToBeDeletedInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+
 	// tear down
 	tearDown(td)
 }
@@ -887,9 +884,7 @@ func TestSynchronizer_TC05_InCluster(t *testing.T) {
 	time.Sleep(20 * time.Second)
 	// check objects in postgres
 	for _, kind := range []string{"spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", "apps/v1/deployments", "apps/v1/statefulsets"} {
-		_, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, kind, namespace, name)
-		assert.NoError(t, err)
-		assert.True(t, objFound)
+		_ = waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, kind, namespace, name)
 	}
 	// tear down
 	tearDown(td)
@@ -955,6 +950,10 @@ func TestSynchronizer_TC06(t *testing.T) {
 	// add applicationprofile to k8s
 	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
+
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	checksumInPostgresBeforeModify := objMetadata.Checksum
+
 	time.Sleep(20 * time.Second)
 	// prepare to alter shadow object in client
 	appClient, err := td.clusters[0].syncClientAdapter.GetClient(domain.KindName{Kind: domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles")})
@@ -968,11 +967,9 @@ func TestSynchronizer_TC06(t *testing.T) {
 	require.NoError(t, err)
 	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Update(context.TODO(), k8sAppProfile, metav1.UpdateOptions{})
 	require.NoError(t, err)
-	time.Sleep(10 * time.Second)
-	// get object path from postgres
-	objMetadata, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
-	require.NoError(t, err)
-	require.True(t, objFound)
+
+	// get object path from postgres, wait for checksum to change (we don't rely on resourceVersion because it's not implemented for ApplicationProfile)
+	objMetadata = waitForObjectInPostgresWithDifferentChecksum(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name, checksumInPostgresBeforeModify)
 	var objPath s3connector.S3ObjectPath
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
 	require.NoError(t, err)
@@ -994,9 +991,9 @@ func TestSynchronizer_TC07(t *testing.T) {
 	// add applicationprofile to k8s
 	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
-	time.Sleep(10 * time.Second)
-	// get object path from postgres
-	objMetadata, _, _ := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+
 	var objPath s3connector.S3ObjectPath
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
 	require.NoError(t, err)
@@ -1035,9 +1032,8 @@ func TestSynchronizer_TC08(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(20 * time.Second)
 	// check object in postgres
-	_, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
-	assert.NoError(t, err)
-	assert.True(t, objFound)
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	assert.NotNil(t, objMetadata)
 	// tear down
 	tearDown(td)
 }
@@ -1101,14 +1097,15 @@ func TestSynchronizer_TC11(t *testing.T) {
 	td.s3.SetReturnError(true)
 	// add applicationprofile to k8s
 	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// re-enable S3Mock
 	td.s3.SetReturnError(false)
-	time.Sleep(10 * time.Second)
+
 	// check object in postgres
-	_, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
-	assert.NoError(t, err)
-	assert.True(t, objFound)
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	require.NotNil(t, objMetadata)
+
 	// tear down
 	tearDown(td)
 }
@@ -1129,17 +1126,14 @@ func TestSynchronizer_TC12(t *testing.T) {
 	createdAppProfileObj, err := cluster.storageclient.ApplicationProfiles(namespace).Create(context.TODO(), cluster.applicationprofile, metav1.CreateOptions{})
 
 	// wait for the object to be created in postgres
-	time.Sleep(10 * time.Second)
-	_, objFound, err := td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, name)
-	assert.NoError(t, err)
-	assert.True(t, objFound)
+	_ = waitForObjectInPostgres(t, td, account, clusterName, kind, namespace, name)
 
 	// create a new dummy object directly in postgres (which does not exist in k8s) and confirm it is there
 	toBeDeletedName := name + "test"
 	bytes, _ := json.Marshal(createdAppProfileObj)
 	err = td.processor.Store(account, clusterName, kind, namespace, toBeDeletedName, bytes)
 	assert.NoError(t, err)
-	_, objFound, err = td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, toBeDeletedName)
+	_, objFound, err := td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, toBeDeletedName)
 	assert.NoError(t, err)
 	assert.True(t, objFound)
 
@@ -1171,13 +1165,9 @@ func TestSynchronizer_TC12(t *testing.T) {
 	time.Sleep(10 * time.Second)
 
 	// check that object is back in postgres
-	_, objFound, err = td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, name)
-	assert.NoError(t, err)
-	assert.True(t, objFound)
-	// check that object deleted from postgres
-	_, objFound, err = td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, toBeDeletedName)
-	assert.Error(t, err)
-	assert.False(t, objFound)
+	_ = waitForObjectInPostgres(t, td, account, clusterName, kind, namespace, name)
+	// check that object is deleted from postgres
+	waitForObjectToBeDeletedInPostgres(t, td, account, clusterName, kind, namespace, toBeDeletedName)
 
 	// tear down
 	tearDown(td)
@@ -1196,4 +1186,49 @@ func TestSynchronizer_TC13_HTTPEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
+// waitForObjectInPostgres waits for the object to be present in postgres and returns the object metadata
+func waitForObjectInPostgres(t *testing.T, td *Test, account, clusterName, kind, namespace, name string) *armotypes.KubernetesObject {
+	return waitForObjectInPostgresWithDifferentChecksum(t, td, account, clusterName, kind, namespace, name, "")
+}
+
+// waitForObjectInPostgres waits for the object to be present in postgres and returns the object metadata
+func waitForObjectToBeDeletedInPostgres(t *testing.T, td *Test, account, clusterName, kind, namespace, name string) {
+	var objFound bool
+	var err error
+	for i := 0; i < 10; i++ {
+		_, objFound, err = td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, name)
+		if err != nil && !objFound {
+			return
+		}
+		time.Sleep(10 * time.Second)
+	}
+	require.False(t, objFound, "Object found in postgres")
+	require.Error(t, err)
+}
+
+func waitForObjectInPostgresWithDifferentChecksum(t *testing.T, td *Test, account, clusterName, kind, namespace, name, checksum string) *armotypes.KubernetesObject {
+	var objFound bool
+	var objMetadata *armotypes.KubernetesObject
+	var err error
+	for i := 0; i < 10; i++ {
+		objMetadata, objFound, err = td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, name)
+		if objFound {
+			if checksum == "" {
+				break
+			}
+
+			if objMetadata.Checksum != checksum {
+				break
+			}
+		}
+		time.Sleep(10 * time.Second)
+	}
+	require.True(t, objFound, "Object not found in postgres")
+	require.NoError(t, err)
+	require.NotNil(t, objMetadata)
+	if checksum != "" {
+		require.NotEqual(t, checksum, objMetadata.Checksum, "expected object with different checksum in postgres")
+	}
+
+	return objMetadata
 }
