@@ -31,6 +31,7 @@ type Backend struct {
 	ConsumerWorkers      int                         `mapstructure:"consumerWorkers"`
 	Prometheus           *PrometheusConfig           `mapstructure:"prometheusConfig"`
 	ReconciliationTask   *ReconciliationTaskConfig   `mapstructure:"reconciliationTaskConfig"`
+	KeepAliveTask        *KeepAliveTaskConfig        `mapstructure:"keepAliveTaskConfig"`
 }
 
 type InCluster struct {
@@ -70,6 +71,10 @@ type PrometheusConfig struct {
 type ReconciliationTaskConfig struct {
 	TaskIntervalSeconds           int `mapstructure:"taskIntervalSeconds"`
 	IntervalFromConnectionSeconds int `mapstructure:"intervalFromConnectionSeconds"`
+}
+
+type KeepAliveTaskConfig struct {
+	TaskIntervalSeconds int `mapstructure:"taskIntervalSeconds"`
 }
 
 // Kind returns group/version/resource as a string.
