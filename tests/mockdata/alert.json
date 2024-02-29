@@ -1,6 +1,6 @@
 {
   "apiVersion": "test-ks/v1",
-  "kind": "alert",
+  "kind": "alerts",
   "metadata": {
     "name": "alert"
   },
