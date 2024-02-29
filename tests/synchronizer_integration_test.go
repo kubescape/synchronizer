@@ -506,6 +506,18 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 	clientCfg.InCluster.ClusterName = cluster.cluster
 	clientCfg.InCluster.Account = cluster.account
 	clientCfg.InCluster.ServerUrl = syncServer.serverUrl
+	clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
+		Group:    "",
+		Version:  "v1",
+		Resource: "configmaps",
+		Strategy: "copy",
+	})
+	clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
+		Group:    "",
+		Version:  "v1",
+		Resource: "secrets",
+		Strategy: "copy",
+	})
 
 	clientAdapter := incluster.NewInClusterAdapter(clientCfg.InCluster, dynamic.NewForConfigOrDie(cluster.clusterConfig))
 	newConn := func() (net.Conn, error) {
