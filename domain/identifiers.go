@@ -28,11 +28,12 @@ func (c KindName) String() string {
 }
 
 func FromUnstructured(u *unstructured.Unstructured) KindName {
+	// TODO: tests
 	if u == nil {
 		logger.L().Error("Unable to convert nil unstructured to KindName")
 		return KindName{}
 	}
-	apiVerSlices := strings.Split(u.GetAPIVersion(), "/")
+	apiVerSlices := strings.Split(strings.ToLower(u.GetAPIVersion()), "/")
 	if len(apiVerSlices) == 0 {
 		logger.L().Error("Unable to convert apiVersion to KindName", helpers.String("apiVersion", u.GetAPIVersion()))
 		return KindName{}
@@ -43,12 +44,12 @@ func FromUnstructured(u *unstructured.Unstructured) KindName {
 
 	return KindName{
 		Kind: &Kind{
-			Resource: u.GetKind(),
+			Resource: strings.ToLower(u.GetKind()),
 			Group:    apiVerSlices[0],
 			Version:  apiVerSlices[1],
 		},
-		Name:            u.GetName(),
-		Namespace:       u.GetNamespace(),
+		Name:            strings.ToLower(u.GetName()),
+		Namespace:       strings.ToLower(u.GetNamespace()),
 		ResourceVersion: ToResourceVersion(u.GetResourceVersion()),
 	}
 
