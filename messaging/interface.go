@@ -9,7 +9,7 @@ import (
 
 type MessageProducer interface {
 	// ProduceMessage produces a message to a messaging system
-	ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte) error
+	ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte, optionalProperties ...map[string]string) error
 }
 
 type MessageReader interface {

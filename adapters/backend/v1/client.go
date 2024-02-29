@@ -193,7 +193,7 @@ func (c *Client) sendDeleteObjectMessage(ctx context.Context, id domain.KindName
 		return fmt.Errorf("marshal delete object message: %w", err)
 	}
 
-	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValueDeleteObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValueDeleteObjectMessage, data, id.ToCustomProperties())
 }
 
 func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, baseObject []byte) error {
@@ -223,7 +223,7 @@ func (c *Client) sendGetObjectMessage(ctx context.Context, id domain.KindName, b
 		return fmt.Errorf("marshal get object message: %w", err)
 	}
 
-	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValueGetObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValueGetObjectMessage, data, id.ToCustomProperties())
 }
 
 func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
@@ -255,7 +255,7 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 		return fmt.Errorf("marshal patch object message: %w", err)
 	}
 
-	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValuePatchObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValuePatchObjectMessage, data, id.ToCustomProperties())
 }
 
 func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, object []byte) error {
@@ -285,7 +285,7 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, o
 		return fmt.Errorf("marshal put object message: %w", err)
 	}
 
-	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValuePutObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValuePutObjectMessage, data, id.ToCustomProperties())
 }
 
 func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName, checksum string) error {
@@ -315,7 +315,7 @@ func (c *Client) sendVerifyObjectMessage(ctx context.Context, id domain.KindName
 		return fmt.Errorf("marshal verify object message: %w", err)
 	}
 
-	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValueVerifyObjectMessage, data)
+	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValueVerifyObjectMessage, data, id.ToCustomProperties())
 }
 
 func (c *Client) SendReconciliationRequestMessage(ctx context.Context) error {

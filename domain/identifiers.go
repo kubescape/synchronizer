@@ -17,6 +17,17 @@ type KindName struct {
 	ResourceVersion int
 }
 
+func (c KindName) ToCustomProperties() map[string]string {
+	return map[string]string{
+		"group":           c.Kind.Group,
+		"version":         c.Kind.Version,
+		"resource":        c.Kind.Resource,
+		"name":            c.Name,
+		"namespace":       c.Namespace,
+		"resourceVersion": strconv.Itoa(c.ResourceVersion),
+	}
+}
+
 func (c KindName) String() string {
 	var kind string
 	if c.Kind == nil {

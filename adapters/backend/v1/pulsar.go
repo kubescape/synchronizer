@@ -338,8 +338,8 @@ func NewPulsarMessageProducer(cfg config.Config, pulsarClient pulsarconnector.Cl
 	return &PulsarMessageProducer{producer: producer}, nil
 }
 
-func (p *PulsarMessageProducer) ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte) error {
-	producerMessage := NewProducerMessage(SynchronizerServerProducerKey, id.Account, id.Cluster, eventType, payload)
+func (p *PulsarMessageProducer) ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte, optionalProperties ...map[string]string) error {
+	producerMessage := NewProducerMessage(SynchronizerServerProducerKey, id.Account, id.Cluster, eventType, payload, optionalProperties...)
 	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
 	return nil
 }
@@ -353,6 +353,11 @@ func (p *PulsarMessageProducer) ProduceMessageForTest(ctx context.Context, produ
 
 func logPulsarSyncAsyncErrors(msgID pulsar.MessageID, message *pulsar.ProducerMessage, err error) {
 	var metricLabels prometheus.Labels
+	if msgID == nil {
+		metricLabels = prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueError}
+		logger.L().Error("got empty messageID from pulsar", helpers.Error(err))
+		return
+	}
 	if err != nil {
 		metricLabels = prometheus.Labels{prometheusStatusLabel: prometheusStatusLabelValueError}
 		logger.L().Error("failed to send message to pulsar",
@@ -371,14 +376,19 @@ func logPulsarSyncAsyncErrors(msgID pulsar.MessageID, message *pulsar.ProducerMe
 	}
 }
 
-func NewProducerMessage(producerMessageKey, account, cluster, eventType string, payload []byte) *pulsar.ProducerMessage {
+func NewProducerMessage(producerMessageKey, account, cluster, eventType string, payload []byte, optionalProperties ...map[string]string) *pulsar.ProducerMessage {
 	producerMessageProperties := map[string]string{
 		messaging.MsgPropTimestamp: time.Now().Format(time.RFC3339Nano),
 		messaging.MsgPropAccount:   account,
 		messaging.MsgPropCluster:   cluster,
 		messaging.MsgPropEvent:     eventType,
-		// TODO: add gvr?
 	}
+	for _, optionalProperty := range optionalProperties {
+		for k, v := range optionalProperty {
+			producerMessageProperties[k] = v
+		}
+	}
+
 	return &pulsar.ProducerMessage{
 		Payload:    payload,
 		Properties: producerMessageProperties,
