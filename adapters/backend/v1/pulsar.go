@@ -384,6 +384,7 @@ func NewProducerMessage(producerMessageKey, account, cluster, eventType string, 
 		for k, v := range optionalProperty {
 			producerMessageProperties[k] = v
 		}
+	}
 
 	if account != "" {
 		producerMessageProperties[messaging.MsgPropAccount] = account
