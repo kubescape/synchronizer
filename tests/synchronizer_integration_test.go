@@ -1188,7 +1188,7 @@ func TestSynchronizer_TC13_HTTPEndpoint(t *testing.T) {
 
 	alertBytes, err := os.ReadFile("../tests/mockdata/alert.json")
 	require.NoError(t, err)
-	http.DefaultClient.Timeout = 10 * time.Second
+	// http.DefaultClient.Timeout = 10 * time.Second
 	for httpAdapterIdx := range td.clusters {
 		syncHTTPAdpaterPort := td.clusters[httpAdapterIdx].syncHTTPAdpater.GetConfig().ServerPort
 		// check that the endpoint is up
@@ -1204,7 +1204,7 @@ func TestSynchronizer_TC13_HTTPEndpoint(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, http.StatusAccepted, resp.StatusCode)
 	}
-	// sending put object message to producer. account: b486ba4e-ffaa-4cd4-b885-b6d26cd13193; cluster: cluster1; kind: test-ks/v1/alerts; msgid: 124eaea5-195b-4b2b-a1e4-513d00092306; name: alert; object size: 420
+
 	// check the 2 messages are in pulsar
 	// open a reader:
 	reader, err := td.pulsarClient.CreateReader(pulsar.ReaderOptions{
@@ -1215,18 +1215,30 @@ func TestSynchronizer_TC13_HTTPEndpoint(t *testing.T) {
 	defer reader.Close()
 	// read the messages
 	var messages []pulsar.Message
-	for i := 0; i < 2; i++ {
+	for len(messages) < 2 {
 		ctx, cancelFunc := context.WithTimeout(td.ctx, 10*time.Second)
 		defer cancelFunc()
 		msg, err := reader.Next(ctx)
 		require.NoError(t, err)
+		// compare the messages payload to alertBytes
+		putMsg := messaging.PutObjectMessage{}
+		err = json.Unmarshal(msg.Payload(), &putMsg)
+		require.NoError(t, err)
+		if putMsg.Object == nil || putMsg.Kind != "test-ks/v1/alerts" {
+			continue
+		}
+		// compare gvr
+		assert.Equal(t, putMsg.Kind, fmt.Sprintf("%s/%s/%s", msg.Properties()["group"], msg.Properties()["version"], msg.Properties()["resource"]))
+
+		assert.Equal(t, alertBytes, putMsg.Object)
+		assert.Equal(t, putMsg.Account, msg.Properties()["account"])
 		messages = append(messages, msg)
 	}
-	// compare the messages payload to alertBytes
-	for _, msg := range messages {
-		assert.Equal(t, alertBytes, msg.Payload())
-	}
 
+	assert.Equal(t, "cluster1", messages[0].Properties()["cluster"])
+	assert.Equal(t, "b486ba4e-ffaa-4cd4-b885-b6d26cd13193", messages[0].Properties()["account"])
+	assert.Equal(t, "cluster2", messages[1].Properties()["cluster"])
+	assert.Equal(t, "0757d22d-a9c1-4ca3-87b6-f2236f7f5885", messages[1].Properties()["account"])
 }
 
 // waitForObjectInPostgres waits for the object to be present in postgres and returns the object metadata
