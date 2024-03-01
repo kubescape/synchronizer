@@ -7,8 +7,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go.uber.org/multierr"
 	"net/http"
 	"net/http/pprof"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -254,7 +256,7 @@ func StringValueBigger(s1, s2 string) bool {
 	return i1 > i2
 }
 
-func removeManagedFields(d *unstructured.Unstructured) {
+func RemoveManagedFields(d *unstructured.Unstructured) {
 	// Remove managed fields
 	d.SetManagedFields(nil)
 	// Remove last-applied-configuration annotation
@@ -263,9 +265,15 @@ func removeManagedFields(d *unstructured.Unstructured) {
 	d.SetAnnotations(ann)
 }
 
-func FilterAndMarshal(d *unstructured.Unstructured) ([]byte, error) {
-	removeManagedFields(d)
-	return d.MarshalJSON()
+func RemoveSpecificFields(d *unstructured.Unstructured, fields [][]string) error {
+	var errs error
+	for _, f := range fields {
+		err := unstructured.SetNestedField(d.Object, nil, f...)
+		if err != nil {
+			errs = multierr.Append(errs, fmt.Errorf("failed to remove field %s: %w", f, err))
+		}
+	}
+	return errs
 }
 
 func NewBackOff() backoff.BackOff {
@@ -288,4 +296,16 @@ func IsBatchMessageSupported(version string) bool {
 	}
 
 	return GreaterOrEqualVersion(version, minimumSupportedVersion)
+}
+
+func FileToUnstructured(path string) *unstructured.Unstructured {
+	b, _ := os.ReadFile(path)
+	u := &unstructured.Unstructured{}
+	_ = u.UnmarshalJSON(b)
+	return u
+}
+
+func FileContent(path string) []byte {
+	b, _ := os.ReadFile(path)
+	return b
 }
