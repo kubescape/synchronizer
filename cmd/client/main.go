@@ -15,6 +15,8 @@ import (
 	backendUtils "github.com/kubescape/backend/pkg/utils"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	"github.com/kubescape/synchronizer/adapters"
+	"github.com/kubescape/synchronizer/adapters/httpendpoint/v1"
 	"github.com/kubescape/synchronizer/adapters/incluster/v1"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/core"
@@ -58,8 +60,24 @@ func main() {
 		cfg.InCluster.ServerUrl = serverUrl
 	}
 
-	cfg.InCluster.ValidateConfig()
 	updateClusterName(&cfg)
+	// init adapters
+	adapters := []adapters.Adapter{}
+	if err := cfg.InCluster.ValidateConfig(); err == nil {
+		k8sclient, err := utils.NewClient()
+		if err != nil {
+			logger.L().Fatal("unable to create k8s client", helpers.Error(err))
+		}
+		inClusterAdapter := incluster.NewInClusterAdapter(cfg.InCluster, k8sclient)
+		adapters = append(adapters, inClusterAdapter)
+	}
+	if err := cfg.HTTPEndpoint.ValidateConfig(); err == nil {
+		httpEndpointAdapter := httpendpoint.NewHTTPEndpointAdapter(cfg.HTTPEndpoint)
+		adapters = append(adapters, httpEndpointAdapter)
+	}
+	if len(adapters) == 0 {
+		logger.L().Fatal("no valid adapter found")
+	}
 
 	// to enable otel, set OTEL_COLLECTOR_SVC=otel-collector:4317
 	if otelHost, present := os.LookupEnv("OTEL_COLLECTOR_SVC"); present {
@@ -75,14 +93,6 @@ func main() {
 		Account: cfg.InCluster.Account,
 		Cluster: cfg.InCluster.ClusterName,
 	})
-
-	// k8s client
-	k8sclient, err := utils.NewClient()
-	if err != nil {
-		logger.L().Fatal("unable to create k8s client", helpers.Error(err))
-	}
-	// in-cluster adapter
-	adapter := incluster.NewInClusterAdapter(cfg.InCluster, k8sclient)
 
 	// authentication headers
 	version := os.Getenv("RELEASE")
@@ -128,7 +138,7 @@ func main() {
 	}
 
 	// synchronizer
-	synchronizer, err := core.NewSynchronizerClient(ctx, adapter, conn, newConn)
+	synchronizer, err := core.NewSynchronizerClient(ctx, adapters, conn, newConn)
 	if err != nil {
 		logger.L().Ctx(ctx).Fatal("failed to create synchronizer", helpers.Error(err))
 	}
@@ -144,5 +154,6 @@ func updateClusterName(cfg *config.Config) {
 	if present && clusterName != "" {
 		logger.L().Debug("cluster name from env", helpers.String("clusterName", clusterName))
 		cfg.InCluster.ClusterName = clusterName
+		cfg.HTTPEndpoint.ClusterName = clusterName
 	}
 }

@@ -4,12 +4,14 @@
 package tests
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -17,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apache/pulsar-client-go/pulsar"
 	ingesterutils "github.com/armosec/event-ingester-service/utils"
 	postgresConnector "github.com/armosec/postgres-connector"
 	postgresconnectordal "github.com/armosec/postgres-connector/dal"
@@ -24,6 +27,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
+	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/adapters/backend/v1"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/core"
@@ -49,6 +53,7 @@ import (
 	"github.com/kubescape/go-logger/helpers"
 	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
 	spdxv1beta1client "github.com/kubescape/storage/pkg/generated/clientset/versioned/typed/softwarecomposition/v1beta1"
+	"github.com/kubescape/synchronizer/adapters/httpendpoint/v1"
 	"github.com/kubescape/synchronizer/adapters/incluster/v1"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/stretchr/testify/assert"
@@ -108,6 +113,7 @@ type TestKubernetesCluster struct {
 	// synchronizer
 	syncClient                *core.Synchronizer
 	syncClientAdapter         *incluster.Adapter
+	syncHTTPAdpater           *httpendpoint.Adapter
 	syncClientContextCancelFn context.CancelFunc
 
 	clientConn net.Conn
@@ -120,14 +126,16 @@ func randomPorts(n int) []string {
 	for {
 		// random port number between lowPort and highPort
 		port := strconv.Itoa(rand.Intn(highPort-lowPort+1) + lowPort)
-		// try to listen on the port
-		listener, err := net.Listen("tcp", "0.0.0.0:"+port)
-		if err != nil {
-			// try again
-			continue
+		isFreePort := true
+		address := fmt.Sprintf("localhost:%s", port)
+		// Trying to listen on the port - cause the port to be in use and it takes some time for the OS to release it,
+		// So we need to check if the port is available by trying to connect to it
+		conn, err := net.DialTimeout("tcp", address, 1*time.Second)
+		if conn != nil {
+			conn.Close()
 		}
-		_ = listener.Close()
-		if err == nil && !ports.Contains(port) {
+		isFreePort = err != nil // port is available since we got no response
+		if isFreePort && !ports.Contains(port) {
 			// port is available
 			ports.Add(port)
 		}
@@ -489,7 +497,7 @@ func waitForStorage(t *testing.T, cluster *TestKubernetesCluster) {
 	require.NoError(t, err)
 }
 
-func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesCluster, clientConn net.Conn, syncServer *TestSynchronizerServer) {
+func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesCluster, clientConn net.Conn, syncServer *TestSynchronizerServer, httpAdapterPort string, watchDefaults bool) {
 	// client side
 	clientCfg, err := config.LoadConfig("../configuration/client")
 	require.NoError(t, err)
@@ -498,17 +506,41 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 	clientCfg.InCluster.ClusterName = cluster.cluster
 	clientCfg.InCluster.Account = cluster.account
 	clientCfg.InCluster.ServerUrl = syncServer.serverUrl
+	if watchDefaults {
+		clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "configmaps",
+			Strategy: "copy",
+		})
+		clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "secrets",
+			Strategy: "copy",
+		})
+		clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "serviceaccounts",
+			Strategy: "copy",
+		})
+	}
 
 	clientAdapter := incluster.NewInClusterAdapter(clientCfg.InCluster, dynamic.NewForConfigOrDie(cluster.clusterConfig))
 	newConn := func() (net.Conn, error) {
 		return clientConn, nil
 	}
+	httpAdapterConf := clientCfg.HTTPEndpoint
+	httpAdapterConf.ServerPort = httpAdapterPort
+	httpAdapter := httpendpoint.NewHTTPEndpointAdapter(httpAdapterConf)
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
 
-	cluster.syncClient, err = core.NewSynchronizerClient(ctx, clientAdapter, clientConn, newConn)
+	cluster.syncClient, err = core.NewSynchronizerClient(ctx, []adapters.Adapter{clientAdapter, httpAdapter}, clientConn, newConn)
 	require.NoError(t, err)
 	cluster.syncClientAdapter = clientAdapter
+	cluster.syncHTTPAdpater = httpAdapter
 	cluster.clientConn = clientConn
 	cluster.syncClientContextCancelFn = cancel
 
@@ -537,7 +569,7 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 	ctx, cancel := context.WithCancel(cluster.ctx)
 	serverAdapter := backend.NewBackendAdapter(ctx, pulsarProducer, config.Backend{})
 	pulsarReader.Start(ctx, serverAdapter)
-	synchronizerServer, err := core.NewSynchronizerServer(ctx, serverAdapter, serverConn)
+	synchronizerServer, err := core.NewSynchronizerServer(ctx, []adapters.Adapter{serverAdapter}, serverConn)
 	require.NoError(t, err)
 
 	// start server
@@ -567,7 +599,8 @@ func initIntegrationTest(t *testing.T) *Test {
 	cluster_2 := createK8sCluster(t, "cluster2", "0757d22d-a9c1-4ca3-87b6-f2236f7f5885")
 
 	// generate some random ports
-	ports := randomPorts(5)
+	// pulsar, pulsar-admin, postgres, sync1, sync2, sync-http1, sync-http2
+	ports := randomPorts(7)
 
 	// pulsar
 	pulsarC, pulsarUrl, pulsarAdminUrl := createPulsar(t, ctx, ports[0], ports[1])
@@ -625,8 +658,8 @@ func initIntegrationTest(t *testing.T) *Test {
 	synchronizerServer2 := createAndStartSynchronizerServer(t, pulsarUrl, pulsarAdminUrl, pulsarClient, serverConn2, ports[4], cluster_2)
 
 	// synchronizer clients
-	createAndStartSynchronizerClient(t, cluster_1, clientConn1, synchronizerServer1)
-	createAndStartSynchronizerClient(t, cluster_2, clientConn2, synchronizerServer2)
+	createAndStartSynchronizerClient(t, cluster_1, clientConn1, synchronizerServer1, ports[5], true)
+	createAndStartSynchronizerClient(t, cluster_2, clientConn2, synchronizerServer2, ports[6], true)
 	time.Sleep(10 * time.Second) // important that we wait before starting the test because we might miss events if the watcher hasn't started yet
 	return &Test{
 		ctx: ctx,
@@ -703,12 +736,16 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	// check how many times the get object message was sent
 	sentGetObject := grepCount(logFile.Name(), "sent get object message")
 	sentNewChecksum := grepCount(logFile.Name(), "sent new checksum message")
+	// check the pulsar topic backlog is empty
+	// td.ingesterConf.Pulsar.AdminUrl
 	// create a new client/server pair for cluster1
 	clientConn, serverConn := net.Pipe()
 	// FIXME hope randomPorts(1)[0] is not the same as one of the previous ports
-	synchronizerServer := createAndStartSynchronizerServer(t, td.ingesterConf.Pulsar.URL, td.ingesterConf.Pulsar.AdminUrl, td.pulsarClient, serverConn, randomPorts(1)[0], &td.clusters[0])
-	createAndStartSynchronizerClient(t, &td.clusters[0], clientConn, synchronizerServer)
+	newRandomPorts := randomPorts(2)
+	synchronizerServer := createAndStartSynchronizerServer(t, td.ingesterConf.Pulsar.URL, td.ingesterConf.Pulsar.AdminUrl, td.pulsarClient, serverConn, newRandomPorts[0], &td.clusters[0])
+	createAndStartSynchronizerClient(t, &td.clusters[0], clientConn, synchronizerServer, newRandomPorts[1], false)
 	time.Sleep(20 * time.Second)
+
 	// make sure we didn't request the same object again (as an answer to the verify object messages)
 	sentGetObjectAfter := grepCount(logFile.Name(), "sent get object message")
 	sentNewChecksumAfter := grepCount(logFile.Name(), "sent new checksum message")
@@ -1164,6 +1201,67 @@ func TestSynchronizer_TC12(t *testing.T) {
 
 	// tear down
 	tearDown(td)
+}
+
+// TestSynchronizer_TC13_HTTPEndpoint: Test the HTTP endpoint of the synchronizer
+// Try to send an alert and see the message in Pulsar (we have example of producing)
+func TestSynchronizer_TC13_HTTPEndpoint(t *testing.T) {
+	td := initIntegrationTest(t)
+	defer tearDown(td)
+
+	alertBytes, err := os.ReadFile("../tests/mockdata/alert.json")
+	require.NoError(t, err)
+	// http.DefaultClient.Timeout = 10 * time.Second
+	for httpAdapterIdx := range td.clusters {
+		syncHTTPAdpaterPort := td.clusters[httpAdapterIdx].syncHTTPAdpater.GetConfig().ServerPort
+		// check that the endpoint is up
+		for i := 0; i < 10; i++ {
+			resp, err := http.Get(fmt.Sprintf("http://localhost:%s/readyz", syncHTTPAdpaterPort))
+			if err == nil && resp.StatusCode == http.StatusOK {
+				break
+			}
+			time.Sleep(1 * time.Second)
+		}
+
+		resp, err := http.Post(fmt.Sprintf("http://localhost:%s/apis/v1/test-ks/v1/alerts", syncHTTPAdpaterPort), "application/json", bytes.NewReader(alertBytes))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusAccepted, resp.StatusCode)
+	}
+
+	// check the 2 messages are in pulsar
+	// open a reader:
+	reader, err := td.pulsarClient.CreateReader(pulsar.ReaderOptions{
+		Topic:          "persistent://armo/kubescape/synchronizer",
+		StartMessageID: pulsar.EarliestMessageID(),
+	})
+	require.NoError(t, err)
+	defer reader.Close()
+	// read the messages
+	var messages []pulsar.Message
+	for len(messages) < 2 {
+		ctx, cancelFunc := context.WithTimeout(td.ctx, 10*time.Second)
+		defer cancelFunc()
+		msg, err := reader.Next(ctx)
+		require.NoError(t, err)
+		// compare the messages payload to alertBytes
+		putMsg := messaging.PutObjectMessage{}
+		err = json.Unmarshal(msg.Payload(), &putMsg)
+		require.NoError(t, err)
+		if putMsg.Object == nil || putMsg.Kind != "test-ks/v1/alerts" {
+			continue
+		}
+		// compare gvr
+		assert.Equal(t, putMsg.Kind, fmt.Sprintf("%s/%s/%s", msg.Properties()["group"], msg.Properties()["version"], msg.Properties()["resource"]))
+
+		assert.Equal(t, alertBytes, putMsg.Object)
+		assert.Equal(t, putMsg.Account, msg.Properties()["account"])
+		messages = append(messages, msg)
+	}
+
+	assert.Equal(t, "cluster1", messages[0].Properties()["cluster"])
+	assert.Equal(t, "b486ba4e-ffaa-4cd4-b885-b6d26cd13193", messages[0].Properties()["account"])
+	assert.Equal(t, "cluster2", messages[1].Properties()["cluster"])
+	assert.Equal(t, "0757d22d-a9c1-4ca3-87b6-f2236f7f5885", messages[1].Properties()["account"])
 }
 
 // waitForObjectInPostgres waits for the object to be present in postgres and returns the object metadata

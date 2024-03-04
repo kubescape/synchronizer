@@ -40,7 +40,8 @@ jobs:
           "TestSynchronizer_TC09",
           "TestSynchronizer_TC10",
           "TestSynchronizer_TC11",
-          "TestSynchronizer_TC12"
+          "TestSynchronizer_TC12",
+          "TestSynchronizer_TC13_HTTPEndpoint",
         ]
     steps:
       - name: Checkout code

@@ -43,7 +43,9 @@ func (a *Adapter) GetClient(id domain.KindName) (adapters.Client, error) {
 func (a *Adapter) GetClientByKind(kind domain.Kind) adapters.Client {
 	client, ok := a.clients[kind.String()]
 	if !ok {
-		client = NewClient(a.k8sclient, a.cfg.Account, a.cfg.ClusterName, config.Resource{
+		logger.L().Error("client not found", helpers.String("kind", kind.String()))
+		// if client is not found, create an empty one to discard the messages from the server in callbacks if the kind is not in the list
+		client = NewClient(&NoOpDynamicClient{}, a.cfg.Account, a.cfg.ClusterName, config.Resource{
 			Group:    kind.Group,
 			Version:  kind.Version,
 			Resource: kind.Resource,

@@ -5,6 +5,7 @@ go 1.21.3
 toolchain go1.21.5
 
 require (
+	github.com/apache/pulsar-client-go v0.12.0
 	github.com/armosec/armoapi-go v0.0.329
 	github.com/armosec/armosec-infra v0.0.25
 	github.com/armosec/event-ingester-service v0.1.1-0.20240222135422-9a39c4515322
@@ -58,7 +59,6 @@ require (
 	github.com/anchore/stereoscope v0.0.0-20231117203853-3610f4ef3e83 // indirect
 	github.com/anchore/syft v0.98.0 // indirect
 	github.com/andybalholm/brotli v1.1.0 // indirect
-	github.com/apache/pulsar-client-go v0.12.0 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/ardielle/ardielle-go v1.5.2 // indirect
 	github.com/armosec/gojay v1.2.17 // indirect

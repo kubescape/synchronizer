@@ -1,0 +1,24 @@
+{
+  "apiVersion": "test-ks/v1",
+  "kind": "alerts",
+  "metadata": {
+    "name": "alert"
+  },
+  "spec": {
+    "alerts": [
+      {
+        "name": "alert1",
+        "description": "alert1",
+        "severity": "critical",
+        "condition": "true",
+        "actions": [
+          {
+            "name": "action1",
+            "description": "action1",
+            "type": "email"
+          }
+        ]
+      }
+    ]
+  }
+}
