@@ -497,7 +497,7 @@ func waitForStorage(t *testing.T, cluster *TestKubernetesCluster) {
 	require.NoError(t, err)
 }
 
-func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesCluster, clientConn net.Conn, syncServer *TestSynchronizerServer, httpAdapterPort string) {
+func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesCluster, clientConn net.Conn, syncServer *TestSynchronizerServer, httpAdapterPort string, watchDefaults bool) {
 	// client side
 	clientCfg, err := config.LoadConfig("../configuration/client")
 	require.NoError(t, err)
@@ -506,24 +506,26 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 	clientCfg.InCluster.ClusterName = cluster.cluster
 	clientCfg.InCluster.Account = cluster.account
 	clientCfg.InCluster.ServerUrl = syncServer.serverUrl
-	clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "configmaps",
-		Strategy: "copy",
-	})
-	clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "secrets",
-		Strategy: "copy",
-	})
-	clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "serviceaccounts",
-		Strategy: "copy",
-	})
+	if watchDefaults {
+		clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "configmaps",
+			Strategy: "copy",
+		})
+		clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "secrets",
+			Strategy: "copy",
+		})
+		clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "serviceaccounts",
+			Strategy: "copy",
+		})
+	}
 
 	clientAdapter := incluster.NewInClusterAdapter(clientCfg.InCluster, dynamic.NewForConfigOrDie(cluster.clusterConfig))
 	newConn := func() (net.Conn, error) {
@@ -656,8 +658,8 @@ func initIntegrationTest(t *testing.T) *Test {
 	synchronizerServer2 := createAndStartSynchronizerServer(t, pulsarUrl, pulsarAdminUrl, pulsarClient, serverConn2, ports[4], cluster_2)
 
 	// synchronizer clients
-	createAndStartSynchronizerClient(t, cluster_1, clientConn1, synchronizerServer1, ports[5])
-	createAndStartSynchronizerClient(t, cluster_2, clientConn2, synchronizerServer2, ports[6])
+	createAndStartSynchronizerClient(t, cluster_1, clientConn1, synchronizerServer1, ports[5], true)
+	createAndStartSynchronizerClient(t, cluster_2, clientConn2, synchronizerServer2, ports[6], true)
 	time.Sleep(10 * time.Second) // important that we wait before starting the test because we might miss events if the watcher hasn't started yet
 	return &Test{
 		ctx: ctx,
@@ -734,13 +736,16 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	// check how many times the get object message was sent
 	sentGetObject := grepCount(logFile.Name(), "sent get object message")
 	sentNewChecksum := grepCount(logFile.Name(), "sent new checksum message")
+	// check the pulsar topic backlog is empty
+	// td.ingesterConf.Pulsar.AdminUrl
 	// create a new client/server pair for cluster1
 	clientConn, serverConn := net.Pipe()
 	// FIXME hope randomPorts(1)[0] is not the same as one of the previous ports
 	newRandomPorts := randomPorts(2)
 	synchronizerServer := createAndStartSynchronizerServer(t, td.ingesterConf.Pulsar.URL, td.ingesterConf.Pulsar.AdminUrl, td.pulsarClient, serverConn, newRandomPorts[0], &td.clusters[0])
-	createAndStartSynchronizerClient(t, &td.clusters[0], clientConn, synchronizerServer, newRandomPorts[1])
+	createAndStartSynchronizerClient(t, &td.clusters[0], clientConn, synchronizerServer, newRandomPorts[1], false)
 	time.Sleep(20 * time.Second)
+
 	// make sure we didn't request the same object again (as an answer to the verify object messages)
 	sentGetObjectAfter := grepCount(logFile.Name(), "sent get object message")
 	sentNewChecksumAfter := grepCount(logFile.Name(), "sent new checksum message")
