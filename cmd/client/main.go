@@ -72,7 +72,7 @@ func main() {
 		adapters = append(adapters, inClusterAdapter)
 	}
 	if err := cfg.HTTPEndpoint.ValidateConfig(); err == nil {
-		httpEndpointAdapter := httpendpoint.NewHTTPEndpointAdapter(cfg.HTTPEndpoint)
+		httpEndpointAdapter := httpendpoint.NewHTTPEndpointAdapter(cfg)
 		adapters = append(adapters, httpEndpointAdapter)
 	}
 	if len(adapters) == 0 {
@@ -154,6 +154,5 @@ func updateClusterName(cfg *config.Config) {
 	if present && clusterName != "" {
 		logger.L().Debug("cluster name from env", helpers.String("clusterName", clusterName))
 		cfg.InCluster.ClusterName = clusterName
-		cfg.HTTPEndpoint.ClusterName = clusterName
 	}
 }
