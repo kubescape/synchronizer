@@ -43,11 +43,8 @@ type InCluster struct {
 }
 
 type HTTPEndpoint struct {
-	ServerPort  string     `mapstructure:"serverPort"`
-	ClusterName string     `mapstructure:"clusterName"`
-	Account     string     `mapstructure:"account"`
-	AccessKey   string     `mapstructure:"accessKey"`
-	Resources   []Resource `mapstructure:"resources"`
+	ServerPort string     `mapstructure:"serverPort"`
+	Resources  []Resource `mapstructure:"resources"`
 }
 
 type Resource struct {
@@ -148,15 +145,6 @@ func (c *InCluster) ValidateConfig() error {
 }
 
 func (c *HTTPEndpoint) ValidateConfig() error {
-	if c.AccessKey == "" {
-		return fmt.Errorf("access key is missing")
-	}
-	if c.Account == "" {
-		return fmt.Errorf("account is missing")
-	}
-	if c.ClusterName == "" {
-		return fmt.Errorf("cluster name is missing")
-	}
 	if c.ServerPort == "" {
 		return fmt.Errorf("server port is missing")
 	}

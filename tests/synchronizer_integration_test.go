@@ -531,9 +531,8 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 	newConn := func() (net.Conn, error) {
 		return clientConn, nil
 	}
-	httpAdapterConf := clientCfg.HTTPEndpoint
-	httpAdapterConf.ServerPort = httpAdapterPort
-	httpAdapter := httpendpoint.NewHTTPEndpointAdapter(httpAdapterConf)
+	clientCfg.HTTPEndpoint.ServerPort = httpAdapterPort
+	httpAdapter := httpendpoint.NewHTTPEndpointAdapter(clientCfg)
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
 
@@ -1213,7 +1212,7 @@ func TestSynchronizer_TC13_HTTPEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	// http.DefaultClient.Timeout = 10 * time.Second
 	for httpAdapterIdx := range td.clusters {
-		syncHTTPAdpaterPort := td.clusters[httpAdapterIdx].syncHTTPAdpater.GetConfig().ServerPort
+		syncHTTPAdpaterPort := td.clusters[httpAdapterIdx].syncHTTPAdpater.GetConfig().HTTPEndpoint.ServerPort
 		// check that the endpoint is up
 		for i := 0; i < 10; i++ {
 			resp, err := http.Get(fmt.Sprintf("http://localhost:%s/readyz", syncHTTPAdpaterPort))

@@ -77,10 +77,7 @@ func TestLoadConfig(t *testing.T) {
 					},
 				},
 				HTTPEndpoint: HTTPEndpoint{
-					ServerPort:  "8089",
-					ClusterName: "cluster-1",
-					Account:     "11111111-2222-3333-4444-11111111",
-					AccessKey:   "xxxxxxxx-1111-1111-1111-xxxxxxxx",
+					ServerPort: "8089",
 					Resources: []Resource{
 						{Group: "test-ks", Version: "v1", Resource: "alerts", Strategy: "copy"},
 					},

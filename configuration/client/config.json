@@ -33,9 +33,6 @@
   },
   "httpEndpoint": {
     "serverPort": "8089",
-    "clusterName": "cluster-1",
-    "account": "11111111-2222-3333-4444-11111111",
-    "accessKey": "xxxxxxxx-1111-1111-1111-xxxxxxxx",
     "resources": [
       {
         "group": "test-ks",

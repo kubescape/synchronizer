@@ -20,7 +20,7 @@ import (
 
 type Adapter struct {
 	callbacks      domain.Callbacks
-	cfg            config.HTTPEndpoint
+	cfg            config.Config
 	clients        map[string]adapters.Client
 	httpMux        *http.ServeMux
 	httpServer     *http.Server
@@ -28,14 +28,14 @@ type Adapter struct {
 	isStarted      bool
 }
 
-func NewHTTPEndpointAdapter(cfg config.HTTPEndpoint) *Adapter {
+func NewHTTPEndpointAdapter(cfg config.Config) *Adapter {
 	httpMux := http.NewServeMux()
 	httpMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%s", cfg.ServerPort),
+		Addr:         fmt.Sprintf(":%s", cfg.HTTPEndpoint.ServerPort),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -54,7 +54,7 @@ func NewHTTPEndpointAdapter(cfg config.HTTPEndpoint) *Adapter {
 // ensure that the Adapter struct satisfies the adapters.Adapter interface at compile-time
 var _ adapters.Adapter = (*Adapter)(nil)
 
-func (a *Adapter) GetConfig() config.HTTPEndpoint {
+func (a *Adapter) GetConfig() config.Config {
 	return a.cfg
 }
 
@@ -210,7 +210,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	// In order to validate the kind is supported by resources list in the config we will build a map of supported verbs, group, version and resource
 	// build the map:
 	a.supportedPaths = map[domain.Strategy]map[string]map[string]map[string]bool{}
-	for _, resource := range a.cfg.Resources {
+	for _, resource := range a.cfg.HTTPEndpoint.Resources {
 		lowerCaseStrategy := domain.Strategy(strings.ToLower(string(resource.Strategy)))
 		if _, ok := a.supportedPaths[lowerCaseStrategy]; !ok {
 			a.supportedPaths[lowerCaseStrategy] = map[string]map[string]map[string]bool{}
@@ -230,7 +230,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 		logger.L().Ctx(ctx).Info("httpendpoint server stopped")
 	}()
 	a.isStarted = true
-	logger.L().Ctx(ctx).Info("httpendpoint server started", helpers.String("port", a.cfg.ServerPort))
+	logger.L().Ctx(ctx).Info("httpendpoint server started", helpers.String("port", a.cfg.HTTPEndpoint.ServerPort))
 	return nil
 }
 
@@ -242,5 +242,5 @@ func (a *Adapter) Stop(ctx context.Context) error {
 }
 
 func (a *Adapter) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
-	return a.cfg.Account == id.Account && a.cfg.ClusterName == id.Cluster
+	return a.cfg.InCluster.Account == id.Account && a.cfg.InCluster.ClusterName == id.Cluster
 }
