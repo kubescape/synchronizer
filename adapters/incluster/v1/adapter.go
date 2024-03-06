@@ -45,7 +45,7 @@ func (a *Adapter) GetClientByKind(kind domain.Kind) adapters.Client {
 	if !ok {
 		logger.L().Error("client not found", helpers.String("kind", kind.String()))
 		// if client is not found, create an empty one to discard the messages from the server in callbacks if the kind is not in the list
-		client = NewClient(&NoOpDynamicClient{}, a.cfg.Account, a.cfg.ClusterName, config.Resource{
+		client = NewClient(&NoOpDynamicClient{}, a.cfg, config.Resource{
 			Group:    kind.Group,
 			Version:  kind.Version,
 			Resource: kind.Resource,
@@ -110,7 +110,7 @@ func (a *Adapter) Callbacks(_ context.Context) (domain.Callbacks, error) {
 
 func (a *Adapter) Start(ctx context.Context) error {
 	for _, r := range a.cfg.Resources {
-		client := NewClient(a.k8sclient, a.cfg.Account, a.cfg.ClusterName, r)
+		client := NewClient(a.k8sclient, a.cfg, r)
 		client.RegisterCallbacks(ctx, a.callbacks)
 		a.clients[r.String()] = client
 

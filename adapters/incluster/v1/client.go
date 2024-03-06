@@ -18,6 +18,7 @@ import (
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	helpersv1 "github.com/kubescape/k8s-interface/instanceidhandler/v1/helpers"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
@@ -30,7 +31,10 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
-const envMultiplier = "EVENT_MULTIPLIER"
+const (
+	envMultiplier                = "EVENT_MULTIPLIER"
+	kubescapeCustomResourceGroup = "spdx.softwarecomposition.kubescape.io"
+)
 
 var fieldsToRemove = map[string][][]string{
 	"default":   {},
@@ -50,6 +54,7 @@ type Client struct {
 	client              dynamic.Interface
 	account             string
 	cluster             string
+	operatorNamespace   string // the namespace where the kubescape operator is running
 	kind                *domain.Kind
 	multiplier          int
 	callbacks           domain.Callbacks
@@ -61,14 +66,15 @@ type Client struct {
 
 var errWatchClosed = errors.New("watch channel closed")
 
-func NewClient(client dynamic.Interface, account, cluster string, r config.Resource) *Client {
+func NewClient(client dynamic.Interface, cfg config.InCluster, r config.Resource) *Client {
 	res := schema.GroupVersionResource{Group: r.Group, Version: r.Version, Resource: r.Resource}
 	// get event multiplier from env, defaults to 0
 	multiplier, _ := strconv.Atoi(os.Getenv(envMultiplier))
 	return &Client{
-		account: account,
-		client:  client,
-		cluster: cluster,
+		account:           cfg.Account,
+		client:            client,
+		operatorNamespace: cfg.Namespace,
+		cluster:           cfg.ClusterName,
 		kind: &domain.Kind{
 			Group:    res.Group,
 			Version:  res.Version,
@@ -93,7 +99,7 @@ func (c *Client) Start(ctx context.Context) error {
 	// for our storage, we need to list all resources and get them one by one
 	// as list returns objects with empty spec
 	// and watch does not return existing objects
-	if c.res.Group == "spdx.softwarecomposition.kubescape.io" {
+	if c.res.Group == kubescapeCustomResourceGroup {
 		if err := backoff.RetryNotify(func() error {
 			var err error
 			watchOpts.ResourceVersion, err = c.getExistingStorageObjects(ctx)
@@ -118,7 +124,7 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 
 		// skip non-standalone resources
-		if hasParent(d) {
+		if c.isFiltered(d) {
 			continue
 		}
 		id := domain.KindName{
@@ -226,18 +232,18 @@ func multiplyEvent(event watch.Event, queue *utils.CooldownQueue, multiplier int
 		// change the workload-name label too - if applicable
 		labels := newEvent.Object.(*unstructured.Unstructured).GetLabels()
 		if labels != nil {
-			if workloadName, ok := labels["kubescape.io/workload-name"]; ok {
-				labels["kubescape.io/workload-name"] = fmt.Sprintf("%s-%d", workloadName, i)
+			if workloadName, ok := labels[helpersv1.NameMetadataKey]; ok {
+				labels[helpersv1.NameMetadataKey] = fmt.Sprintf("%s-%d", workloadName, i)
 				newEvent.Object.(*unstructured.Unstructured).SetLabels(labels)
 			}
 		}
 
 		annotations := newEvent.Object.(*unstructured.Unstructured).GetAnnotations()
 		if annotations != nil {
-			if wlid, ok := annotations["kubescape.io/wlid"]; ok {
+			if wlid, ok := annotations[helpersv1.WlidMetadataKey]; ok {
 
 				// workloadinterface.
-				annotations["kubescape.io/wlid"] = fmt.Sprintf("%s-%d", wlid, i)
+				annotations[helpersv1.WlidMetadataKey] = fmt.Sprintf("%s-%d", wlid, i)
 				newEvent.Object.(*unstructured.Unstructured).SetAnnotations(annotations)
 			}
 		}
@@ -245,6 +251,20 @@ func multiplyEvent(event watch.Event, queue *utils.CooldownQueue, multiplier int
 		newEvent.Object.(*unstructured.Unstructured).SetUID(types.UID(fmt.Sprintf("%s-%d", objectUID, i)))
 		queue.Enqueue(*newEvent)
 	}
+}
+
+// isFiltered returns true if workload should be filtered out.
+// filters out workloads that have a parent, unless they are in the kubescape-operator namespace
+func (c *Client) isFiltered(workload *unstructured.Unstructured) bool {
+	if workload == nil {
+		return false
+	}
+	// workload is not filtered if it is in the kubescape-operator namespace
+	if c.operatorNamespace != "" && workload.GetNamespace() == c.operatorNamespace {
+		return false
+	}
+	// for all other workloads, we filter out those that have a parent
+	return hasParent(workload)
 }
 
 // hasParent returns true if workload has a parent
@@ -492,8 +512,8 @@ func (c *Client) multiplyVerifyObject(ctx context.Context, id domain.KindName, o
 		// change the workload-name label too - if applicable
 		labels := obj.GetLabels()
 		if labels != nil {
-			if workloadName, ok := labels["kubescape.io/workload-name"]; ok {
-				labels["kubescape.io/workload-name"] = fmt.Sprintf("%s-%d", workloadName, i)
+			if workloadName, ok := labels[helpersv1.NameMetadataKey]; ok {
+				labels[helpersv1.NameMetadataKey] = fmt.Sprintf("%s-%d", workloadName, i)
 				obj.SetLabels(labels)
 			}
 		}
@@ -523,7 +543,7 @@ func (c *Client) filterAndMarshal(d *unstructured.Unstructured) ([]byte, error) 
 }
 
 func (c *Client) getObjectFromUnstructured(d *unstructured.Unstructured) ([]byte, error) {
-	if c.res.Group == "spdx.softwarecomposition.kubescape.io" {
+	if c.res.Group == kubescapeCustomResourceGroup {
 		obj, err := c.getResource(d.GetNamespace(), d.GetName())
 		if err != nil {
 			return nil, fmt.Errorf("get resource: %w", err)
@@ -620,8 +640,8 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 	for _, k := range clientItemsSet.Difference(serverItemsSet).ToSlice() {
 		item := clientItems[k]
 
-		if hasParent(&item) {
-			logger.L().Debug("reconciliation: resource missing in server has parent, skipping",
+		if c.isFiltered(&item) {
+			logger.L().Debug("reconciliation: resource missing in server should be filtered, skipping",
 				helpers.String("resource", c.kind.String()),
 				helpers.String("name", item.GetName()),
 				helpers.String("namespace", item.GetNamespace()))

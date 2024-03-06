@@ -39,6 +39,7 @@ func main() {
 	} else {
 		logger.L().Debug("cluster config loaded", helpers.String("clusterName", clusterConfig.ClusterName))
 		cfg.InCluster.ClusterName = clusterConfig.ClusterName
+		cfg.InCluster.Namespace = clusterConfig.Namespace
 	}
 
 	// load credentials (access key & account)
