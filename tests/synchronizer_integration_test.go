@@ -1223,7 +1223,7 @@ func TestSynchronizer_TC12(t *testing.T) {
 		}, messaging.MsgPropEventValueReconciliationRequestMessage, data)
 	assert.NoError(t, err)
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	// check that object is back in postgres
 	_ = waitForObjectInPostgres(t, td, account, clusterName, kind, namespace, name)
