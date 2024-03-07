@@ -37,8 +37,11 @@ func main() {
 	if clusterConfig, err := config.LoadClusterConfig(); err != nil {
 		logger.L().Warning("failed to load cluster config", helpers.Error(err))
 	} else {
-		logger.L().Debug("cluster config loaded", helpers.String("clusterName", clusterConfig.ClusterName))
+		logger.L().Debug("cluster config loaded",
+			helpers.String("clusterName", clusterConfig.ClusterName),
+			helpers.String("namespace", clusterConfig.Namespace))
 		cfg.InCluster.ClusterName = clusterConfig.ClusterName
+		cfg.InCluster.Namespace = clusterConfig.Namespace
 	}
 
 	// load credentials (access key & account)

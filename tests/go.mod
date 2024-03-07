@@ -178,7 +178,7 @@ require (
 	github.com/klauspost/compress v1.17.7 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
 	github.com/kubescape/backend v0.0.18 // indirect
-	github.com/kubescape/k8s-interface v0.0.160 // indirect
+	github.com/kubescape/k8s-interface v0.0.161 // indirect
 	github.com/kubescape/opa-utils v0.0.275 // indirect
 	github.com/kubescape/rbac-utils v0.0.20 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect

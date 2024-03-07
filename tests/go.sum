@@ -666,8 +666,8 @@ github.com/kubescape/backend v0.0.18 h1:RBXMD/Dj7y91QLdwnhamgLP5xA8hRCrS68wqPL8X
 github.com/kubescape/backend v0.0.18/go.mod h1:ug9NFmmxT4DcQx3sgdLRzlLPWMKGHE/fpbcYUm5G5Qo=
 github.com/kubescape/go-logger v0.0.22 h1:gle7wH6emOiGv9ljdpVi82pWLQ3jGucrUucvil6JXHE=
 github.com/kubescape/go-logger v0.0.22/go.mod h1:x3HBpZo3cMT/WIdy18BxvVVd5D0e/PWFVk/HiwBNu3g=
-github.com/kubescape/k8s-interface v0.0.160 h1:yhq/l8AuGJendQW7USuH0rhgMVM+3Qq8qK8tr36TN14=
-github.com/kubescape/k8s-interface v0.0.160/go.mod h1:5sz+5Cjvo98lTbTVDiDA4MmlXxeHSVMW/wR0V3hV4K8=
+github.com/kubescape/k8s-interface v0.0.161 h1:v6b3/kmA4o/2niNrejrbXj5X9MLfH0UrpI3s+e/fdwc=
+github.com/kubescape/k8s-interface v0.0.161/go.mod h1:oF+Yxug3Kpfu9Yr2j63wy7gwswrKXpiqI0mLk/7gF/s=
 github.com/kubescape/messaging v0.0.25 h1:DEPOCBScfGyJe844+rSPrS2wBMuUz4C8NnKaiD9Ngkg=
 github.com/kubescape/messaging v0.0.25/go.mod h1:qvWcN6nXAupvn4N/YARHOYsOipipQDnpMvC/vYkw9UM=
 github.com/kubescape/opa-utils v0.0.275 h1:F3EM0J97mcHbIZwlAInIR9HFTQ1WuGx/8cz8lDw0YHA=

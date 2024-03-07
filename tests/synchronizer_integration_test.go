@@ -66,8 +66,9 @@ import (
 )
 
 const (
-	namespace = "default"
-	name      = "test"
+	kubescapeNamespace = "kubescape"
+	namespace          = "default"
+	name               = "test"
 )
 
 type Test struct {
@@ -503,6 +504,7 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 	require.NoError(t, err)
 
 	// set cluster config
+	clientCfg.InCluster.Namespace = kubescapeNamespace
 	clientCfg.InCluster.ClusterName = cluster.cluster
 	clientCfg.InCluster.Account = cluster.account
 	clientCfg.InCluster.ServerUrl = syncServer.serverUrl
@@ -900,9 +902,23 @@ func TestSynchronizer_TC04_Backend(t *testing.T) {
 	tearDown(td)
 }
 
+func getPodNamesInNamespace(k8sClient kubernetes.Interface, namespace string) []string {
+	podNames := []string{}
+	pods, err := k8sClient.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return podNames
+	}
+
+	for _, pod := range pods.Items {
+		podNames = append(podNames, pod.Name)
+	}
+	return podNames
+}
+
 // TestSynchronizer_TC05_InCluster: Synchronizing entities with different types
 func TestSynchronizer_TC05_InCluster(t *testing.T) {
 	td := initIntegrationTest(t)
+
 	// add objects to k8s
 	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -915,6 +931,22 @@ func TestSynchronizer_TC05_InCluster(t *testing.T) {
 	for _, kind := range []string{"spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", "apps/v1/deployments", "apps/v1/statefulsets"} {
 		_ = waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, kind, namespace, name)
 	}
+	// check that pods in a non-kubescape namespace were not synchronized
+	for _, podName := range getPodNamesInNamespace(td.clusters[0].k8sclient, namespace) {
+		_, objFound, _ := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "/v1/pods", namespace, podName)
+		assert.False(t, objFound)
+	}
+
+	// create a deployment in the kubescape namespace
+	_, err = td.clusters[0].k8sclient.AppsV1().Deployments(kubescapeNamespace).Create(context.TODO(), td.clusters[0].deploy, metav1.CreateOptions{})
+	require.NoError(t, err)
+	_ = waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "apps/v1/deployments", kubescapeNamespace, name)
+
+	// check that pods in the kubescape namespace are synchronized
+	for _, podName := range getPodNamesInNamespace(td.clusters[0].k8sclient, kubescapeNamespace) {
+		_ = waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "/v1/pods", kubescapeNamespace, podName)
+	}
+
 	// tear down
 	tearDown(td)
 }
@@ -1191,7 +1223,7 @@ func TestSynchronizer_TC12(t *testing.T) {
 		}, messaging.MsgPropEventValueReconciliationRequestMessage, data)
 	assert.NoError(t, err)
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	// check that object is back in postgres
 	_ = waitForObjectInPostgres(t, td, account, clusterName, kind, namespace, name)
