@@ -933,7 +933,7 @@ func TestSynchronizer_TC05_InCluster(t *testing.T) {
 	}
 	// check that pods in a non-kubescape namespace were not synchronized
 	for _, podName := range getPodNamesInNamespace(td.clusters[0].k8sclient, namespace) {
-		_, objFound, _ := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "v1/pods", namespace, podName)
+		_, objFound, _ := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "/v1/pods", namespace, podName)
 		assert.False(t, objFound)
 	}
 
@@ -944,7 +944,7 @@ func TestSynchronizer_TC05_InCluster(t *testing.T) {
 
 	// check that pods in the kubescape namespace are synchronized
 	for _, podName := range getPodNamesInNamespace(td.clusters[0].k8sclient, kubescapeNamespace) {
-		_ = waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "v1/pods", kubescapeNamespace, podName)
+		_ = waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "/v1/pods", kubescapeNamespace, podName)
 	}
 
 	// tear down

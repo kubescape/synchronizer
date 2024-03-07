@@ -71,6 +71,7 @@ func TestLoadConfig(t *testing.T) {
 					AccessKey:   "xxxxxxxx-1111-1111-1111-xxxxxxxx",
 					Resources: []Resource{
 						{Group: "", Version: "v1", Resource: "nodes", Strategy: "patch"},
+						{Group: "", Version: "v1", Resource: "pods", Strategy: "patch"},
 						{Group: "apps", Version: "v1", Resource: "deployments", Strategy: "patch"},
 						{Group: "apps", Version: "v1", Resource: "statefulsets", Strategy: "patch"},
 						{Group: "spdx.softwarecomposition.kubescape.io", Version: "v1beta1", Resource: "applicationprofiles", Strategy: "patch"},
