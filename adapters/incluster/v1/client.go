@@ -23,6 +23,7 @@ import (
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
+	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -181,9 +182,14 @@ func (c *Client) Stop(_ context.Context) error {
 }
 
 func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, eventQueue *utils.CooldownQueue) {
+	exitFatal := true
 	if err := backoff.RetryNotify(func() error {
 		watcher, err := c.client.Resource(c.res).Namespace("").Watch(context.Background(), watchOpts)
 		if err != nil {
+			if k8sErrors.ReasonForError(err) == metav1.StatusReasonNotFound {
+				exitFatal = false
+				return backoff.Permanent(err)
+			}
 			return fmt.Errorf("client resource: %w", err)
 		}
 		logger.L().Info("starting watch", helpers.String("resource", c.res.Resource))
@@ -218,8 +224,11 @@ func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, e
 				helpers.String("retry in", d.String()))
 		}
 	}); err != nil {
-		logger.L().Ctx(ctx).Fatal("giving up watch", helpers.Error(err),
-			helpers.String("resource", c.res.Resource))
+		logger.L().Ctx(ctx).Error("giving up watch", helpers.Error(err),
+			helpers.String("resource", c.res.String()))
+		if exitFatal {
+			os.Exit(1)
+		}
 	}
 }
 
