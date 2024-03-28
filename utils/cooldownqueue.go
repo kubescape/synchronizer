@@ -3,6 +3,7 @@ package utils
 import (
 	"time"
 
+	"github.com/kubescape/synchronizer/domain"
 	"istio.io/pkg/cache"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/watch"
@@ -47,8 +48,17 @@ func makeEventKey(e watch.Event) string {
 	if !ok {
 		return ""
 	}
-	eventKey := string(object.GetUID())
-	return eventKey
+	id := domain.KindName{
+		Kind: &domain.Kind{
+			Group:    object.GetAPIVersion(),
+			Resource: object.GetKind(),
+		},
+		Name:            object.GetName(),
+		Namespace:       object.GetNamespace(),
+		ResourceVersion: domain.ToResourceVersion(object.GetResourceVersion()),
+	}
+
+	return id.String()
 }
 
 func (q *CooldownQueue) Closed() bool {
