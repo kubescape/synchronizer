@@ -53,9 +53,8 @@ func makeEventKey(e watch.Event) string {
 			Group:    object.GetAPIVersion(),
 			Resource: object.GetKind(),
 		},
-		Name:            object.GetName(),
-		Namespace:       object.GetNamespace(),
-		ResourceVersion: domain.ToResourceVersion(object.GetResourceVersion()),
+		Name:      object.GetName(),
+		Namespace: object.GetNamespace(),
 	}
 
 	return id.String()
