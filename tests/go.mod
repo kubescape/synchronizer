@@ -8,7 +8,7 @@ require (
 	github.com/apache/pulsar-client-go v0.12.0
 	github.com/armosec/armoapi-go v0.0.329
 	github.com/armosec/armosec-infra v0.0.25
-	github.com/armosec/event-ingester-service v0.0.240
+	github.com/armosec/event-ingester-service v0.1.1-0.20240222135422-9a39c4515322
 	github.com/armosec/postgres-connector v0.0.305
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/deckarep/golang-set/v2 v2.6.0
