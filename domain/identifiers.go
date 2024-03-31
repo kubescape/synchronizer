@@ -71,7 +71,6 @@ func ToResourceVersion(version string) int {
 		return v
 	}
 
-	logger.L().Error("Unable to convert version to int", helpers.String("version", version))
 	return 0
 }
 
