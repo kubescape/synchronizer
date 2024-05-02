@@ -636,7 +636,7 @@ func initIntegrationTest(t *testing.T) *Test {
 	err = ingesterPgClient.Connect()
 	require.NoError(t, err)
 	// run migrations
-	migration.DbMigrations(ingesterPgClient.GetClient())
+	migration.DbMigrations(ingesterPgClient.GetClient(), migration.HotMigrationsTargetDbVersion)
 	pulsarClient, err := pulsarconnector.NewClient(
 		pulsarconnector.WithConfig(&ingesterConf.Pulsar),
 		pulsarconnector.WithRetryAttempts(20),
@@ -647,7 +647,7 @@ func initIntegrationTest(t *testing.T) *Test {
 	require.NoError(t, err)
 	s3 := s3connector.NewS3Mock()
 	ingesterProcessor := resourceprocessor.NewKubernetesResourceProcessor(&s3, postgresconnectordal.NewPostgresDAL(ingesterPgClient))
-	ingester := eventingester.NewSynchronizerWithProcessor(ingesterProducer, pulsarClient, *ingesterConf.SynchronizerIngesterConfig, ingesterPgClient, ingesterProcessor)
+	ingester := eventingester.NewSynchronizerWithProcessor(ingesterProducer, pulsarClient, *ingesterConf.SynchronizerIngesterConfig, ingesterProcessor, ingesterPgClient, nil)
 	go ingester.ConsumeSynchronizerMessages(ctx)
 
 	// fake websocket
@@ -1192,14 +1192,14 @@ func TestSynchronizer_TC12(t *testing.T) {
 	// create a new dummy object directly in postgres (which does not exist in k8s) and confirm it is there
 	toBeDeletedName := name + "test"
 	bytes, _ := json.Marshal(createdAppProfileObj)
-	err = td.processor.Store(account, clusterName, kind, namespace, toBeDeletedName, bytes)
+	_, err = td.processor.Store(account, clusterName, kind, namespace, toBeDeletedName, bytes)
 	assert.NoError(t, err)
 	_, objFound, err := td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, toBeDeletedName)
 	assert.NoError(t, err)
 	assert.True(t, objFound)
 
 	// delete the resource that exists in k8s from postgres and confirm it is deleted
-	err = td.processor.Delete(account, clusterName, kind, namespace, name)
+	_, err = td.processor.Delete(account, clusterName, kind, namespace, name)
 	assert.NoError(t, err)
 	_, objFound, err = td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, name)
 	assert.Error(t, err)
