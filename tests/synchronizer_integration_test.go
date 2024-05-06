@@ -636,7 +636,8 @@ func initIntegrationTest(t *testing.T) *Test {
 	err = ingesterPgClient.Connect()
 	require.NoError(t, err)
 	// run migrations
-	migration.DbMigrations(ingesterPgClient.GetClient(), migration.HotMigrationsTargetDbVersion)
+	err = migration.DbMigrations(ingesterPgClient.GetClient(), migration.HotMigrationsTargetDbVersion)
+	require.NoError(t, err)
 	pulsarClient, err := pulsarconnector.NewClient(
 		pulsarconnector.WithConfig(&ingesterConf.Pulsar),
 		pulsarconnector.WithRetryAttempts(20),

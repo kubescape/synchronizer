@@ -2,12 +2,15 @@ name: pull_request_created
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
-    branches: 
+    branches:
       - 'main'
     paths-ignore:
-      - '*.md' 
+      - '*.md'
       - '*.yaml'
       - '.github/workflows/*'
+env:
+  DB_MIGRATIONS_GH_USER: ${{ secrets.DB_MIGRATIONS_GH_USER }}
+  DB_MIGRATIONS_GH_TOKEN: ${{ secrets.DB_MIGRATIONS_GH_TOKEN }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,7 +23,7 @@ jobs:
       GO_VERSION: "1.21"
       CGO_ENABLED: 0
     secrets: inherit
- 
+
   component-tests:
     runs-on: ubuntu-latest
     strategy:
