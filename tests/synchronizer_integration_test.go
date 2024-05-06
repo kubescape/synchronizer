@@ -648,7 +648,9 @@ func initIntegrationTest(t *testing.T) *Test {
 	require.NoError(t, err)
 	s3 := s3connector.NewS3Mock()
 	ingesterProcessor := resourceprocessor.NewKubernetesResourceProcessor(&s3, postgresconnectordal.NewPostgresDAL(ingesterPgClient))
-	ingester := eventingester.NewSynchronizerWithProcessor(ingesterProducer, pulsarClient, *ingesterConf.SynchronizerIngesterConfig, ingesterProcessor, ingesterPgClient, nil)
+	onFinishProducer, err := pulsarClient.NewProducer(pulsarconnector.WithProducerTopic("onFinishTopic"), pulsarconnector.WithProducerNamespace("armo", "kubescape"))
+	require.NoError(t, err)
+	ingester := eventingester.NewSynchronizerWithProcessor(ingesterProducer, pulsarClient, *ingesterConf.SynchronizerIngesterConfig, ingesterProcessor, ingesterPgClient, onFinishProducer)
 	go ingester.ConsumeSynchronizerMessages(ctx)
 
 	// fake websocket
