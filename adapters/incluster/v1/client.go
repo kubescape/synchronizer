@@ -224,7 +224,7 @@ func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, e
 				helpers.String("retry in", d.String()))
 		}
 	}); err != nil {
-		logger.L().Ctx(ctx).Error("giving up watch", helpers.Error(err),
+		logger.L().Ctx(ctx).Debug("giving up watch", helpers.Error(err),
 			helpers.String("resource", c.res.String()))
 		if exitFatal {
 			os.Exit(1)
