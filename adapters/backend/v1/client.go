@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -17,11 +18,13 @@ import (
 type Client struct {
 	callbacks       domain.Callbacks
 	messageProducer messaging.MessageProducer
+	skipAlertsFrom  []string
 }
 
-func NewClient(producer messaging.MessageProducer) *Client {
+func NewClient(producer messaging.MessageProducer, skipKdrFrom []string) *Client {
 	return &Client{
 		messageProducer: producer,
+		skipAlertsFrom:  skipKdrFrom,
 	}
 }
 
@@ -261,6 +264,15 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, object []byte) error {
 	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	cId := utils.ClientIdentifierFromContext(ctx)
+
+	if id.Kind.Resource == "runtimealerts" && slices.Contains(c.skipAlertsFrom, cId.Account) {
+		logger.L().Debug("skipping put object message for alerts",
+			helpers.String("account", cId.Account),
+			helpers.String("cluster", cId.Cluster),
+			helpers.String("kind", id.Kind.String()),
+			helpers.String("name", id.Name))
+		return nil
+	}
 
 	msg := messaging.PutObjectMessage{
 		Cluster:   cId.Cluster,
