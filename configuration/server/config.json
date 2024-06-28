@@ -13,7 +13,11 @@
       ],
       "redeliveryDelaySeconds": 5,
       "maxDeliveryAttempts": 20
-    }
+    },
+    "skipAlertsFrom": [
+      "foo",
+      "bar"
+    ]
   },
   "resources": [
     {

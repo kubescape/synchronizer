@@ -32,6 +32,7 @@ type Backend struct {
 	Prometheus           *PrometheusConfig           `mapstructure:"prometheusConfig"`
 	ReconciliationTask   *ReconciliationTaskConfig   `mapstructure:"reconciliationTaskConfig"`
 	KeepAliveTask        *KeepAliveTaskConfig        `mapstructure:"keepAliveTaskConfig"`
+	SkipAlertsFrom       []string                    `mapstructure:"skipAlertsFrom"`
 }
 
 type InCluster struct {
