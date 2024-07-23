@@ -1,7 +1,10 @@
 {
   "inCluster": {
     "serverUrl": "ws://127.0.0.1:8080/",
+    "namespace": "kubescape",
     "clusterName": "cluster-1",
+    "excludeNamespaces": "kube-system,kubescape",
+    "includeNamespaces": "",
     "account": "11111111-2222-3333-4444-11111111",
     "accessKey": "xxxxxxxx-1111-1111-1111-xxxxxxxx",
     "resources": [

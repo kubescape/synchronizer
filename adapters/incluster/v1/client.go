@@ -13,6 +13,8 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"go.uber.org/multierr"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/pager"
 
 	mapset "github.com/deckarep/golang-set/v2"
 	jsonpatch "github.com/evanphx/json-patch"
@@ -55,6 +57,8 @@ type Client struct {
 	client              dynamic.Interface
 	account             string
 	cluster             string
+	excludeNamespaces   []string
+	includeNamespaces   []string
 	operatorNamespace   string // the namespace where the kubescape operator is running
 	kind                *domain.Kind
 	multiplier          int
@@ -74,6 +78,8 @@ func NewClient(client dynamic.Interface, cfg config.InCluster, r config.Resource
 	return &Client{
 		account:           cfg.Account,
 		client:            client,
+		excludeNamespaces: cfg.ExcludeNamespaces,
+		includeNamespaces: cfg.IncludeNamespaces,
 		operatorNamespace: cfg.Namespace,
 		cluster:           cfg.ClusterName,
 		kind: &domain.Kind{
@@ -268,9 +274,15 @@ func (c *Client) isFiltered(workload *unstructured.Unstructured) bool {
 	if workload == nil {
 		return false
 	}
-	// workload is not filtered if it is in the kubescape-operator namespace
-	if c.operatorNamespace != "" && workload.GetNamespace() == c.operatorNamespace {
-		return false
+	if namespace := workload.GetNamespace(); namespace != "" {
+		// workload is not filtered if it is in the kubescape-operator namespace
+		if namespace == c.operatorNamespace {
+			return false
+		}
+		// workload is filtered if it is in a skipped namespace
+		if c.skipNamespace(namespace) {
+			return true
+		}
 	}
 	// for all other workloads, we filter out those that have a parent
 	return hasParent(workload)
@@ -478,6 +490,8 @@ func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, e
 
 func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) {
 	logger.L().Debug("getting existing objects from storage", helpers.String("resource", c.res.Resource))
+	// no need for pager since list returns only metadatas
+	// no need for skip ns since these are our CRDs
 	list, err := c.client.Resource(c.res).Namespace("").List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		return "", fmt.Errorf("list resources: %w", err)
@@ -570,16 +584,18 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 	}
 
 	// create a map of resources from the client
-	list, err := c.client.Resource(c.res).Namespace("").List(context.Background(), metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("reconciliation: list resources: %w", err)
-	}
 	clientItems := map[string]unstructured.Unstructured{}
 	clientItemsSet := mapset.NewSet[string]()
-	for _, item := range list.Items {
+	if err := pager.New(func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+		return c.client.Resource(c.res).Namespace("").List(ctx, opts)
+	}).EachListItem(context.Background(), metav1.ListOptions{}, func(obj runtime.Object) error {
+		item := obj.(*unstructured.Unstructured)
 		k := fmt.Sprintf("%s/%s", item.GetNamespace(), item.GetName())
-		clientItems[k] = item
+		clientItems[k] = *item
 		clientItemsSet.Add(k)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("reconciliation: list resources: %w", err)
 	}
 
 	// create a map of resources from the server
@@ -590,6 +606,8 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 		serverItems[k] = item
 		serverItemsSet.Add(k)
 	}
+
+	var err error
 
 	// resources that should not be in server, send delete
 	for _, k := range serverItemsSet.Difference(clientItemsSet).ToSlice() {
@@ -743,6 +761,21 @@ func (c *Client) getResource(namespace string, name string) (*unstructured.Unstr
 		name = stripSuffix(name)
 	}
 	return c.client.Resource(c.res).Namespace(namespace).Get(context.Background(), name, metav1.GetOptions{})
+}
+
+func (c *Client) skipNamespace(ns string) bool {
+	if includeNamespaces := c.includeNamespaces; len(includeNamespaces) > 0 {
+		if !slices.Contains(includeNamespaces, ns) {
+			// skip ns not in IncludeNamespaces
+			return true
+		}
+	} else if excludeNamespaces := c.excludeNamespaces; len(excludeNamespaces) > 0 {
+		if slices.Contains(excludeNamespaces, ns) {
+			// skip ns in ExcludeNamespaces
+			return true
+		}
+	}
+	return false
 }
 
 func stripSuffix(name string) string {

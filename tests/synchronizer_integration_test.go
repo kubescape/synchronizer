@@ -506,6 +506,8 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 	// set cluster config
 	clientCfg.InCluster.Namespace = kubescapeNamespace
 	clientCfg.InCluster.ClusterName = cluster.cluster
+	clientCfg.InCluster.ExcludeNamespaces = []string{"kube-system", "kubescape"}
+	clientCfg.InCluster.IncludeNamespaces = []string{}
 	clientCfg.InCluster.Account = cluster.account
 	clientCfg.InCluster.ServerUrl = syncServer.serverUrl
 	if watchDefaults {

@@ -35,12 +35,14 @@ type Backend struct {
 }
 
 type InCluster struct {
-	ServerUrl   string     `mapstructure:"serverUrl"`
-	Namespace   string     `mapstructure:"namespace"`
-	ClusterName string     `mapstructure:"clusterName"`
-	Account     string     `mapstructure:"account"`
-	AccessKey   string     `mapstructure:"accessKey"`
-	Resources   []Resource `mapstructure:"resources"`
+	ServerUrl         string     `mapstructure:"serverUrl"`
+	Namespace         string     `mapstructure:"namespace"`
+	ClusterName       string     `mapstructure:"clusterName"`
+	ExcludeNamespaces []string   `mapstructure:"excludeNamespaces"`
+	IncludeNamespaces []string   `mapstructure:"includeNamespaces"`
+	Account           string     `mapstructure:"account"`
+	AccessKey         string     `mapstructure:"accessKey"`
+	Resources         []Resource `mapstructure:"resources"`
 }
 
 type HTTPEndpoint struct {
