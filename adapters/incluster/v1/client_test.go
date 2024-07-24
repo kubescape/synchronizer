@@ -195,3 +195,65 @@ func TestClient_filterAndMarshal(t *testing.T) {
 		})
 	}
 }
+
+func TestClient_isFiltered(t *testing.T) {
+	tests := []struct {
+		name     string
+		workload *unstructured.Unstructured
+		filtered bool
+	}{
+		{
+			name:     "nil workload",
+			filtered: false,
+		},
+		{
+			name: "pod",
+			workload: &unstructured.Unstructured{Object: map[string]interface{}{
+				"kind":     "Pod",
+				"metadata": map[string]interface{}{"namespace": "default"}}},
+			filtered: false,
+		},
+		{
+			name: "pod with ownerReferences",
+			workload: &unstructured.Unstructured{Object: map[string]interface{}{
+				"kind": "Pod",
+				"metadata": map[string]interface{}{
+					"ownerReferences": []interface{}{map[string]interface{}{
+						"apiVersion": "batch/v1"}}}}},
+			filtered: true,
+		},
+		{
+			name: "pod with pod-template-hash",
+			workload: &unstructured.Unstructured{Object: map[string]interface{}{
+				"kind": "Pod",
+				"metadata": map[string]interface{}{
+					"labels": map[string]interface{}{
+						"pod-template-hash": "12345"}}}},
+			filtered: true,
+		},
+		{
+			name: "pod from kubescape namespace", // special case, never filter out
+			workload: &unstructured.Unstructured{Object: map[string]interface{}{
+				"kind":     "Pod",
+				"metadata": map[string]interface{}{"namespace": "default"}}},
+			filtered: false,
+		},
+		{
+			name: "pod from filtered namespace",
+			workload: &unstructured.Unstructured{Object: map[string]interface{}{
+				"kind":     "Pod",
+				"metadata": map[string]interface{}{"namespace": "kube-system"}}},
+			filtered: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Client{
+				excludeNamespaces: []string{"kube-system", "kubescape"},
+				includeNamespaces: []string{},
+				operatorNamespace: "kubescape",
+			}
+			assert.Equalf(t, tt.filtered, c.isFiltered(tt.workload), "isFiltered(%v)", tt.workload)
+		})
+	}
+}

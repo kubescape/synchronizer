@@ -65,10 +65,13 @@ func TestLoadConfig(t *testing.T) {
 			path: "../configuration/client",
 			want: Config{
 				InCluster: InCluster{
-					ServerUrl:   "ws://127.0.0.1:8080/",
-					ClusterName: "cluster-1",
-					Account:     "11111111-2222-3333-4444-11111111",
-					AccessKey:   "xxxxxxxx-1111-1111-1111-xxxxxxxx",
+					ServerUrl:         "ws://127.0.0.1:8080/",
+					Namespace:         "kubescape",
+					ClusterName:       "cluster-1",
+					ExcludeNamespaces: []string{"kube-system", "kubescape"},
+					IncludeNamespaces: []string{},
+					Account:           "11111111-2222-3333-4444-11111111",
+					AccessKey:         "xxxxxxxx-1111-1111-1111-xxxxxxxx",
 					Resources: []Resource{
 						{Group: "", Version: "v1", Resource: "pods", Strategy: "patch"},
 						{Group: "", Version: "v1", Resource: "nodes", Strategy: "patch"},
