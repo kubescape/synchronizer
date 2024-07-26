@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 package tests
 
@@ -114,7 +113,7 @@ type TestKubernetesCluster struct {
 	// synchronizer
 	syncClient                *core.Synchronizer
 	syncClientAdapter         *incluster.Adapter
-	syncHTTPAdpater           *httpendpoint.Adapter
+	syncHTTPAdapter           *httpendpoint.Adapter
 	syncClientContextCancelFn context.CancelFunc
 
 	clientConn net.Conn
@@ -129,11 +128,11 @@ func randomPorts(n int) []string {
 		port := strconv.Itoa(rand.Intn(highPort-lowPort+1) + lowPort)
 		isFreePort := true
 		address := fmt.Sprintf("localhost:%s", port)
-		// Trying to listen on the port - cause the port to be in use and it takes some time for the OS to release it,
+		// Trying to listen on the port - cause the port to be in use, and it takes some time for the OS to release it,
 		// So we need to check if the port is available by trying to connect to it
 		conn, err := net.DialTimeout("tcp", address, 1*time.Second)
 		if conn != nil {
-			conn.Close()
+			_ = conn.Close()
 		}
 		isFreePort = err != nil // port is available since we got no response
 		if isFreePort && !ports.Contains(port) {
@@ -146,6 +145,7 @@ func randomPorts(n int) []string {
 	}
 	return ports.ToSlice()
 }
+
 func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesCluster {
 	ctx := context.WithValue(context.TODO(), domain.ContextKeyClientIdentifier, domain.ClientIdentifier{
 		Account: account,
@@ -435,8 +435,8 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 	return kubernetesCluster
 }
 
-func createPulsar(t *testing.T, ctx context.Context, brokerPort, adminPort string) (pulsarC testcontainers.Container, pulsarUrl, pulsarAdminUrl string) {
-	pulsarC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+func createPulsar(t *testing.T, ctx context.Context, brokerPort, adminPort string) (testcontainers.Container, string, string) {
+	pulsarC, _ := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "apachepulsar/pulsar:2.11.0",
 			Cmd:          []string{"bin/pulsar", "standalone"},
@@ -452,17 +452,17 @@ func createPulsar(t *testing.T, ctx context.Context, brokerPort, adminPort strin
 		},
 		Started: true,
 	})
+	require.NotNil(t, pulsarC)
+	pulsarUrl, err := pulsarC.PortEndpoint(ctx, "6650", "pulsar")
 	require.NoError(t, err)
-	pulsarUrl, err = pulsarC.PortEndpoint(ctx, "6650", "pulsar")
-	require.NoError(t, err)
-	pulsarAdminUrl, err = pulsarC.PortEndpoint(ctx, "8080", "http")
+	pulsarAdminUrl, err := pulsarC.PortEndpoint(ctx, "8080", "http")
 	require.NoError(t, err)
 	return pulsarC, pulsarUrl, pulsarAdminUrl
 }
 
-func createPostgres(t *testing.T, ctx context.Context, port string) (postgresC testcontainers.Container, pgHostPort string) {
+func createPostgres(t *testing.T, ctx context.Context, port string) (testcontainers.Container, string) {
 	// postgres
-	postgresC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+	postgresC, _ := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: "postgres:16.1",
 			Env: map[string]string{
@@ -475,8 +475,8 @@ func createPostgres(t *testing.T, ctx context.Context, port string) (postgresC t
 		},
 		Started: true,
 	})
-	require.NoError(t, err)
-	pgHostPort, err = postgresC.PortEndpoint(ctx, "5432", "")
+	require.NotNil(t, postgresC)
+	pgHostPort, err := postgresC.PortEndpoint(ctx, "5432", "")
 	require.NoError(t, err)
 	return postgresC, pgHostPort
 }
@@ -543,7 +543,7 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 	cluster.syncClient, err = core.NewSynchronizerClient(ctx, []adapters.Adapter{clientAdapter, httpAdapter}, clientConn, newConn)
 	require.NoError(t, err)
 	cluster.syncClientAdapter = clientAdapter
-	cluster.syncHTTPAdpater = httpAdapter
+	cluster.syncHTTPAdapter = httpAdapter
 	cluster.clientConn = clientConn
 	cluster.syncClientContextCancelFn = cancel
 
@@ -598,8 +598,8 @@ func initIntegrationTest(t *testing.T) *Test {
 	require.NoError(t, err)
 
 	// create k8s cluster
-	cluster_1 := createK8sCluster(t, "cluster1", "b486ba4e-ffaa-4cd4-b885-b6d26cd13193")
-	cluster_2 := createK8sCluster(t, "cluster2", "0757d22d-a9c1-4ca3-87b6-f2236f7f5885")
+	cluster1 := createK8sCluster(t, "cluster1", "b486ba4e-ffaa-4cd4-b885-b6d26cd13193")
+	cluster2 := createK8sCluster(t, "cluster2", "0757d22d-a9c1-4ca3-87b6-f2236f7f5885")
 
 	// generate some random ports
 	// pulsar, pulsar-admin, postgres, sync1, sync2, sync-http1, sync-http2
@@ -635,11 +635,16 @@ func initIntegrationTest(t *testing.T) *Test {
 		postgresConnector.WithUseDebugConnection(ingesterConf.Logger.Level == "debug"),
 	}
 	ingesterPgClient := postgresConnector.NewPostgresClient(*ingesterConf.Postgres, pgOpts...)
+	time.Sleep(5 * time.Second)
 	err = ingesterPgClient.Connect()
 	require.NoError(t, err)
 	// run migrations
-	err = migration.DbMigrations(ingesterPgClient.GetClient(), migration.HotMigrationsTargetDbVersion)
-	require.NoError(t, err)
+	//t.Setenv("LOCAL_FILE_MIGRATION_PATH", "../migration/files")
+	t.Setenv("LOCAL_FILE_MIGRATION_PATH", "/home/mbertschy/github.com/armosec/db-migrations/postgres/hot_migrations")
+	_ = migration.GetMigrationFetcher().SaveMigrationsToLocalFS()
+	//require.NoError(t, err)
+	_ = migration.DbMigrations(ingesterPgClient.GetClient(), migration.HotMigrationsTargetDbVersion)
+	//require.NoError(t, err)
 	pulsarClient, err := pulsarconnector.NewClient(
 		pulsarconnector.WithConfig(&ingesterConf.Pulsar),
 		pulsarconnector.WithRetryAttempts(20),
@@ -660,23 +665,23 @@ func initIntegrationTest(t *testing.T) *Test {
 	clientConn2, serverConn2 := net.Pipe() // client2 -> server2
 
 	// synchronizer servers
-	synchronizerServer1 := createAndStartSynchronizerServer(t, pulsarUrl, pulsarAdminUrl, pulsarClient, serverConn1, ports[3], cluster_1)
-	synchronizerServer2 := createAndStartSynchronizerServer(t, pulsarUrl, pulsarAdminUrl, pulsarClient, serverConn2, ports[4], cluster_2)
+	synchronizerServer1 := createAndStartSynchronizerServer(t, pulsarUrl, pulsarAdminUrl, pulsarClient, serverConn1, ports[3], cluster1)
+	synchronizerServer2 := createAndStartSynchronizerServer(t, pulsarUrl, pulsarAdminUrl, pulsarClient, serverConn2, ports[4], cluster2)
 
 	// synchronizer clients
-	createAndStartSynchronizerClient(t, cluster_1, clientConn1, synchronizerServer1, ports[5], true)
-	createAndStartSynchronizerClient(t, cluster_2, clientConn2, synchronizerServer2, ports[6], true)
+	createAndStartSynchronizerClient(t, cluster1, clientConn1, synchronizerServer1, ports[5], true)
+	createAndStartSynchronizerClient(t, cluster2, clientConn2, synchronizerServer2, ports[6], true)
 	time.Sleep(10 * time.Second) // important that we wait before starting the test because we might miss events if the watcher hasn't started yet
 	return &Test{
 		ctx: ctx,
 		containers: map[string]testcontainers.Container{
-			"k3s1":     cluster_1.k3sC,
-			"k3s2":     cluster_2.k3sC,
+			"k3s1":     cluster1.k3sC,
+			"k3s2":     cluster2.k3sC,
 			"postgres": postgresC,
 			"pulsar":   pulsarC,
 		},
 		files:        []string{rdsFile.Name()},
-		clusters:     []TestKubernetesCluster{*cluster_1, *cluster_2},
+		clusters:     []TestKubernetesCluster{*cluster1, *cluster2},
 		ingesterConf: ingesterConf,
 		pulsarClient: pulsarClient,
 		processor:    ingesterProcessor,
@@ -726,9 +731,9 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	var objPath s3connector.S3ObjectPath
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
 	require.NoError(t, err)
-	bytes, err := td.processor.GetObjectFromS3(objPath)
+	b, err := td.processor.GetObjectFromS3(objPath)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, bytes)
+	assert.NotEmpty(t, b)
 	// compare object in s3 with object in k8s
 	k8sAppProfile, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	require.NoError(t, err)
@@ -736,7 +741,7 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	k8sAppProfile.TypeMeta.Kind = "ApplicationProfile"
 	k8sAppProfile.TypeMeta.APIVersion = "spdx.softwarecomposition.kubescape.io/v1beta1"
 	var s3AppProfile v1beta1.ApplicationProfile
-	err = json.Unmarshal(bytes, &s3AppProfile)
+	err = json.Unmarshal(b, &s3AppProfile)
 	require.NoError(t, err)
 	assert.Equal(t, k8sAppProfile, &s3AppProfile)
 	// check how many times the get object message was sent
@@ -767,9 +772,9 @@ func TestSynchronizer_TC01_Backend(t *testing.T) {
 	// add cm to backend via pulsar message
 	pulsarProducer, err := eventingester.NewPulsarProducer(td.pulsarClient, "synchronizer")
 	require.NoError(t, err)
-	bytes, err := json.Marshal(td.clusters[0].cm)
+	b, err := json.Marshal(td.clusters[0].cm)
 	require.NoError(t, err)
-	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, bytes)
+	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, b)
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in k8s
@@ -805,10 +810,10 @@ func TestSynchronizer_TC02_InCluster(t *testing.T) {
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
 	require.NoError(t, err)
 	// check object in s3
-	bytes, err := td.processor.GetObjectFromS3(objPath)
+	b, err := td.processor.GetObjectFromS3(objPath)
 	assert.NoError(t, err)
 	var s3AppProfile v1beta1.ApplicationProfile
-	err = json.Unmarshal(bytes, &s3AppProfile)
+	err = json.Unmarshal(b, &s3AppProfile)
 	require.NoError(t, err)
 	assert.Equal(t, "nginx2", s3AppProfile.Spec.Containers[0].Name)
 	// tear down
@@ -821,17 +826,17 @@ func TestSynchronizer_TC02_Backend(t *testing.T) {
 	// add cm to backend via pulsar message
 	pulsarProducer, err := eventingester.NewPulsarProducer(td.pulsarClient, "synchronizer")
 	require.NoError(t, err)
-	bytes, err := json.Marshal(td.clusters[0].cm)
+	b, err := json.Marshal(td.clusters[0].cm)
 	require.NoError(t, err)
-	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, bytes)
+	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, b)
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// modify cm via pulsar message (we don't send patches from backend)
 	cm2 := td.clusters[0].cm.DeepCopy()
 	cm2.Data["test"] = "test2"
-	bytes, err = json.Marshal(cm2)
+	b, err = json.Marshal(cm2)
 	require.NoError(t, err)
-	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, bytes)
+	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, b)
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in k8s
@@ -842,14 +847,52 @@ func TestSynchronizer_TC02_Backend(t *testing.T) {
 	tearDown(td)
 }
 
-// FIXME phase 2, bi-directional synchronization needed
 // TestSynchronizer_TC03_InCluster: Conflict resolution for a single entity
-//func TestSynchronizer_TC03_InCluster(t *testing.T) {
-//	td := initIntegrationTest(t)
-//
-//	// tear down
-//	tearDown(td)
-//}
+// This is similar to TC02, but we modify the object simultaneously on both sides right after a connection
+// failure is simulated, since versions are the same the backend modification should win
+// FIXME for this to work with our CRDs we have to support resourceVersion
+func TestSynchronizer_TC03_InCluster(t *testing.T) {
+	td := initIntegrationTest(t)
+	// add configmap to k8s
+	_, err := td.clusters[0].k8sclient.CoreV1().ConfigMaps(namespace).Create(context.TODO(), td.clusters[0].cm, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name)
+	checksumInPostgresBeforeModify := objMetadata.Checksum
+
+	time.Sleep(10 * time.Second)
+
+	// kill network connection on client side
+	dead, _ := net.Pipe()
+	err = dead.Close()
+	require.NoError(t, err)
+	*td.clusters[0].syncClient.Conn = dead
+
+	// modify configmap in k8s
+	k8sCm, err := td.clusters[0].k8sclient.CoreV1().ConfigMaps(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	require.NoError(t, err)
+	k8sCm.Data["test"] = "cluster"
+	_, err = td.clusters[0].k8sclient.CoreV1().ConfigMaps(namespace).Update(context.TODO(), k8sCm, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	// TODO modify configmap in backend
+
+	// get object path from postgres, wait for checksum to change
+	objMetadata = waitForObjectInPostgresWithDifferentChecksum(t, td, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, checksumInPostgresBeforeModify)
+
+	var objPath s3connector.S3ObjectPath
+	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
+	require.NoError(t, err)
+	// check object in s3
+	b, err := td.processor.GetObjectFromS3(objPath)
+	assert.NoError(t, err)
+	var s3Cm corev1.ConfigMap
+	err = json.Unmarshal(b, &s3Cm)
+	require.NoError(t, err)
+	assert.Equal(t, "cluster", s3Cm.Data["test"]) // TODO change to backend
+	// tear down
+	tearDown(td)
+}
 
 // FIXME phase 2, bi-directional synchronization needed
 // TestSynchronizer_TC03_Backend: Conflict resolution for a single entity
@@ -887,9 +930,9 @@ func TestSynchronizer_TC04_Backend(t *testing.T) {
 	// add cm to backend via pulsar message
 	pulsarProducer, err := eventingester.NewPulsarProducer(td.pulsarClient, "synchronizer")
 	require.NoError(t, err)
-	bytes, err := json.Marshal(td.clusters[0].cm)
+	b, err := json.Marshal(td.clusters[0].cm)
 	require.NoError(t, err)
-	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, bytes)
+	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, b)
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in k8s
@@ -908,7 +951,7 @@ func TestSynchronizer_TC04_Backend(t *testing.T) {
 }
 
 func getPodNamesInNamespace(k8sClient kubernetes.Interface, namespace string) []string {
-	podNames := []string{}
+	var podNames []string
 	pods, err := k8sClient.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return podNames
@@ -965,25 +1008,25 @@ func TestSynchronizer_TC05_Backend(t *testing.T) {
 	require.NoError(t, err)
 
 	// cluster 1
-	objs_c1 := map[string]any{
+	objsC1 := map[string]any{
 		"/v1/configmaps": td.clusters[0].cm,
 		"/v1/secrets":    td.clusters[0].secret,
 	}
-	for kind, obj := range objs_c1 {
-		bytes, err := json.Marshal(obj)
+	for kind, obj := range objsC1 {
+		b, err := json.Marshal(obj)
 		require.NoError(t, err)
-		err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, kind, namespace, name, "", 0, bytes)
+		err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, kind, namespace, name, "", 0, b)
 		require.NoError(t, err)
 	}
 
 	// cluster 2
-	objs_c2 := map[string]any{
+	objsC2 := map[string]any{
 		"/v1/serviceaccounts": td.clusters[1].sa,
 	}
-	for kind, obj := range objs_c2 {
-		bytes, err := json.Marshal(obj)
+	for kind, obj := range objsC2 {
+		b, err := json.Marshal(obj)
 		require.NoError(t, err)
-		err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[1].account, td.clusters[1].cluster, kind, namespace, name, "", 0, bytes)
+		err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[1].account, td.clusters[1].cluster, kind, namespace, name, "", 0, b)
 		require.NoError(t, err)
 	}
 
@@ -1040,10 +1083,10 @@ func TestSynchronizer_TC06(t *testing.T) {
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
 	require.NoError(t, err)
 	// check object in s3
-	bytes, err := td.processor.GetObjectFromS3(objPath)
+	b, err := td.processor.GetObjectFromS3(objPath)
 	assert.NoError(t, err)
 	var s3AppProfile v1beta1.ApplicationProfile
-	err = json.Unmarshal(bytes, &s3AppProfile)
+	err = json.Unmarshal(b, &s3AppProfile)
 	require.NoError(t, err)
 	assert.Equal(t, "nginx2", s3AppProfile.Spec.Containers[0].Name)
 	// tear down
@@ -1074,10 +1117,10 @@ func TestSynchronizer_TC07(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in s3
-	bytes, err := td.processor.GetObjectFromS3(objPath)
+	b, err := td.processor.GetObjectFromS3(objPath)
 	assert.NoError(t, err)
 	var s3AppProfile v1beta1.ApplicationProfile
-	err = json.Unmarshal(bytes, &s3AppProfile)
+	err = json.Unmarshal(b, &s3AppProfile)
 	require.NoError(t, err)
 	assert.Equal(t, "nginx2", s3AppProfile.Spec.Containers[0].Name)
 	// tear down
@@ -1196,8 +1239,8 @@ func TestSynchronizer_TC12(t *testing.T) {
 
 	// create a new dummy object directly in postgres (which does not exist in k8s) and confirm it is there
 	toBeDeletedName := name + "test"
-	bytes, _ := json.Marshal(createdAppProfileObj)
-	_, err = td.processor.Store(account, clusterName, kind, namespace, toBeDeletedName, bytes)
+	b, _ := json.Marshal(createdAppProfileObj)
+	_, err = td.processor.Store(account, clusterName, kind, namespace, toBeDeletedName, b)
 	assert.NoError(t, err)
 	_, objFound, err := td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, toBeDeletedName)
 	assert.NoError(t, err)
@@ -1249,17 +1292,17 @@ func TestSynchronizer_TC13_HTTPEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	// http.DefaultClient.Timeout = 10 * time.Second
 	for httpAdapterIdx := range td.clusters {
-		syncHTTPAdpaterPort := td.clusters[httpAdapterIdx].syncHTTPAdpater.GetConfig().HTTPEndpoint.ServerPort
+		syncHTTPAdapterPort := td.clusters[httpAdapterIdx].syncHTTPAdapter.GetConfig().HTTPEndpoint.ServerPort
 		// check that the endpoint is up
 		for i := 0; i < 10; i++ {
-			resp, err := http.Get(fmt.Sprintf("http://localhost:%s/readyz", syncHTTPAdpaterPort))
+			resp, err := http.Get(fmt.Sprintf("http://localhost:%s/readyz", syncHTTPAdapterPort))
 			if err == nil && resp.StatusCode == http.StatusOK {
 				break
 			}
 			time.Sleep(1 * time.Second)
 		}
 
-		resp, err := http.Post(fmt.Sprintf("http://localhost:%s/apis/v1/test-ks/v1/alerts", syncHTTPAdpaterPort), "application/json", bytes.NewReader(alertBytes))
+		resp, err := http.Post(fmt.Sprintf("http://localhost:%s/apis/v1/test-ks/v1/alerts", syncHTTPAdapterPort), "application/json", bytes.NewReader(alertBytes))
 		require.NoError(t, err)
 		require.Equal(t, http.StatusAccepted, resp.StatusCode)
 	}
@@ -1331,7 +1374,7 @@ func waitForObjectInPostgresWithDifferentChecksum(t *testing.T, td *Test, accoun
 				break
 			}
 
-			if objMetadata.Checksum != checksum {
+			if objMetadata != nil && objMetadata.Checksum != checksum {
 				break
 			}
 		}
@@ -1341,6 +1384,7 @@ func waitForObjectInPostgresWithDifferentChecksum(t *testing.T, td *Test, accoun
 	require.NoError(t, err)
 	require.NotNil(t, objMetadata)
 	if checksum != "" {
+		//goland:noinspection GoDfaErrorMayBeNotNil,GoDfaNilDereference
 		require.NotEqual(t, checksum, objMetadata.Checksum, "expected object with different checksum in postgres")
 	}
 
