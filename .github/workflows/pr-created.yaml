@@ -33,6 +33,7 @@ jobs:
           "TestSynchronizer_TC01_Backend",
           "TestSynchronizer_TC02_InCluster",
           "TestSynchronizer_TC02_Backend",
+          "TestSynchronizer_TC03",
           "TestSynchronizer_TC04_InCluster",
           "TestSynchronizer_TC04_Backend",
           "TestSynchronizer_TC05_InCluster",

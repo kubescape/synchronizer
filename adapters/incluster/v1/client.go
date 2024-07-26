@@ -450,7 +450,11 @@ func (c *Client) PutObject(_ context.Context, id domain.KindName, object []byte)
 	}
 	// use apply to create or update object, we want to overwrite existing objects
 	// TODO for the moment we keep the dynamic client as we create fewer objects than we fetch
-	_, err = c.dynamicClient.Resource(c.res).Namespace(id.Namespace).Apply(context.Background(), id.Name, &obj, metav1.ApplyOptions{FieldManager: "application/apply-patch"})
+	options := metav1.ApplyOptions{
+		FieldManager: "application/apply-patch",
+		Force:        true,
+	}
+	_, err = c.dynamicClient.Resource(c.res).Namespace(id.Namespace).Apply(context.Background(), id.Name, &obj, options)
 	if err != nil {
 		return fmt.Errorf("apply resource: %w", err)
 	}
