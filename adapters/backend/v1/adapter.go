@@ -22,17 +22,19 @@ type Adapter struct {
 	callbacksMap maps.SafeMap[string, domain.Callbacks]
 	clientsMap   maps.SafeMap[string, *Client]
 
-	connMapMutex  sync.RWMutex
-	connectionMap map[string]domain.ClientIdentifier // <cluster, account> -> <connection string>
-	producer      messaging.MessageProducer
-	mainContext   context.Context
+	connMapMutex   sync.RWMutex
+	connectionMap  map[string]domain.ClientIdentifier // <cluster, account> -> <connection string>
+	producer       messaging.MessageProducer
+	mainContext    context.Context
+	skipAlertsFrom []string
 }
 
 func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, cfg config.Backend) *Adapter {
 	adapter := &Adapter{
-		producer:      messageProducer,
-		mainContext:   mainContext,
-		connectionMap: make(map[string]domain.ClientIdentifier),
+		producer:       messageProducer,
+		mainContext:    mainContext,
+		connectionMap:  make(map[string]domain.ClientIdentifier),
+		skipAlertsFrom: cfg.SkipAlertsFrom,
 	}
 
 	adapter.startReconciliationPeriodicTask(mainContext, cfg.ReconciliationTask)
@@ -117,7 +119,7 @@ func (b *Adapter) Start(ctx context.Context) error {
 	}
 	b.connectionMap[incomingId.String()] = incomingId
 
-	client := NewClient(b.producer)
+	client := NewClient(b.producer, b.skipAlertsFrom)
 	b.clientsMap.Set(incomingId.String(), client)
 	connectedClientsGauge.Inc()
 	callbacks, err := b.Callbacks(ctx)
