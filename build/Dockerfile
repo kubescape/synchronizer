@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.22-bullseye AS builder
+FROM --platform=$BUILDPLATFORM golang:1.23-bookworm AS builder
 
 ENV GO111MODULE=on CGO_ENABLED=0
 WORKDIR /work
@@ -14,7 +14,7 @@ RUN --mount=target=. \
     --mount=type=cache,target=/go/pkg \
     GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/server ./cmd/server
 
-FROM gcr.io/distroless/static-debian11:latest
+FROM gcr.io/distroless/static-debian12:latest
 
 COPY --from=builder /out/client /usr/bin/client
 COPY --from=builder /out/server /usr/bin/server
