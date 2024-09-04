@@ -2,9 +2,11 @@ package incluster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -21,6 +23,7 @@ import (
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
 	helpersv1 "github.com/kubescape/k8s-interface/instanceidhandler/v1/helpers"
+	spdxv1beta1 "github.com/kubescape/storage/pkg/generated/clientset/versioned/typed/softwarecomposition/v1beta1"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
@@ -39,6 +42,7 @@ const (
 	kubescapeCustomResourceGroup = "spdx.softwarecomposition.kubescape.io"
 )
 
+// fieldsToRemove contains fields to remove from resources fetched with the dynamic client
 var fieldsToRemove = map[string][][]string{
 	"default":   {},
 	"/v1/nodes": {{"status", "conditions"}},
@@ -54,7 +58,8 @@ type resourceVersionGetter interface {
 }
 
 type Client struct {
-	client              dynamic.Interface
+	dynamicClient       dynamic.Interface
+	storageClient       spdxv1beta1.SpdxV1beta1Interface
 	account             string
 	cluster             string
 	excludeNamespaces   []string
@@ -71,13 +76,14 @@ type Client struct {
 
 var errWatchClosed = errors.New("watch channel closed")
 
-func NewClient(client dynamic.Interface, cfg config.InCluster, r config.Resource) *Client {
+func NewClient(dynamicClient dynamic.Interface, storageClient spdxv1beta1.SpdxV1beta1Interface, cfg config.InCluster, r config.Resource) *Client {
 	res := schema.GroupVersionResource{Group: r.Group, Version: r.Version, Resource: r.Resource}
 	// get event multiplier from env, defaults to 0
 	multiplier, _ := strconv.Atoi(os.Getenv(envMultiplier))
 	return &Client{
 		account:           cfg.Account,
-		client:            client,
+		dynamicClient:     dynamicClient,
+		storageClient:     storageClient,
 		excludeNamespaces: cfg.ExcludeNamespaces,
 		includeNamespaces: cfg.IncludeNamespaces,
 		operatorNamespace: cfg.Namespace,
@@ -125,7 +131,7 @@ func (c *Client) Start(ctx context.Context) error {
 	// process events
 	for event := range eventQueue.ResultChan {
 		// skip non-objects
-		d, ok := event.Object.(*unstructured.Unstructured)
+		d, ok := event.Object.(metav1.Object)
 		if !ok {
 			continue
 		}
@@ -144,7 +150,7 @@ func (c *Client) Start(ctx context.Context) error {
 		switch {
 		case event.Type == watch.Added:
 			logger.L().Debug("added resource", helpers.String("id", id.String()))
-			newObject, err := c.getObjectFromUnstructured(d)
+			newObject, err := c.getObjectFromMeta(d)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
 				continue
@@ -165,7 +171,7 @@ func (c *Client) Start(ctx context.Context) error {
 			}
 		case event.Type == watch.Modified:
 			logger.L().Debug("modified resource", helpers.String("id", id.String()))
-			newObject, err := c.getObjectFromUnstructured(d)
+			newObject, err := c.getObjectFromMeta(d)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
 				continue
@@ -179,7 +185,7 @@ func (c *Client) Start(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
+func (c *Client) IsRelated(_ context.Context, id domain.ClientIdentifier) bool {
 	return c.account == id.Account && c.cluster == id.Cluster
 }
 
@@ -190,7 +196,7 @@ func (c *Client) Stop(_ context.Context) error {
 func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, eventQueue *utils.CooldownQueue) {
 	exitFatal := true
 	if err := backoff.RetryNotify(func() error {
-		watcher, err := c.client.Resource(c.res).Namespace("").Watch(context.Background(), watchOpts)
+		watcher, err := c.chooseWatcher(watchOpts)
 		if err != nil {
 			if k8sErrors.ReasonForError(err) == metav1.StatusReasonNotFound {
 				exitFatal = false
@@ -239,38 +245,38 @@ func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, e
 }
 
 func multiplyEvent(event watch.Event, queue *utils.CooldownQueue, multiplier int) {
-	objectName := event.Object.(*unstructured.Unstructured).GetName()
-	objectUID := event.Object.(*unstructured.Unstructured).GetUID()
+	objectName := event.Object.(metav1.Object).GetName()
+	objectUID := event.Object.(metav1.Object).GetUID()
 	for i := 0; i < multiplier; i++ {
 		newEvent := event.DeepCopy()
-		newEvent.Object.(*unstructured.Unstructured).SetName(fmt.Sprintf("%s-%d", objectName, i))
+		newEvent.Object.(metav1.Object).SetName(fmt.Sprintf("%s-%d", objectName, i))
 		// change the workload-name label too - if applicable
-		labels := newEvent.Object.(*unstructured.Unstructured).GetLabels()
+		labels := newEvent.Object.(metav1.Object).GetLabels()
 		if labels != nil {
 			if workloadName, ok := labels[helpersv1.NameMetadataKey]; ok {
 				labels[helpersv1.NameMetadataKey] = fmt.Sprintf("%s-%d", workloadName, i)
-				newEvent.Object.(*unstructured.Unstructured).SetLabels(labels)
+				newEvent.Object.(metav1.Object).SetLabels(labels)
 			}
 		}
 
-		annotations := newEvent.Object.(*unstructured.Unstructured).GetAnnotations()
+		annotations := newEvent.Object.(metav1.Object).GetAnnotations()
 		if annotations != nil {
 			if wlid, ok := annotations[helpersv1.WlidMetadataKey]; ok {
 
 				// workloadinterface.
 				annotations[helpersv1.WlidMetadataKey] = fmt.Sprintf("%s-%d", wlid, i)
-				newEvent.Object.(*unstructured.Unstructured).SetAnnotations(annotations)
+				newEvent.Object.(metav1.Object).SetAnnotations(annotations)
 			}
 		}
 		// need also to modify UID, otherwise it will deduplicated by the cooldown queue
-		newEvent.Object.(*unstructured.Unstructured).SetUID(types.UID(fmt.Sprintf("%s-%d", objectUID, i)))
+		newEvent.Object.(metav1.Object).SetUID(types.UID(fmt.Sprintf("%s-%d", objectUID, i)))
 		queue.Enqueue(*newEvent)
 	}
 }
 
 // isFiltered returns true if workload should be filtered out.
 // filters out workloads that have a parent, unless they are in the kubescape-operator namespace
-func (c *Client) isFiltered(workload *unstructured.Unstructured) bool {
+func (c *Client) isFiltered(workload metav1.Object) bool {
 	if workload == nil {
 		return false
 	}
@@ -290,12 +296,13 @@ func (c *Client) isFiltered(workload *unstructured.Unstructured) bool {
 
 // hasParent returns true if workload has a parent
 // based on https://github.com/kubescape/k8s-interface/blob/2855cc94bd7666b227ad9e5db5ca25cb895e6cee/k8sinterface/k8sdynamic.go#L219
-func hasParent(workload *unstructured.Unstructured) bool {
+func hasParent(workload metav1.Object) bool {
 	if workload == nil {
 		return false
 	}
+	kind := workload.(runtime.Object).GetObjectKind().GroupVersionKind().Kind
 	// filter out non-controller workloads
-	if !slices.Contains([]string{"Pod", "Job", "ReplicaSet"}, workload.GetKind()) {
+	if !slices.Contains([]string{"Pod", "Job", "ReplicaSet"}, kind) {
 		return false
 	}
 	// check if workload has owner
@@ -304,7 +311,7 @@ func hasParent(workload *unstructured.Unstructured) bool {
 		return slices.Contains([]string{"apps/v1", "batch/v1", "batch/v1beta1"}, ownerReferences[0].APIVersion)
 	}
 	// check if workload is Pod with pod-template-hash label
-	if workload.GetKind() == "Pod" {
+	if kind == "Pod" {
 		if podLabels := workload.GetLabels(); podLabels != nil {
 			if podHash, ok := podLabels["pod-template-hash"]; ok && podHash != "" {
 				return true
@@ -374,11 +381,12 @@ func (c *Client) DeleteObject(_ context.Context, id domain.KindName) error {
 		// remove from known resources
 		delete(c.ShadowObjects, id.String())
 	}
-	return c.client.Resource(c.res).Namespace(id.Namespace).Delete(context.Background(), id.Name, metav1.DeleteOptions{})
+	// for delete it's probably fine to only use the dynamic client
+	return c.dynamicClient.Resource(c.res).Namespace(id.Namespace).Delete(context.Background(), id.Name, metav1.DeleteOptions{})
 }
 
 func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
-	obj, err := c.getResource(id.Namespace, id.Name)
+	obj, err := c.getResource(id.Namespace, id.Name, c.multiplier > 0)
 	if err != nil {
 		return fmt.Errorf("get resource: %w", err)
 	}
@@ -402,7 +410,7 @@ func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum s
 	if c.Strategy != domain.PatchStrategy {
 		return nil, fmt.Errorf("patch strategy not enabled for resource %s", id.Kind.String())
 	}
-	obj, err := c.getResource(id.Namespace, id.Name)
+	obj, err := c.getResource(id.Namespace, id.Name, c.multiplier > 0)
 	if err != nil {
 		return nil, fmt.Errorf("get resource: %w", err)
 	}
@@ -436,7 +444,8 @@ func (c *Client) PutObject(_ context.Context, id domain.KindName, object []byte)
 		return fmt.Errorf("unmarshal object: %w", err)
 	}
 	// use apply to create or update object, we want to overwrite existing objects
-	_, err = c.client.Resource(c.res).Namespace(id.Namespace).Apply(context.Background(), id.Name, &obj, metav1.ApplyOptions{FieldManager: "application/apply-patch"})
+	// TODO for the moment we keep the dynamic client as we create fewer objects than we fetch
+	_, err = c.dynamicClient.Resource(c.res).Namespace(id.Namespace).Apply(context.Background(), id.Name, &obj, metav1.ApplyOptions{FieldManager: "application/apply-patch"})
 	if err != nil {
 		return fmt.Errorf("apply resource: %w", err)
 	}
@@ -460,7 +469,7 @@ func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, newChecks
 	return nil
 }
 
-func (c *Client) Batch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+func (c *Client) Batch(ctx context.Context, _ domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
 	if f, ok := c.batchProcessingFunc[batchType]; ok {
 		logger.L().Debug("batch processing", helpers.String("batch type", string(batchType)))
 		return f(ctx, c, items)
@@ -470,7 +479,7 @@ func (c *Client) Batch(ctx context.Context, kind domain.Kind, batchType domain.B
 }
 
 func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, error) {
-	obj, err := c.getResource(id.Namespace, id.Name)
+	obj, err := c.getResource(id.Namespace, id.Name, c.multiplier > 0)
 	if err != nil {
 		return nil, fmt.Errorf("get resource: %w", err)
 	}
@@ -490,23 +499,23 @@ func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, e
 
 func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) {
 	logger.L().Debug("getting existing objects from storage", helpers.String("resource", c.res.Resource))
-	// no need for pager since list returns only metadatas
-	// no need for skip ns since these are our CRDs
-	list, err := c.client.Resource(c.res).Namespace("").List(context.Background(), metav1.ListOptions{})
-	if err != nil {
-		return "", fmt.Errorf("list resources: %w", err)
-	}
-	for _, d := range list.Items {
+	var resourceVersion string
+	if err := pager.New(func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+		return c.chooseLister(opts)
+	}).EachListItem(context.Background(), metav1.ListOptions{}, func(run runtime.Object) error {
+		d := run.(metav1.Object)
+		resourceVersion = d.GetResourceVersion()
+		// no need for skip ns since these are our CRDs
 		id := domain.KindName{
 			Kind:            c.kind,
 			Name:            d.GetName(),
 			Namespace:       d.GetNamespace(),
 			ResourceVersion: domain.ToResourceVersion(d.GetResourceVersion()),
 		}
-		obj, err := c.client.Resource(c.res).Namespace(d.GetNamespace()).Get(context.Background(), d.GetName(), metav1.GetOptions{})
+		obj, err := c.getResource(d.GetNamespace(), d.GetName(), false)
 		if err != nil {
 			logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
-			continue
+			return nil
 		}
 		if c.multiplier > 0 {
 			c.multiplyVerifyObject(ctx, id, obj)
@@ -514,20 +523,23 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 			newObject, err := c.filterAndMarshal(obj)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
-				continue
+				return nil
 			}
 			err = c.callVerifyObject(ctx, id, newObject)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
-				continue
+				return nil
 			}
 		}
+		return nil
+	}); err != nil {
+		return "", fmt.Errorf("list resources: %w", err)
 	}
 	// set resource version to watch from
-	return list.GetResourceVersion(), nil
+	return resourceVersion, nil
 }
 
-func (c *Client) multiplyVerifyObject(ctx context.Context, id domain.KindName, obj *unstructured.Unstructured) {
+func (c *Client) multiplyVerifyObject(ctx context.Context, id domain.KindName, obj metav1.Object) {
 	objectName := id.Name
 	for i := 0; i < c.multiplier; i++ {
 		id.Name = fmt.Sprintf("%s-%d", objectName, i)
@@ -553,21 +565,30 @@ func (c *Client) multiplyVerifyObject(ctx context.Context, id domain.KindName, o
 	}
 }
 
-func (c *Client) filterAndMarshal(d *unstructured.Unstructured) ([]byte, error) {
+func (c *Client) filterAndMarshal(d metav1.Object) ([]byte, error) {
 	utils.RemoveManagedFields(d)
-	fields, ok := fieldsToRemove[c.kind.String()]
-	if !ok {
-		fields = fieldsToRemove["default"]
+	if un, ok := d.(*unstructured.Unstructured); ok {
+		fields, ok := fieldsToRemove[c.kind.String()]
+		if !ok {
+			fields = fieldsToRemove["default"]
+		}
+		if err := utils.RemoveSpecificFields(un, fields); err != nil {
+			return nil, fmt.Errorf("remove specific fields: %w", err)
+		}
+	} else {
+		// add type meta information to the object
+		d.(runtime.Object).GetObjectKind().SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   c.kind.Group,
+			Version: c.kind.Version,
+			Kind:    reflect.TypeOf(d).Elem().Name(),
+		})
 	}
-	if err := utils.RemoveSpecificFields(d, fields); err != nil {
-		return nil, fmt.Errorf("remove specific fields: %w", err)
-	}
-	return d.MarshalJSON()
+	return json.Marshal(d)
 }
 
-func (c *Client) getObjectFromUnstructured(d *unstructured.Unstructured) ([]byte, error) {
+func (c *Client) getObjectFromMeta(d metav1.Object) ([]byte, error) {
 	if c.res.Group == kubescapeCustomResourceGroup {
-		obj, err := c.getResource(d.GetNamespace(), d.GetName())
+		obj, err := c.getResource(d.GetNamespace(), d.GetName(), c.multiplier > 0)
 		if err != nil {
 			return nil, fmt.Errorf("get resource: %w", err)
 		}
@@ -584,14 +605,14 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 	}
 
 	// create a map of resources from the client
-	clientItems := map[string]unstructured.Unstructured{}
+	clientItems := map[string]metav1.Object{}
 	clientItemsSet := mapset.NewSet[string]()
 	if err := pager.New(func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
-		return c.client.Resource(c.res).Namespace("").List(ctx, opts)
+		return c.chooseLister(opts)
 	}).EachListItem(context.Background(), metav1.ListOptions{}, func(obj runtime.Object) error {
-		item := obj.(*unstructured.Unstructured)
+		item := obj.(metav1.Object)
 		k := fmt.Sprintf("%s/%s", item.GetNamespace(), item.GetName())
-		clientItems[k] = *item
+		clientItems[k] = item
 		clientItemsSet.Add(k)
 		return nil
 	}); err != nil {
@@ -649,7 +670,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 			helpers.String("namespace", item.Namespace),
 			helpers.Int("batch resource version", item.ResourceVersion),
 			helpers.Int("current resource version", currentVersion))
-		newObject, marshalErr := c.getObjectFromUnstructured(&resource)
+		newObject, marshalErr := c.getObjectFromMeta(resource)
 		if marshalErr != nil {
 			err = multierr.Append(err, fmt.Errorf("marshal resource: %w", marshalErr))
 			continue
@@ -667,7 +688,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 	for _, k := range clientItemsSet.Difference(serverItemsSet).ToSlice() {
 		item := clientItems[k]
 
-		if c.isFiltered(&item) {
+		if c.isFiltered(item) {
 			logger.L().Debug("reconciliation: resource missing in server should be filtered, skipping",
 				helpers.String("resource", c.kind.String()),
 				helpers.String("name", item.GetName()),
@@ -683,7 +704,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 			ResourceVersion: resourceVersion,
 		}
 
-		newObject, marshalErr := c.filterAndMarshal(&item)
+		newObject, marshalErr := c.filterAndMarshal(item)
 		if marshalErr != nil {
 			err = multierr.Append(err, fmt.Errorf("marshal resource: %w", marshalErr))
 			continue
@@ -756,11 +777,61 @@ func defaultBatchProcessingFunc(ctx context.Context, c *Client, items domain.Bat
 	return err
 }
 
-func (c *Client) getResource(namespace string, name string) (*unstructured.Unstructured, error) {
-	if c.multiplier > 0 {
+func (c *Client) chooseLister(opts metav1.ListOptions) (runtime.Object, error) {
+	if c.storageClient != nil {
+		switch c.res.Resource {
+		case "applicationprofiles":
+			return c.storageClient.ApplicationProfiles("").List(context.Background(), opts)
+		case "networkneighborhoods":
+			return c.storageClient.NetworkNeighborhoods("").List(context.Background(), opts)
+		case "sbomsyfts":
+			return c.storageClient.SBOMSyfts("").List(context.Background(), opts)
+		case "seccompprofiles":
+			return c.storageClient.SeccompProfiles("").List(context.Background(), opts)
+		case "vulnerabilitymanifests":
+			return c.storageClient.VulnerabilityManifests("").List(context.Background(), opts)
+		}
+	}
+	return c.dynamicClient.Resource(c.res).Namespace("").List(context.Background(), opts)
+}
+
+func (c *Client) chooseWatcher(opts metav1.ListOptions) (watch.Interface, error) {
+	if c.storageClient != nil {
+		switch c.res.Resource {
+		case "applicationprofiles":
+			return c.storageClient.ApplicationProfiles("").Watch(context.Background(), opts)
+		case "networkneighborhoods":
+			return c.storageClient.NetworkNeighborhoods("").Watch(context.Background(), opts)
+		case "sbomsyfts":
+			return c.storageClient.SBOMSyfts("").Watch(context.Background(), opts)
+		case "seccompprofiles":
+			return c.storageClient.SeccompProfiles("").Watch(context.Background(), opts)
+		case "vulnerabilitymanifests":
+			return c.storageClient.VulnerabilityManifests("").Watch(context.Background(), opts)
+		}
+	}
+	return c.dynamicClient.Resource(c.res).Namespace("").Watch(context.Background(), opts)
+}
+
+func (c *Client) getResource(namespace string, name string, strip bool) (metav1.Object, error) {
+	if strip {
 		name = stripSuffix(name)
 	}
-	return c.client.Resource(c.res).Namespace(namespace).Get(context.Background(), name, metav1.GetOptions{})
+	if c.storageClient != nil {
+		switch c.res.Resource {
+		case "applicationprofiles":
+			return c.storageClient.ApplicationProfiles(namespace).Get(context.Background(), name, metav1.GetOptions{})
+		case "networkneighborhoods":
+			return c.storageClient.NetworkNeighborhoods(namespace).Get(context.Background(), name, metav1.GetOptions{})
+		case "sbomsyfts":
+			return c.storageClient.SBOMSyfts(namespace).Get(context.Background(), name, metav1.GetOptions{})
+		case "seccompprofiles":
+			return c.storageClient.SeccompProfiles(namespace).Get(context.Background(), name, metav1.GetOptions{})
+		case "vulnerabilitymanifests":
+			return c.storageClient.VulnerabilityManifests(namespace).Get(context.Background(), name, metav1.GetOptions{})
+		}
+	}
+	return c.dynamicClient.Resource(c.res).Namespace(namespace).Get(context.Background(), name, metav1.GetOptions{})
 }
 
 func (c *Client) skipNamespace(ns string) bool {

@@ -1,5 +1,4 @@
 //go:build integration
-// +build integration
 
 package tests
 
@@ -531,7 +530,7 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 		})
 	}
 
-	clientAdapter := incluster.NewInClusterAdapter(clientCfg.InCluster, dynamic.NewForConfigOrDie(cluster.clusterConfig))
+	clientAdapter := incluster.NewInClusterAdapter(clientCfg.InCluster, dynamic.NewForConfigOrDie(cluster.clusterConfig), spdxv1beta1client.NewForConfigOrDie(cluster.clusterConfig))
 	newConn := func() (net.Conn, error) {
 		return clientConn, nil
 	}
@@ -598,8 +597,8 @@ func initIntegrationTest(t *testing.T) *Test {
 	require.NoError(t, err)
 
 	// create k8s cluster
-	cluster_1 := createK8sCluster(t, "cluster1", "b486ba4e-ffaa-4cd4-b885-b6d26cd13193")
-	cluster_2 := createK8sCluster(t, "cluster2", "0757d22d-a9c1-4ca3-87b6-f2236f7f5885")
+	cluster1 := createK8sCluster(t, "cluster1", "b486ba4e-ffaa-4cd4-b885-b6d26cd13193")
+	cluster2 := createK8sCluster(t, "cluster2", "0757d22d-a9c1-4ca3-87b6-f2236f7f5885")
 
 	// generate some random ports
 	// pulsar, pulsar-admin, postgres, sync1, sync2, sync-http1, sync-http2
@@ -660,23 +659,23 @@ func initIntegrationTest(t *testing.T) *Test {
 	clientConn2, serverConn2 := net.Pipe() // client2 -> server2
 
 	// synchronizer servers
-	synchronizerServer1 := createAndStartSynchronizerServer(t, pulsarUrl, pulsarAdminUrl, pulsarClient, serverConn1, ports[3], cluster_1)
-	synchronizerServer2 := createAndStartSynchronizerServer(t, pulsarUrl, pulsarAdminUrl, pulsarClient, serverConn2, ports[4], cluster_2)
+	synchronizerServer1 := createAndStartSynchronizerServer(t, pulsarUrl, pulsarAdminUrl, pulsarClient, serverConn1, ports[3], cluster1)
+	synchronizerServer2 := createAndStartSynchronizerServer(t, pulsarUrl, pulsarAdminUrl, pulsarClient, serverConn2, ports[4], cluster2)
 
 	// synchronizer clients
-	createAndStartSynchronizerClient(t, cluster_1, clientConn1, synchronizerServer1, ports[5], true)
-	createAndStartSynchronizerClient(t, cluster_2, clientConn2, synchronizerServer2, ports[6], true)
+	createAndStartSynchronizerClient(t, cluster1, clientConn1, synchronizerServer1, ports[5], true)
+	createAndStartSynchronizerClient(t, cluster2, clientConn2, synchronizerServer2, ports[6], true)
 	time.Sleep(10 * time.Second) // important that we wait before starting the test because we might miss events if the watcher hasn't started yet
 	return &Test{
 		ctx: ctx,
 		containers: map[string]testcontainers.Container{
-			"k3s1":     cluster_1.k3sC,
-			"k3s2":     cluster_2.k3sC,
+			"k3s1":     cluster1.k3sC,
+			"k3s2":     cluster2.k3sC,
 			"postgres": postgresC,
 			"pulsar":   pulsarC,
 		},
 		files:        []string{rdsFile.Name()},
-		clusters:     []TestKubernetesCluster{*cluster_1, *cluster_2},
+		clusters:     []TestKubernetesCluster{*cluster1, *cluster2},
 		ingesterConf: ingesterConf,
 		pulsarClient: pulsarClient,
 		processor:    ingesterProcessor,
@@ -726,9 +725,9 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	var objPath s3connector.S3ObjectPath
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
 	require.NoError(t, err)
-	bytes, err := td.processor.GetObjectFromS3(objPath)
+	b, err := td.processor.GetObjectFromS3(objPath)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, bytes)
+	assert.NotEmpty(t, b)
 	// compare object in s3 with object in k8s
 	k8sAppProfile, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	require.NoError(t, err)
@@ -736,7 +735,7 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	k8sAppProfile.TypeMeta.Kind = "ApplicationProfile"
 	k8sAppProfile.TypeMeta.APIVersion = "spdx.softwarecomposition.kubescape.io/v1beta1"
 	var s3AppProfile v1beta1.ApplicationProfile
-	err = json.Unmarshal(bytes, &s3AppProfile)
+	err = json.Unmarshal(b, &s3AppProfile)
 	require.NoError(t, err)
 	assert.Equal(t, k8sAppProfile, &s3AppProfile)
 	// check how many times the get object message was sent
@@ -767,9 +766,9 @@ func TestSynchronizer_TC01_Backend(t *testing.T) {
 	// add cm to backend via pulsar message
 	pulsarProducer, err := eventingester.NewPulsarProducer(td.pulsarClient, "synchronizer")
 	require.NoError(t, err)
-	bytes, err := json.Marshal(td.clusters[0].cm)
+	b, err := json.Marshal(td.clusters[0].cm)
 	require.NoError(t, err)
-	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, bytes)
+	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, b)
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in k8s
@@ -805,10 +804,10 @@ func TestSynchronizer_TC02_InCluster(t *testing.T) {
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
 	require.NoError(t, err)
 	// check object in s3
-	bytes, err := td.processor.GetObjectFromS3(objPath)
+	b, err := td.processor.GetObjectFromS3(objPath)
 	assert.NoError(t, err)
 	var s3AppProfile v1beta1.ApplicationProfile
-	err = json.Unmarshal(bytes, &s3AppProfile)
+	err = json.Unmarshal(b, &s3AppProfile)
 	require.NoError(t, err)
 	assert.Equal(t, "nginx2", s3AppProfile.Spec.Containers[0].Name)
 	// tear down
@@ -821,17 +820,17 @@ func TestSynchronizer_TC02_Backend(t *testing.T) {
 	// add cm to backend via pulsar message
 	pulsarProducer, err := eventingester.NewPulsarProducer(td.pulsarClient, "synchronizer")
 	require.NoError(t, err)
-	bytes, err := json.Marshal(td.clusters[0].cm)
+	b, err := json.Marshal(td.clusters[0].cm)
 	require.NoError(t, err)
-	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, bytes)
+	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, b)
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// modify cm via pulsar message (we don't send patches from backend)
 	cm2 := td.clusters[0].cm.DeepCopy()
 	cm2.Data["test"] = "test2"
-	bytes, err = json.Marshal(cm2)
+	b, err = json.Marshal(cm2)
 	require.NoError(t, err)
-	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, bytes)
+	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, b)
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in k8s
@@ -887,9 +886,9 @@ func TestSynchronizer_TC04_Backend(t *testing.T) {
 	// add cm to backend via pulsar message
 	pulsarProducer, err := eventingester.NewPulsarProducer(td.pulsarClient, "synchronizer")
 	require.NoError(t, err)
-	bytes, err := json.Marshal(td.clusters[0].cm)
+	b, err := json.Marshal(td.clusters[0].cm)
 	require.NoError(t, err)
-	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, bytes)
+	err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name, "", 0, b)
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in k8s
@@ -908,7 +907,7 @@ func TestSynchronizer_TC04_Backend(t *testing.T) {
 }
 
 func getPodNamesInNamespace(k8sClient kubernetes.Interface, namespace string) []string {
-	podNames := []string{}
+	var podNames []string
 	pods, err := k8sClient.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return podNames
@@ -965,25 +964,25 @@ func TestSynchronizer_TC05_Backend(t *testing.T) {
 	require.NoError(t, err)
 
 	// cluster 1
-	objs_c1 := map[string]any{
+	objsC1 := map[string]any{
 		"/v1/configmaps": td.clusters[0].cm,
 		"/v1/secrets":    td.clusters[0].secret,
 	}
-	for kind, obj := range objs_c1 {
-		bytes, err := json.Marshal(obj)
+	for kind, obj := range objsC1 {
+		b, err := json.Marshal(obj)
 		require.NoError(t, err)
-		err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, kind, namespace, name, "", 0, bytes)
+		err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[0].account, td.clusters[0].cluster, kind, namespace, name, "", 0, b)
 		require.NoError(t, err)
 	}
 
 	// cluster 2
-	objs_c2 := map[string]any{
+	objsC2 := map[string]any{
 		"/v1/serviceaccounts": td.clusters[1].sa,
 	}
-	for kind, obj := range objs_c2 {
-		bytes, err := json.Marshal(obj)
+	for kind, obj := range objsC2 {
+		b, err := json.Marshal(obj)
 		require.NoError(t, err)
-		err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[1].account, td.clusters[1].cluster, kind, namespace, name, "", 0, bytes)
+		err = pulsarProducer.SendPutObjectMessage(td.ctx, td.clusters[1].account, td.clusters[1].cluster, kind, namespace, name, "", 0, b)
 		require.NoError(t, err)
 	}
 
@@ -1040,10 +1039,10 @@ func TestSynchronizer_TC06(t *testing.T) {
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
 	require.NoError(t, err)
 	// check object in s3
-	bytes, err := td.processor.GetObjectFromS3(objPath)
+	b, err := td.processor.GetObjectFromS3(objPath)
 	assert.NoError(t, err)
 	var s3AppProfile v1beta1.ApplicationProfile
-	err = json.Unmarshal(bytes, &s3AppProfile)
+	err = json.Unmarshal(b, &s3AppProfile)
 	require.NoError(t, err)
 	assert.Equal(t, "nginx2", s3AppProfile.Spec.Containers[0].Name)
 	// tear down
@@ -1074,10 +1073,10 @@ func TestSynchronizer_TC07(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in s3
-	bytes, err := td.processor.GetObjectFromS3(objPath)
+	b, err := td.processor.GetObjectFromS3(objPath)
 	assert.NoError(t, err)
 	var s3AppProfile v1beta1.ApplicationProfile
-	err = json.Unmarshal(bytes, &s3AppProfile)
+	err = json.Unmarshal(b, &s3AppProfile)
 	require.NoError(t, err)
 	assert.Equal(t, "nginx2", s3AppProfile.Spec.Containers[0].Name)
 	// tear down
@@ -1196,8 +1195,8 @@ func TestSynchronizer_TC12(t *testing.T) {
 
 	// create a new dummy object directly in postgres (which does not exist in k8s) and confirm it is there
 	toBeDeletedName := name + "test"
-	bytes, _ := json.Marshal(createdAppProfileObj)
-	_, err = td.processor.Store(account, clusterName, kind, namespace, toBeDeletedName, bytes)
+	b, _ := json.Marshal(createdAppProfileObj)
+	_, err = td.processor.Store(account, clusterName, kind, namespace, toBeDeletedName, b)
 	assert.NoError(t, err)
 	_, objFound, err := td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, toBeDeletedName)
 	assert.NoError(t, err)

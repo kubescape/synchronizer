@@ -65,20 +65,20 @@ func main() {
 
 	updateClusterName(&cfg)
 	// init adapters
-	adapters := []adapters.Adapter{}
+	var adpts []adapters.Adapter
 	if err := cfg.InCluster.ValidateConfig(); err == nil {
-		k8sclient, err := utils.NewClient()
+		dynamicClient, storageClient, err := utils.NewClient()
 		if err != nil {
 			logger.L().Fatal("unable to create k8s client", helpers.Error(err))
 		}
-		inClusterAdapter := incluster.NewInClusterAdapter(cfg.InCluster, k8sclient)
-		adapters = append(adapters, inClusterAdapter)
+		inClusterAdapter := incluster.NewInClusterAdapter(cfg.InCluster, dynamicClient, storageClient)
+		adpts = append(adpts, inClusterAdapter)
 	}
 	if err := cfg.HTTPEndpoint.ValidateConfig(); err == nil {
 		httpEndpointAdapter := httpendpoint.NewHTTPEndpointAdapter(cfg)
-		adapters = append(adapters, httpEndpointAdapter)
+		adpts = append(adpts, httpEndpointAdapter)
 	}
-	if len(adapters) == 0 {
+	if len(adpts) == 0 {
 		logger.L().Fatal("no valid adapter found")
 	}
 
@@ -141,7 +141,7 @@ func main() {
 	}
 
 	// synchronizer
-	synchronizer, err := core.NewSynchronizerClient(ctx, adapters, conn, newConn)
+	synchronizer, err := core.NewSynchronizerClient(ctx, adpts, conn, newConn)
 	if err != nil {
 		logger.L().Ctx(ctx).Fatal("failed to create synchronizer", helpers.Error(err))
 	}

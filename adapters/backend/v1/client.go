@@ -68,7 +68,7 @@ func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
 	return c.messageProducer.ProduceMessage(ctx, id, messaging.MsgPropEventValueServerConnectedMessage, data)
 }
 
-// FIXME no need to implement callPutOrPatch because we don't send patches from backend
+// no need to implement callPutOrPatch because we don't send patches from backend
 // so you just call c.callbacks.PutObject instead
 
 func (c *Client) callVerifyObject(ctx context.Context, id domain.KindName, object []byte) error {

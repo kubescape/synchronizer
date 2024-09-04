@@ -13,6 +13,7 @@ import (
 )
 
 // implement k8s.io/client-go/dynamic.Interface to be able to use it in the adapter
+var _ dynamic.Interface = &NoOpDynamicClient{}
 
 type NoOpDynamicClient struct {
 }
@@ -30,41 +31,41 @@ func (n *NoOpDynamicClient) Resource(gvr schema.GroupVersionResource) dynamic.Na
 	return &NoOpDynamicResource{gvr: gvr}
 }
 
-func (n *NoOpDynamicResource) Namespace(namespace string) dynamic.ResourceInterface {
+func (n *NoOpDynamicResource) Namespace(_ string) dynamic.ResourceInterface {
 	return n
 }
 
-func (n *NoOpDynamicResource) Create(ctx context.Context, obj *unstructured.Unstructured, options metav1.CreateOptions, subresources ...string) (*unstructured.Unstructured, error) {
+func (n *NoOpDynamicResource) Create(_ context.Context, obj *unstructured.Unstructured, _ metav1.CreateOptions, _ ...string) (*unstructured.Unstructured, error) {
 	return obj, nil
 }
-func (n *NoOpDynamicResource) Update(ctx context.Context, obj *unstructured.Unstructured, options metav1.UpdateOptions, subresources ...string) (*unstructured.Unstructured, error) {
+func (n *NoOpDynamicResource) Update(_ context.Context, obj *unstructured.Unstructured, _ metav1.UpdateOptions, _ ...string) (*unstructured.Unstructured, error) {
 	return obj, nil
 }
-func (n *NoOpDynamicResource) UpdateStatus(ctx context.Context, obj *unstructured.Unstructured, options metav1.UpdateOptions) (*unstructured.Unstructured, error) {
+func (n *NoOpDynamicResource) UpdateStatus(_ context.Context, obj *unstructured.Unstructured, _ metav1.UpdateOptions) (*unstructured.Unstructured, error) {
 	return obj, nil
 }
-func (n *NoOpDynamicResource) Delete(ctx context.Context, name string, options metav1.DeleteOptions, subresources ...string) error {
+func (n *NoOpDynamicResource) Delete(_ context.Context, _ string, _ metav1.DeleteOptions, _ ...string) error {
 	return nil
 }
-func (n *NoOpDynamicResource) DeleteCollection(ctx context.Context, options metav1.DeleteOptions, listOptions metav1.ListOptions) error {
+func (n *NoOpDynamicResource) DeleteCollection(_ context.Context, _ metav1.DeleteOptions, _ metav1.ListOptions) error {
 	return nil
 }
-func (n *NoOpDynamicResource) Get(ctx context.Context, name string, options metav1.GetOptions, subresources ...string) (*unstructured.Unstructured, error) {
+func (n *NoOpDynamicResource) Get(_ context.Context, _ string, _ metav1.GetOptions, _ ...string) (*unstructured.Unstructured, error) {
 	return &unstructured.Unstructured{Object: map[string]interface{}{}}, nil
 }
-func (n *NoOpDynamicResource) List(ctx context.Context, opts metav1.ListOptions) (*unstructured.UnstructuredList, error) {
+func (n *NoOpDynamicResource) List(_ context.Context, _ metav1.ListOptions) (*unstructured.UnstructuredList, error) {
 	return &unstructured.UnstructuredList{Object: map[string]interface{}{}, Items: []unstructured.Unstructured{{Object: map[string]interface{}{}}}}, nil
 }
-func (n *NoOpDynamicResource) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
+func (n *NoOpDynamicResource) Watch(_ context.Context, _ metav1.ListOptions) (watch.Interface, error) {
 	return &NoOpWatch{eventChan: make(chan watch.Event)}, nil
 }
-func (n *NoOpDynamicResource) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, options metav1.PatchOptions, subresources ...string) (*unstructured.Unstructured, error) {
+func (n *NoOpDynamicResource) Patch(_ context.Context, _ string, _ types.PatchType, _ []byte, _ metav1.PatchOptions, _ ...string) (*unstructured.Unstructured, error) {
 	return &unstructured.Unstructured{Object: map[string]interface{}{}}, nil
 }
-func (n *NoOpDynamicResource) Apply(ctx context.Context, name string, obj *unstructured.Unstructured, options metav1.ApplyOptions, subresources ...string) (*unstructured.Unstructured, error) {
+func (n *NoOpDynamicResource) Apply(_ context.Context, _ string, obj *unstructured.Unstructured, _ metav1.ApplyOptions, _ ...string) (*unstructured.Unstructured, error) {
 	return obj, nil
 }
-func (n *NoOpDynamicResource) ApplyStatus(ctx context.Context, name string, obj *unstructured.Unstructured, options metav1.ApplyOptions) (*unstructured.Unstructured, error) {
+func (n *NoOpDynamicResource) ApplyStatus(_ context.Context, _ string, obj *unstructured.Unstructured, _ metav1.ApplyOptions) (*unstructured.Unstructured, error) {
 	return obj, nil
 }
 

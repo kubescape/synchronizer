@@ -1,0 +1,46 @@
+{
+  "apiVersion" : "spdx.softwarecomposition.kubescape.io/v1beta1",
+  "kind" : "NetworkNeighborhood",
+  "metadata" : {
+    "name" : "test",
+    "namespace" : "default",
+    "creationTimestamp" : null
+  },
+  "spec" : {
+    "matchLabels" : {
+      "app" : "test"
+    },
+    "containers" : [ {
+      "name" : "test",
+      "ingress" : null,
+      "egress" : [ {
+        "identifier" : "e5e8ca3d76f701a19b7478fdc1c8c24ccc6cef9902b52c8c7e015439e2a1ddf3",
+        "type" : "internal",
+        "dns" : "",
+        "dnsNames" : null,
+        "ports" : [ {
+          "name" : "UDP-53",
+          "protocol" : "UDP",
+          "port" : 53
+        }, {
+          "name" : "TCP-53",
+          "protocol" : "TCP",
+          "port" : 53
+        } ],
+        "podSelector" : {
+          "matchLabels" : {
+            "k8s-app:" : "kube-dns"
+          }
+        },
+        "namespaceSelector" : {
+          "matchLabels" : {
+            "kubernetes.io/metadata.name:" : "kube-system"
+          }
+        },
+        "ipAddress" : ""
+      } ]
+    } ],
+    "initContainers" : null,
+    "ephemeralContainers" : null
+  }
+}

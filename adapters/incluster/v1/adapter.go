@@ -8,6 +8,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	spdxv1beta1 "github.com/kubescape/storage/pkg/generated/clientset/versioned/typed/softwarecomposition/v1beta1"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
@@ -16,17 +17,19 @@ import (
 )
 
 type Adapter struct {
-	callbacks domain.Callbacks
-	cfg       config.InCluster
-	clients   map[string]adapters.Client
-	k8sclient dynamic.Interface
+	callbacks     domain.Callbacks
+	cfg           config.InCluster
+	clients       map[string]adapters.Client
+	dynamicClient dynamic.Interface
+	storageClient spdxv1beta1.SpdxV1beta1Interface
 }
 
-func NewInClusterAdapter(cfg config.InCluster, k8sclient dynamic.Interface) *Adapter {
+func NewInClusterAdapter(cfg config.InCluster, dynamicClient dynamic.Interface, storageClient spdxv1beta1.SpdxV1beta1Interface) *Adapter {
 	return &Adapter{
-		cfg:       cfg,
-		clients:   map[string]adapters.Client{},
-		k8sclient: k8sclient,
+		cfg:           cfg,
+		clients:       map[string]adapters.Client{},
+		dynamicClient: dynamicClient,
+		storageClient: storageClient,
 	}
 }
 
@@ -45,7 +48,7 @@ func (a *Adapter) GetClientByKind(kind domain.Kind) adapters.Client {
 	if !ok {
 		logger.L().Error("client not found", helpers.String("kind", kind.String()))
 		// if client is not found, create an empty one to discard the messages from the server in callbacks if the kind is not in the list
-		client = NewClient(&NoOpDynamicClient{}, a.cfg, config.Resource{
+		client = NewClient(&NoOpDynamicClient{}, nil, a.cfg, config.Resource{
 			Group:    kind.Group,
 			Version:  kind.Version,
 			Resource: kind.Resource,
@@ -110,7 +113,7 @@ func (a *Adapter) Callbacks(_ context.Context) (domain.Callbacks, error) {
 
 func (a *Adapter) Start(ctx context.Context) error {
 	for _, r := range a.cfg.Resources {
-		client := NewClient(a.k8sclient, a.cfg, r)
+		client := NewClient(a.dynamicClient, a.storageClient, a.cfg, r)
 		client.RegisterCallbacks(ctx, a.callbacks)
 		a.clients[r.String()] = client
 
@@ -130,10 +133,10 @@ func (a *Adapter) Start(ctx context.Context) error {
 	return nil
 }
 
-func (a *Adapter) Stop(ctx context.Context) error {
+func (a *Adapter) Stop(_ context.Context) error {
 	return nil
 }
 
-func (a *Adapter) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
+func (a *Adapter) IsRelated(_ context.Context, id domain.ClientIdentifier) bool {
 	return a.cfg.Account == id.Account && a.cfg.ClusterName == id.Cluster
 }
