@@ -7,7 +7,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"go.uber.org/multierr"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"reflect"
 	"strconv"
 	"time"
+
+	"go.uber.org/multierr"
 
 	"github.com/cenkalti/backoff/v4"
 	"golang.org/x/mod/semver"
@@ -191,7 +192,9 @@ func getConfig() (*rest.Config, error) {
 	// fallback to kubeconfig
 	var kubeconfig *string
 	if home := homedir.HomeDir(); home != "" {
-		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+		path := filepath.Join(home, ".kube", "config")
+		kubeconfig = &path
+		//flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
 	} else {
 		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
 	}

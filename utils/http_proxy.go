@@ -6,11 +6,14 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"golang.org/x/net/proxy"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+
+	"github.com/kubescape/go-logger"
+	"github.com/kubescape/go-logger/helpers"
+	"golang.org/x/net/proxy"
 )
 
 type direct struct{}
@@ -45,6 +48,7 @@ func newHTTPProxy(uri *url.URL, forward proxy.Dialer) (proxy.Dialer, error) {
 }
 
 func (s *httpProxy) Dial(_, addr string) (net.Conn, error) {
+	logger.L().Info("Dialing with httpProxy dialer", helpers.String("host", s.host), helpers.Interface("haveAuth", s.haveAuth), helpers.String("addr", addr))
 	// Dial and create the https client connection.
 	c, err := s.forward.Dial("tcp", s.host)
 	if err != nil {
@@ -118,6 +122,7 @@ func GetDialer() func(context.Context, string, string) (net.Conn, error) {
 	if proxyURI != nil {
 		dial, err := proxy.FromURL(proxyURI, Direct)
 		if err == nil {
+			logger.L().Info("Using custom proxy URI", helpers.String("uri", proxyURI.String()))
 			proxyNetDial = dial
 		}
 	}
