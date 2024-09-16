@@ -7,7 +7,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"go.uber.org/multierr"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -16,18 +15,20 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
-	"golang.org/x/mod/semver"
-
 	"github.com/SergJa/jsonhash"
 	"github.com/apache/pulsar-client-go/pulsar"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/uuid"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	spdxv1beta1 "github.com/kubescape/storage/pkg/generated/clientset/versioned/typed/softwarecomposition/v1beta1"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/pmezard/go-difflib/difflib"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/multierr"
+	"golang.org/x/mod/semver"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -170,16 +171,20 @@ func typeAndKind(v interface{}) (reflect.Type, reflect.Kind) {
 	return t, k
 }
 
-func NewClient() (dynamic.Interface, error) {
+func NewClient() (dynamic.Interface, spdxv1beta1.SpdxV1beta1Interface, error) {
 	clusterConfig, err := getConfig()
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("failed to get cluster config: %w", err)
 	}
-	dynClient, err := dynamic.NewForConfig(clusterConfig)
+	dynamicClient, err := dynamic.NewForConfig(clusterConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("failed to create dynamic client: %w", err)
 	}
-	return dynClient, nil
+	storageClient, err := spdxv1beta1.NewForConfig(clusterConfig)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create storage client: %w", err)
+	}
+	return dynamicClient, storageClient, nil
 }
 
 func getConfig() (*rest.Config, error) {
@@ -256,7 +261,7 @@ func StringValueBigger(s1, s2 string) bool {
 	return i1 > i2
 }
 
-func RemoveManagedFields(d *unstructured.Unstructured) {
+func RemoveManagedFields(d metav1.Object) {
 	// Remove managed fields
 	d.SetManagedFields(nil)
 	// Remove last-applied-configuration annotation

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/kinbiko/jsonassert"
+	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
 	"github.com/stretchr/testify/assert"
@@ -100,7 +101,7 @@ func TestClient_watchRetry(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Client{
-				client:        tt.fields.client,
+				dynamicClient: tt.fields.client,
 				account:       tt.fields.account,
 				cluster:       tt.fields.cluster,
 				kind:          tt.fields.kind,
@@ -142,7 +143,7 @@ func TestClient_filterAndMarshal(t *testing.T) {
 	tests := []struct {
 		name    string
 		fields  fields
-		obj     *unstructured.Unstructured
+		obj     metav1.Object
 		want    []byte
 		wantErr bool
 	}{
@@ -165,16 +166,55 @@ func TestClient_filterAndMarshal(t *testing.T) {
 		{
 			name: "filter networkPolicy",
 			fields: fields{
-				kind: domain.KindFromString(context.TODO(), "networking.k8s.io/v1/NetworkPolicy"),
+				kind: domain.KindFromString(context.TODO(), "networking.k8s.io/v1/networkpolicies"),
 			},
 			obj:  utils.FileToUnstructured("../../../utils/testdata/networkPolicy.json"),
 			want: utils.FileContent("../../../utils/testdata/networkPolicyCleaned.json"),
+		},
+		{
+			name: "filter networkNeighborhood",
+			fields: fields{
+				kind: domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/networkneighborhoods"),
+			},
+			obj: &v1beta1.NetworkNeighborhood{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "default",
+				},
+				Spec: v1beta1.NetworkNeighborhoodSpec{
+					LabelSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": "test"},
+					},
+					Containers: []v1beta1.NetworkNeighborhoodContainer{
+						{
+							Name: "test",
+							Egress: []v1beta1.NetworkNeighbor{
+								{
+									Identifier: "e5e8ca3d76f701a19b7478fdc1c8c24ccc6cef9902b52c8c7e015439e2a1ddf3",
+									NamespaceSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{"kubernetes.io/metadata.name:": "kube-system"},
+									},
+									PodSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{"k8s-app:": "kube-dns"},
+									},
+									Ports: []v1beta1.NetworkPort{
+										{Name: "UDP-53", Protocol: "UDP", Port: ptr.To[int32](53)},
+										{Name: "TCP-53", Protocol: "TCP", Port: ptr.To[int32](53)},
+									},
+									Type: "internal",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: utils.FileContent("testdata/networkNeighborhoodFiltered.json"),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Client{
-				client:              tt.fields.client,
+				dynamicClient:       tt.fields.client,
 				account:             tt.fields.account,
 				cluster:             tt.fields.cluster,
 				kind:                tt.fields.kind,
@@ -199,7 +239,7 @@ func TestClient_filterAndMarshal(t *testing.T) {
 func TestClient_isFiltered(t *testing.T) {
 	tests := []struct {
 		name     string
-		workload *unstructured.Unstructured
+		workload metav1.Object
 		filtered bool
 	}{
 		{
