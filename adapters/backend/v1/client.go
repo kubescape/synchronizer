@@ -251,7 +251,7 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 		helpers.String("msgid", msg.MsgId),
 		helpers.String("name", id.Name),
 		helpers.String("checksum", msg.Checksum),
-		helpers.Int("patch size", len(msg.Patch)))
+		helpers.String("patch", string(msg.Patch))) // FIXME remove before merge
 
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -290,7 +290,7 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, o
 		helpers.String("kind", id.Kind.String()),
 		helpers.String("msgid", msg.MsgId),
 		helpers.String("name", id.Name),
-		helpers.Int("object size", len(msg.Object)))
+		helpers.String("object", string(msg.Object))) // FIXME remove before merge
 
 	data, err := json.Marshal(msg)
 	if err != nil {
