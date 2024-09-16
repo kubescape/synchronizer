@@ -110,15 +110,20 @@ func (m *MockAdapter) GetObject(ctx context.Context, id domain.KindName, baseObj
 			m.shadowObjects[id.String()] = baseObject
 		}
 		if oldObject, ok := m.shadowObjects[id.String()]; ok {
-			// calculate checksum
-			checksum, err := utils.CanonicalHash(object)
-			if err != nil {
-				return fmt.Errorf("calculate checksum: %w", err)
-			}
 			// calculate patch
 			patch, err := jsonpatch.CreateMergePatch(oldObject, object)
 			if err != nil {
 				return fmt.Errorf("create merge patch: %w", err)
+			}
+			// apply patch to calculate checksum on result
+			mergeResult, err := jsonpatch.MergePatch(oldObject, patch)
+			if err != nil {
+				return fmt.Errorf("verifying patch: %w", err)
+			}
+			// calculate checksum
+			checksum, err := utils.CanonicalHash(mergeResult)
+			if err != nil {
+				return fmt.Errorf("calculate checksum: %w", err)
 			}
 			return m.callbacks.PatchObject(ctx, id, checksum, patch)
 		} else {
@@ -248,15 +253,20 @@ func (m *MockAdapter) TestCallPutOrPatch(ctx context.Context, id domain.KindName
 			m.shadowObjects[id.String()] = baseObject
 		}
 		if oldObject, ok := m.shadowObjects[id.String()]; ok {
-			// calculate checksum
-			checksum, err := utils.CanonicalHash(newObject)
-			if err != nil {
-				return fmt.Errorf("calculate checksum: %w", err)
-			}
 			// calculate patch
 			patch, err := jsonpatch.CreateMergePatch(oldObject, newObject)
 			if err != nil {
 				return fmt.Errorf("create merge patch: %w", err)
+			}
+			// apply patch to calculate checksum on result
+			mergeResult, err := jsonpatch.MergePatch(oldObject, patch)
+			if err != nil {
+				return fmt.Errorf("verifying patch: %w", err)
+			}
+			// calculate checksum
+			checksum, err := utils.CanonicalHash(mergeResult)
+			if err != nil {
+				return fmt.Errorf("calculate checksum: %w", err)
 			}
 			err = m.callbacks.PatchObject(ctx, id, checksum, patch)
 			if err != nil {

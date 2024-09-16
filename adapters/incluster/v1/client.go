@@ -328,11 +328,6 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObj
 			c.ShadowObjects[id.String()] = baseObject
 		}
 		if oldObject, ok := c.ShadowObjects[id.String()]; ok {
-			// calculate checksum
-			checksum, err := utils.CanonicalHash(newObject)
-			if err != nil {
-				return fmt.Errorf("calculate checksum: %w", err)
-			}
 			// calculate patch
 			patch, err := jsonpatch.CreateMergePatch(oldObject, newObject)
 			if err != nil {
@@ -341,6 +336,16 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObj
 			// skip patch containing only resource version
 			if emptyPatch.Match(patch) {
 				return nil
+			}
+			// apply patch to calculate checksum on result
+			mergeResult, err := jsonpatch.MergePatch(oldObject, patch)
+			if err != nil {
+				return fmt.Errorf("verifying patch: %w", err)
+			}
+			// calculate checksum
+			checksum, err := utils.CanonicalHash(mergeResult)
+			if err != nil {
+				return fmt.Errorf("calculate checksum: %w", err)
 			}
 			err = c.callbacks.PatchObject(ctx, id, checksum, patch)
 			if err != nil {
