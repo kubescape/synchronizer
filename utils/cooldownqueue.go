@@ -1,11 +1,11 @@
 package utils
 
 import (
+	"strings"
 	"time"
 
-	"github.com/kubescape/synchronizer/domain"
 	"istio.io/pkg/cache"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 )
 
@@ -44,20 +44,9 @@ func NewCooldownQueue() *CooldownQueue {
 
 // makeEventKey creates a unique key for an event from a watcher
 func makeEventKey(e watch.Event) string {
-	object, ok := e.Object.(*unstructured.Unstructured)
-	if !ok {
-		return ""
-	}
-	id := domain.KindName{
-		Kind: &domain.Kind{
-			Group:    object.GetAPIVersion(),
-			Resource: object.GetKind(),
-		},
-		Name:      object.GetName(),
-		Namespace: object.GetNamespace(),
-	}
-
-	return id.String()
+	gvk := e.Object.GetObjectKind().GroupVersionKind()
+	meta := e.Object.(metav1.Object)
+	return strings.Join([]string{gvk.Group, gvk.Version, gvk.Kind, meta.GetNamespace(), meta.GetName()}, "/")
 }
 
 func (q *CooldownQueue) Closed() bool {
