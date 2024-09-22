@@ -203,7 +203,7 @@ type ReconciliationTask struct {
 // when cron schedule is set, the task will be executed according to the cron schedule.
 // intervalFromConnection is the minimum interval time in minutes from the connection time that the reconciliation task will be sent.
 func (a *Adapter) startReconciliationPeriodicTask(mainCtx context.Context, cfg *config.ReconciliationTaskConfig) {
-	if cfg == nil || cfg.TaskIntervalSeconds == 0 || cfg.IntervalFromConnectionSeconds == 0 || cfg.CronSchedule == "" {
+	if cfg == nil || (cfg.TaskIntervalSeconds == 0 && cfg.CronSchedule == "") || cfg.IntervalFromConnectionSeconds == 0 {
 		logger.L().Warning("reconciliation task is disabled (intervals are not set)")
 		return
 	}
