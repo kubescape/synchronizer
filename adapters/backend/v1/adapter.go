@@ -193,24 +193,39 @@ func (b *Adapter) Batch(ctx context.Context, kind domain.Kind, batchType domain.
 
 // startReconciliationPeriodicTask starts a periodic task that sends reconciliation request messages to connected clients
 // every configurable minutes (interval). If interval is 0 (not set), the task is disabled.
+// when cron schedule is set, the task will be executed according to the cron schedule.
 // intervalFromConnection is the minimum interval time in minutes from the connection time that the reconciliation task will be sent.
 func (a *Adapter) startReconciliationPeriodicTask(mainCtx context.Context, cfg *config.ReconciliationTaskConfig) {
-	if cfg == nil || cfg.TaskIntervalSeconds == 0 || cfg.IntervalFromConnectionSeconds == 0 {
+	if cfg == nil || (cfg.TaskIntervalSeconds == 0 && cfg.CronSchedule == "") || cfg.IntervalFromConnectionSeconds == 0 {
 		logger.L().Warning("reconciliation task is disabled (intervals are not set)")
 		return
 	}
 
 	go func() {
-		logger.L().Info("starting reconciliation periodic task",
-			helpers.Int("TaskIntervalSeconds", cfg.TaskIntervalSeconds),
-			helpers.Int("IntervalFromConnectionSeconds", cfg.IntervalFromConnectionSeconds))
-		ticker := time.NewTicker(time.Duration(cfg.TaskIntervalSeconds) * time.Second)
+		var ticker utils.Ticker
+		if cfg.CronSchedule != "" {
+			var err error
+			ticker, err = utils.NewCronTicker(cfg.CronSchedule)
+			if err != nil {
+				logger.L().Warning("failed to create cron ticker", helpers.String("error", err.Error()))
+			} else {
+				logger.L().Info("starting reconciliation periodic task with cron schedule",
+					helpers.String("CronSchedule", cfg.CronSchedule),
+					helpers.Int("IntervalFromConnectionSeconds", cfg.IntervalFromConnectionSeconds))
+			}
+		}
+		if ticker == nil {
+			logger.L().Info("starting reconciliation periodic task with interval",
+				helpers.Int("TaskIntervalSeconds", cfg.TaskIntervalSeconds),
+				helpers.Int("IntervalFromConnectionSeconds", cfg.IntervalFromConnectionSeconds))
+			ticker = utils.NewStdTicker(time.Duration(cfg.TaskIntervalSeconds) * time.Second)
+		}
 		for {
 			select {
 			case <-mainCtx.Done():
 				ticker.Stop()
 				return
-			case <-ticker.C:
+			case <-ticker.Chan():
 				a.connMapMutex.Lock()
 				logger.L().Info("running reconciliation task for connected clients", helpers.Int("clients", a.clientsMap.Len()))
 				for connId, clientId := range a.connectionMap {

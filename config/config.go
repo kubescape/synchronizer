@@ -70,8 +70,9 @@ type PrometheusConfig struct {
 }
 
 type ReconciliationTaskConfig struct {
-	TaskIntervalSeconds           int `mapstructure:"taskIntervalSeconds"`
-	IntervalFromConnectionSeconds int `mapstructure:"intervalFromConnectionSeconds"`
+	CronSchedule                  string `mapstructure:"cronSchedule"` // when this is set, taskIntervalSeconds is ignored
+	TaskIntervalSeconds           int    `mapstructure:"taskIntervalSeconds"`
+	IntervalFromConnectionSeconds int    `mapstructure:"intervalFromConnectionSeconds"`
 }
 
 type KeepAliveTaskConfig struct {
