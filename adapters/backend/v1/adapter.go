@@ -16,7 +16,6 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
 	"github.com/kubescape/synchronizer/utils"
-	"github.com/robfig/cron/v3"
 )
 
 type Adapter struct {
@@ -192,12 +191,6 @@ func (b *Adapter) Batch(ctx context.Context, kind domain.Kind, batchType domain.
 	return client.Batch(ctx, kind, batchType, items)
 }
 
-type ReconciliationTask struct {
-	ctx     context.Context
-	cfg     *config.ReconciliationTaskConfig
-	adapter *Adapter
-}
-
 // startReconciliationPeriodicTask starts a periodic task that sends reconciliation request messages to connected clients
 // every configurable minutes (interval). If interval is 0 (not set), the task is disabled.
 // when cron schedule is set, the task will be executed according to the cron schedule.
@@ -208,82 +201,64 @@ func (a *Adapter) startReconciliationPeriodicTask(mainCtx context.Context, cfg *
 		return
 	}
 
-	task := ReconciliationTask{
-		ctx:     mainCtx,
-		cfg:     cfg,
-		adapter: a,
-	}
-
-	if cfg.CronSchedule != "" {
-		logger.L().Info("starting reconciliation periodic task with cron schedule",
-			helpers.String("CronSchedule", task.cfg.CronSchedule),
-			helpers.Int("IntervalFromConnectionSeconds", task.cfg.IntervalFromConnectionSeconds))
-		cronJob := cron.New()
-		cronID, err := cronJob.AddFunc(cfg.CronSchedule, task.Run)
-		if err != nil {
-			logger.L().Fatal("failed to add cron job", helpers.Error(err))
-		}
-		logger.L().Info("cron job added", helpers.Int("cronID", int(cronID)))
-		cronJob.Start()
-		go func() {
-			for range mainCtx.Done() {
-				logger.L().Info("stopping ReconciliationTask cron job", helpers.Int("cronID", int(cronID)))
-				closeCtx := cronJob.Stop()
-				<-closeCtx.Done()
-				logger.L().Info("ReconciliationTask cron job stopped", helpers.Int("cronID", int(cronID)))
-				return
+	go func() {
+		var ticker utils.Ticker
+		if cfg.CronSchedule != "" {
+			var err error
+			ticker, err = utils.NewCronTicker(cfg.CronSchedule)
+			if err != nil {
+				logger.L().Warning("failed to create cron ticker", helpers.String("error", err.Error()))
+			} else {
+				logger.L().Info("starting reconciliation periodic task with cron schedule",
+					helpers.String("CronSchedule", cfg.CronSchedule),
+					helpers.Int("IntervalFromConnectionSeconds", cfg.IntervalFromConnectionSeconds))
 			}
-		}()
-	} else {
-		go func() {
+		}
+		if ticker == nil {
 			logger.L().Info("starting reconciliation periodic task with interval",
-				helpers.Int("TaskIntervalSeconds", task.cfg.TaskIntervalSeconds),
-				helpers.Int("IntervalFromConnectionSeconds", task.cfg.IntervalFromConnectionSeconds))
-			ticker := time.NewTicker(time.Duration(task.cfg.TaskIntervalSeconds) * time.Second)
-			for {
-				select {
-				case <-task.ctx.Done():
-					ticker.Stop()
-					return
-				case <-ticker.C:
-					task.Run()
+				helpers.Int("TaskIntervalSeconds", cfg.TaskIntervalSeconds),
+				helpers.Int("IntervalFromConnectionSeconds", cfg.IntervalFromConnectionSeconds))
+			ticker = utils.NewStdTicker(time.Duration(cfg.TaskIntervalSeconds) * time.Second)
+		}
+		for {
+			select {
+			case <-mainCtx.Done():
+				ticker.Stop()
+				return
+			case <-ticker.Chan():
+				a.connMapMutex.Lock()
+				logger.L().Info("running reconciliation task for connected clients", helpers.Int("clients", a.clientsMap.Len()))
+				for connId, clientId := range a.connectionMap {
+					if time.Since(clientId.ConnectionTime) < time.Duration(cfg.IntervalFromConnectionSeconds)*time.Second {
+						logger.L().Info("skipping reconciliation request for client because it was connected recently", helpers.Interface("clientId", clientId.String()))
+						continue
+					}
+
+					client, ok := a.clientsMap.Load(connId)
+					if !ok {
+						logger.L().Error("expected to find client for reconciliation in clients map", helpers.String("clientId", clientId.String()))
+						continue
+					}
+
+					if !utils.IsBatchMessageSupported(clientId.Version) {
+						logger.L().Info("skipping reconciliation request for client because it does not support batch messages",
+							helpers.String("version", clientId.Version),
+							helpers.Interface("clientId", clientId.String()))
+						continue
+					}
+
+					clientCtx := utils.ContextFromIdentifiers(mainCtx, clientId)
+					err := client.SendReconciliationRequestMessage(clientCtx)
+					if err != nil {
+						logger.L().Error("failed to send reconciliation request message", helpers.String("error", err.Error()))
+					} else {
+						logger.L().Info("sent reconciliation request message", helpers.Interface("clientId", clientId))
+					}
 				}
+				a.connMapMutex.Unlock()
 			}
-		}()
-	}
-}
-
-func (task *ReconciliationTask) Run() {
-	task.adapter.connMapMutex.Lock()
-	logger.L().Info("running reconciliation task for connected clients", helpers.Int("clients", task.adapter.clientsMap.Len()))
-	for connId, clientId := range task.adapter.connectionMap {
-		if time.Since(clientId.ConnectionTime) < time.Duration(task.cfg.IntervalFromConnectionSeconds)*time.Second {
-			logger.L().Info("skipping reconciliation request for client because it was connected recently", helpers.Interface("clientId", clientId.String()))
-			continue
 		}
-
-		client, ok := task.adapter.clientsMap.Load(connId)
-		if !ok {
-			logger.L().Error("expected to find client for reconciliation in clients map", helpers.String("clientId", clientId.String()))
-			continue
-		}
-
-		if !utils.IsBatchMessageSupported(clientId.Version) {
-			logger.L().Info("skipping reconciliation request for client because it does not support batch messages",
-				helpers.String("version", clientId.Version),
-				helpers.Interface("clientId", clientId.String()))
-			continue
-		}
-
-		clientCtx := utils.ContextFromIdentifiers(task.ctx, clientId)
-		err := client.SendReconciliationRequestMessage(clientCtx)
-		if err != nil {
-			logger.L().Error("failed to send reconciliation request message", helpers.String("error", err.Error()))
-		} else {
-			logger.L().Info("sent reconciliation request message", helpers.Interface("clientId", clientId))
-		}
-	}
-	task.adapter.connMapMutex.Unlock()
+	}()
 }
 
 // startKeepalivePeriodicTask starts a periodic task that sends connected clients message every configurable minutes (interval).
