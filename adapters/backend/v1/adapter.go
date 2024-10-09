@@ -240,9 +240,9 @@ func (a *Adapter) startReconciliationPeriodicTask(mainCtx context.Context, cfg *
 						continue
 					}
 
-					if !utils.IsBatchMessageSupported(clientId.Version) {
+					if !utils.IsBatchMessageSupported(clientId.SyncVersion) {
 						logger.L().Info("skipping reconciliation request for client because it does not support batch messages",
-							helpers.String("version", clientId.Version),
+							helpers.String("version", clientId.SyncVersion),
 							helpers.Interface("clientId", clientId.String()))
 						continue
 					}
@@ -294,10 +294,12 @@ func (a *Adapter) startKeepalivePeriodicTask(mainCtx context.Context, cfg *confi
 					msg.Clients[i] = messaging.ConnectedClient{
 						Account:             clientId.Account,
 						Cluster:             clientId.Cluster,
-						SynchronizerVersion: clientId.Version,
+						SynchronizerVersion: clientId.SyncVersion,
 						HelmVersion:         clientId.HelmVersion,
 						ConnectionId:        clientId.ConnectionId,
 						ConnectionTime:      clientId.ConnectionTime,
+						GitVersion:          clientId.GitVersion,
+						CloudProvider:       clientId.CloudProvider,
 					}
 					i += 1
 				}

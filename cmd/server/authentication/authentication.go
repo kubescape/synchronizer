@@ -37,6 +37,8 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 		cluster := r.Header.Get(core.ClusterNameHeader)
 		helmVersion := r.Header.Get(core.HelmVersionHeader)
 		version := r.Header.Get(core.VersionHeader)
+		cloudProvider := r.Header.Get(core.CloudProviderHeader)
+		gitVersion := r.Header.Get(core.GitVersionHeader)
 
 		if accessKey == "" || account == "" || cluster == "" {
 			logger.L().Error("missing headers on incoming connection",
@@ -123,7 +125,9 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 			ConnectionId:   connectionId,
 			ConnectionTime: connectionTime,
 			HelmVersion:    helmVersion,
-			Version:        version,
+			SyncVersion:    version,
+			CloudProvider:  cloudProvider,
+			GitVersion:     gitVersion,
 		})
 
 		// create new request using the new context

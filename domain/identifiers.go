@@ -80,7 +80,9 @@ type ClientIdentifier struct {
 	ConnectionId   string
 	ConnectionTime time.Time
 	HelmVersion    string
-	Version        string
+	SyncVersion    string
+	GitVersion     string
+	CloudProvider  string
 }
 
 func (c ClientIdentifier) String() string {
