@@ -142,4 +142,6 @@ type ConnectedClient struct {
 	HelmVersion         string    `json:"helmVersion"`
 	ConnectionId        string    `json:"connectionId"`
 	ConnectionTime      time.Time `json:"connectionTime"`
+	GitVersion          string    `json:"gitVersion"`
+	CloudProvider       string    `json:"cloudProvider"`
 }

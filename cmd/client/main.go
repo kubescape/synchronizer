@@ -97,15 +97,19 @@ func main() {
 		Cluster: cfg.InCluster.ClusterName,
 	})
 
+	gitVersion, cloudProvider := incluster.GetApiServerGitVersionAndCloudProvider(ctx)
+
 	// authentication headers
 	version := os.Getenv("RELEASE")
 	dialer := ws.Dialer{
 		Header: ws.HandshakeHeaderHTTP(map[string][]string{
-			core.AccessKeyHeader:   {cfg.InCluster.AccessKey},
-			core.AccountHeader:     {cfg.InCluster.Account},
-			core.ClusterNameHeader: {cfg.InCluster.ClusterName},
-			core.HelmVersionHeader: {os.Getenv("HELM_RELEASE")},
-			core.VersionHeader:     {version},
+			core.AccessKeyHeader:     {cfg.InCluster.AccessKey},
+			core.AccountHeader:       {cfg.InCluster.Account},
+			core.ClusterNameHeader:   {cfg.InCluster.ClusterName},
+			core.HelmVersionHeader:   {os.Getenv("HELM_RELEASE")},
+			core.VersionHeader:       {version},
+			core.GitVersionHeader:    {gitVersion},
+			core.CloudProviderHeader: {cloudProvider},
 		}),
 		NetDial: utils.GetDialer(),
 	}
