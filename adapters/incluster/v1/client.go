@@ -17,6 +17,7 @@ import (
 	"go.uber.org/multierr"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/pager"
+	"k8s.io/client-go/util/retry"
 
 	mapset "github.com/deckarep/golang-set/v2"
 	jsonpatch "github.com/evanphx/json-patch"
@@ -450,13 +451,31 @@ func (c *Client) PutObject(_ context.Context, id domain.KindName, object []byte)
 	}
 	// use apply to create or update object, we want to overwrite existing objects
 	// TODO for the moment we keep the dynamic client as we create fewer objects than we fetch
-	options := metav1.ApplyOptions{
-		FieldManager: "application/apply-patch",
-		Force:        true,
-	}
-	_, err = c.dynamicClient.Resource(c.res).Namespace(id.Namespace).Apply(context.Background(), id.Name, &obj, options)
-	if err != nil {
+	_, err = c.dynamicClient.Resource(c.res).Namespace(id.Namespace).Create(context.Background(), &obj, metav1.CreateOptions{})
+	switch {
+	case k8sErrors.IsAlreadyExists(err):
+		retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			// retrieve the latest version before attempting update
+			// RetryOnConflict uses exponential backoff to avoid exhausting the apiserver
+			result, getErr := c.dynamicClient.Resource(c.res).Namespace(id.Namespace).Get(context.Background(), obj.GetName(), metav1.GetOptions{})
+			if getErr != nil {
+				return getErr
+			}
+			// update the metadata
+			if err := unstructured.SetNestedField(obj.Object, result.Object["metadata"], "metadata"); err != nil {
+				return fmt.Errorf("set nested field: %w", err)
+			}
+			// try to send the updated object
+			_, updateErr := c.dynamicClient.Resource(c.res).Namespace(id.Namespace).Update(context.Background(), &obj, metav1.UpdateOptions{})
+			return updateErr
+		})
+		if retryErr != nil {
+			return retryErr
+		}
+	case err != nil:
 		return fmt.Errorf("apply resource: %w", err)
+	default:
+		return nil
 	}
 	return nil
 }
