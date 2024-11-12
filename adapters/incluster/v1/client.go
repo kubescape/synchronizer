@@ -453,7 +453,7 @@ func (c *Client) PutObject(_ context.Context, id domain.KindName, object []byte)
 	// TODO for the moment we keep the dynamic client as we create fewer objects than we fetch
 	_, err = c.dynamicClient.Resource(c.res).Namespace(id.Namespace).Create(context.Background(), &obj, metav1.CreateOptions{})
 	switch {
-	case k8sErrors.IsAlreadyExists(err):
+	case k8sErrors.IsAlreadyExists(err), k8sErrors.IsForbidden(err):
 		retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			// retrieve the latest version before attempting update
 			// RetryOnConflict uses exponential backoff to avoid exhausting the apiserver
