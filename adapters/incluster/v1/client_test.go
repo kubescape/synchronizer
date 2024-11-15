@@ -218,7 +218,6 @@ func TestClient_filterAndMarshal(t *testing.T) {
 				account:             tt.fields.account,
 				cluster:             tt.fields.cluster,
 				kind:                tt.fields.kind,
-				multiplier:          tt.fields.multiplier,
 				callbacks:           tt.fields.callbacks,
 				res:                 tt.fields.res,
 				ShadowObjects:       tt.fields.ShadowObjects,

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
+	"github.com/armosec/event-ingester-service/ingesters"
 	ingesterutils "github.com/armosec/event-ingester-service/utils"
 	postgresConnector "github.com/armosec/postgres-connector"
 	postgresconnectordal "github.com/armosec/postgres-connector/dal"
@@ -46,7 +47,8 @@ import (
 	"github.com/armosec/armoapi-go/identifiers"
 	"github.com/armosec/armosec-infra/resourceprocessor"
 	"github.com/armosec/armosec-infra/s3connector"
-	eventingester "github.com/armosec/event-ingester-service/ingesters/synchronizer_ingester"
+	synchronizeringester "github.com/armosec/event-ingester-service/ingesters/synchronizer_ingester"
+	"github.com/armosec/event-ingester-service/synchronizer_producer"
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -646,14 +648,22 @@ func initIntegrationTest(t *testing.T) *Test {
 		pulsarconnector.WithRetryMaxDelay(3*time.Second),
 	)
 	require.NoError(t, err)
-	ingesterProducer, err := eventingester.NewPulsarProducer(pulsarClient, ingesterConf.SynchronizerIngesterConfig.Topic)
+	ingesterProducer, err := synchronizer_producer.NewPulsarProducer(pulsarClient, ingesterConf.SynchronizerIngesterConfig.Topic)
 	require.NoError(t, err)
 	s3 := s3connector.NewS3Mock()
 	ingesterProcessor := resourceprocessor.NewKubernetesResourceProcessor(&s3, postgresconnectordal.NewPostgresDAL(ingesterPgClient))
 	onFinishProducer, err := pulsarClient.NewProducer(pulsarconnector.WithProducerTopic("onFinishTopic"), pulsarconnector.WithProducerNamespace("armo", "kubescape"))
 	require.NoError(t, err)
-	ingester := eventingester.NewSynchronizerWithProcessor(ingesterProducer, pulsarClient, *ingesterConf.SynchronizerIngesterConfig, ingesterProcessor, ingesterPgClient, onFinishProducer)
-	go ingester.ConsumeSynchronizerMessages(ctx)
+	gvrProducerMap, err := synchronizeringester.InitGVRProducerMap(pulsarClient, ingesterConf.SynchronizerIngesterConfig)
+	require.NoError(t, err)
+	go synchronizeringester.ConsumeSynchronizerMessages(
+		gvrProducerMap,
+		ingesters.WithPulsarClient(pulsarClient),
+		ingesters.WithIngesterConfig(ingesterConf.SynchronizerIngesterConfig),
+		ingesters.WithPGConnector(ingesterPgClient),
+		ingesters.WithContext(ctx),
+		ingesters.WithSynchronizerProducer(ingesterProducer),
+		ingesters.WithOnFinishProducer(onFinishProducer))
 
 	// fake websocket
 	clientConn1, serverConn1 := net.Pipe() // client1 -> server1
@@ -765,7 +775,7 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 func TestSynchronizer_TC01_Backend(t *testing.T) {
 	td := initIntegrationTest(t)
 	// add cm to backend via pulsar message
-	pulsarProducer, err := eventingester.NewPulsarProducer(td.pulsarClient, "synchronizer")
+	pulsarProducer, err := synchronizer_producer.NewPulsarProducer(td.pulsarClient, "synchronizer")
 	require.NoError(t, err)
 	b, err := json.Marshal(td.clusters[0].cm)
 	require.NoError(t, err)
@@ -819,7 +829,7 @@ func TestSynchronizer_TC02_InCluster(t *testing.T) {
 func TestSynchronizer_TC02_Backend(t *testing.T) {
 	td := initIntegrationTest(t)
 	// add cm to backend via pulsar message
-	pulsarProducer, err := eventingester.NewPulsarProducer(td.pulsarClient, "synchronizer")
+	pulsarProducer, err := synchronizer_producer.NewPulsarProducer(td.pulsarClient, "synchronizer")
 	require.NoError(t, err)
 	b, err := json.Marshal(td.clusters[0].cm)
 	require.NoError(t, err)
@@ -847,7 +857,7 @@ func TestSynchronizer_TC02_Backend(t *testing.T) {
 // failure is simulated, since versions are the same the backend modification should win
 func TestSynchronizer_TC03(t *testing.T) {
 	td := initIntegrationTest(t)
-	pulsarProducer, err := eventingester.NewPulsarProducer(td.pulsarClient, "synchronizer")
+	pulsarProducer, err := synchronizer_producer.NewPulsarProducer(td.pulsarClient, "synchronizer")
 	require.NoError(t, err)
 	// add configmap to k8s
 	_, err = td.clusters[0].k8sclient.CoreV1().ConfigMaps(namespace).Create(context.TODO(), td.clusters[0].cm, metav1.CreateOptions{})
@@ -912,7 +922,7 @@ func TestSynchronizer_TC04_InCluster(t *testing.T) {
 func TestSynchronizer_TC04_Backend(t *testing.T) {
 	td := initIntegrationTest(t)
 	// add cm to backend via pulsar message
-	pulsarProducer, err := eventingester.NewPulsarProducer(td.pulsarClient, "synchronizer")
+	pulsarProducer, err := synchronizer_producer.NewPulsarProducer(td.pulsarClient, "synchronizer")
 	require.NoError(t, err)
 	b, err := json.Marshal(td.clusters[0].cm)
 	require.NoError(t, err)
@@ -988,7 +998,7 @@ func TestSynchronizer_TC05_InCluster(t *testing.T) {
 func TestSynchronizer_TC05_Backend(t *testing.T) {
 	td := initIntegrationTest(t)
 	// add objects to backend via pulsar message
-	pulsarProducer, err := eventingester.NewPulsarProducer(td.pulsarClient, "synchronizer")
+	pulsarProducer, err := synchronizer_producer.NewPulsarProducer(td.pulsarClient, "synchronizer")
 	require.NoError(t, err)
 
 	// cluster 1

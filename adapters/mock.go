@@ -8,6 +8,7 @@ import (
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	storageutils "github.com/kubescape/storage/pkg/utils"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
 	"go.uber.org/multierr"
@@ -121,7 +122,7 @@ func (m *MockAdapter) GetObject(ctx context.Context, id domain.KindName, baseObj
 				return fmt.Errorf("verifying patch: %w", err)
 			}
 			// calculate checksum
-			checksum, err := utils.CanonicalHash(mergeResult)
+			checksum, err := storageutils.CanonicalHash(mergeResult)
 			if err != nil {
 				return fmt.Errorf("calculate checksum: %w", err)
 			}
@@ -152,7 +153,7 @@ func (m *MockAdapter) patchObject(id domain.KindName, checksum string, patch []b
 	if err != nil {
 		return object, fmt.Errorf("apply patch: %w", err)
 	}
-	newChecksum, err := utils.CanonicalHash(modified)
+	newChecksum, err := storageutils.CanonicalHash(modified)
 	if err != nil {
 		return object, fmt.Errorf("calculate checksum: %w", err)
 	}
@@ -214,7 +215,7 @@ func (m *MockAdapter) verifyObject(id domain.KindName, newChecksum string) ([]by
 	if !ok {
 		return nil, fmt.Errorf("object not found")
 	}
-	checksum, err := utils.CanonicalHash(object)
+	checksum, err := storageutils.CanonicalHash(object)
 	if err != nil {
 		return nil, fmt.Errorf("calculate checksum: %w", err)
 	}
@@ -264,7 +265,7 @@ func (m *MockAdapter) TestCallPutOrPatch(ctx context.Context, id domain.KindName
 				return fmt.Errorf("verifying patch: %w", err)
 			}
 			// calculate checksum
-			checksum, err := utils.CanonicalHash(mergeResult)
+			checksum, err := storageutils.CanonicalHash(mergeResult)
 			if err != nil {
 				return fmt.Errorf("calculate checksum: %w", err)
 			}
@@ -295,7 +296,7 @@ func (m *MockAdapter) TestCallVerifyObject(ctx context.Context, id domain.KindNa
 	// store object locally - this is only for testing purposes
 	m.Resources[id.String()] = object
 	// calculate checksum
-	checksum, err := utils.CanonicalHash(object)
+	checksum, err := storageutils.CanonicalHash(object)
 	if err != nil {
 		return fmt.Errorf("calculate checksum: %w", err)
 	}

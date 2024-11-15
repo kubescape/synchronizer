@@ -25,6 +25,7 @@ import (
 	"github.com/kubescape/go-logger/helpers"
 	helpersv1 "github.com/kubescape/k8s-interface/instanceidhandler/v1/helpers"
 	spdxv1beta1 "github.com/kubescape/storage/pkg/generated/clientset/versioned/typed/softwarecomposition/v1beta1"
+	storageutils "github.com/kubescape/storage/pkg/utils"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
@@ -33,7 +34,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
 )
@@ -67,7 +67,6 @@ type Client struct {
 	includeNamespaces   []string
 	operatorNamespace   string // the namespace where the kubescape operator is running
 	kind                *domain.Kind
-	multiplier          int
 	callbacks           domain.Callbacks
 	res                 schema.GroupVersionResource
 	ShadowObjects       map[string][]byte
@@ -81,6 +80,9 @@ func NewClient(dynamicClient dynamic.Interface, storageClient spdxv1beta1.SpdxV1
 	res := schema.GroupVersionResource{Group: r.Group, Version: r.Version, Resource: r.Resource}
 	// get event multiplier from env, defaults to 0
 	multiplier, _ := strconv.Atoi(os.Getenv(envMultiplier))
+	if multiplier > 0 {
+		logger.L().Warning("event multiplier config detected, but it is deprecated", helpers.String("resource", res.String()), helpers.Int("multiplier", multiplier))
+	}
 	return &Client{
 		account:           cfg.Account,
 		dynamicClient:     dynamicClient,
@@ -94,7 +96,6 @@ func NewClient(dynamicClient dynamic.Interface, storageClient spdxv1beta1.SpdxV1
 			Version:  res.Version,
 			Resource: res.Resource,
 		},
-		multiplier:    multiplier,
 		res:           res,
 		ShadowObjects: map[string][]byte{},
 		Strategy:      r.Strategy,
@@ -151,12 +152,12 @@ func (c *Client) Start(ctx context.Context) error {
 		switch {
 		case event.Type == watch.Added:
 			logger.L().Debug("added resource", helpers.String("id", id.String()))
-			newObject, err := c.getObjectFromMeta(d)
+			checksum, err := c.getChecksum(d)
 			if err != nil {
-				logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
+				logger.L().Ctx(ctx).Error("cannot get checksum", helpers.Error(err), helpers.String("id", id.String()))
 				continue
 			}
-			err = c.callVerifyObject(ctx, id, newObject)
+			err = c.callbacks.VerifyObject(ctx, id, checksum)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
@@ -224,11 +225,7 @@ func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, e
 			if event.Type == watch.Error {
 				return fmt.Errorf("watch error: %s", event.Object)
 			}
-			if c.multiplier > 0 {
-				multiplyEvent(event, eventQueue, c.multiplier)
-			} else {
-				eventQueue.Enqueue(event)
-			}
+			eventQueue.Enqueue(event)
 		}
 	}, utils.NewBackOff(), func(err error, d time.Duration) {
 		if !errors.Is(err, errWatchClosed) {
@@ -242,36 +239,6 @@ func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, e
 		if exitFatal {
 			os.Exit(1)
 		}
-	}
-}
-
-func multiplyEvent(event watch.Event, queue *utils.CooldownQueue, multiplier int) {
-	objectName := event.Object.(metav1.Object).GetName()
-	objectUID := event.Object.(metav1.Object).GetUID()
-	for i := 0; i < multiplier; i++ {
-		newEvent := event.DeepCopy()
-		newEvent.Object.(metav1.Object).SetName(fmt.Sprintf("%s-%d", objectName, i))
-		// change the workload-name label too - if applicable
-		labels := newEvent.Object.(metav1.Object).GetLabels()
-		if labels != nil {
-			if workloadName, ok := labels[helpersv1.NameMetadataKey]; ok {
-				labels[helpersv1.NameMetadataKey] = fmt.Sprintf("%s-%d", workloadName, i)
-				newEvent.Object.(metav1.Object).SetLabels(labels)
-			}
-		}
-
-		annotations := newEvent.Object.(metav1.Object).GetAnnotations()
-		if annotations != nil {
-			if wlid, ok := annotations[helpersv1.WlidMetadataKey]; ok {
-
-				// workloadinterface.
-				annotations[helpersv1.WlidMetadataKey] = fmt.Sprintf("%s-%d", wlid, i)
-				newEvent.Object.(metav1.Object).SetAnnotations(annotations)
-			}
-		}
-		// need also to modify UID, otherwise it will deduplicated by the cooldown queue
-		newEvent.Object.(metav1.Object).SetUID(types.UID(fmt.Sprintf("%s-%d", objectUID, i)))
-		queue.Enqueue(*newEvent)
 	}
 }
 
@@ -344,7 +311,7 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObj
 				return fmt.Errorf("verifying patch: %w", err)
 			}
 			// calculate checksum
-			checksum, err := utils.CanonicalHash(mergeResult)
+			checksum, err := storageutils.CanonicalHash(mergeResult)
 			if err != nil {
 				return fmt.Errorf("calculate checksum: %w", err)
 			}
@@ -371,7 +338,7 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObj
 
 func (c *Client) callVerifyObject(ctx context.Context, id domain.KindName, object []byte) error {
 	// calculate checksum
-	checksum, err := utils.CanonicalHash(object)
+	checksum, err := storageutils.CanonicalHash(object)
 	if err != nil {
 		return fmt.Errorf("calculate checksum: %w", err)
 	}
@@ -380,6 +347,23 @@ func (c *Client) callVerifyObject(ctx context.Context, id domain.KindName, objec
 		return fmt.Errorf("send checksum: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) getChecksum(d metav1.Object) (string, error) {
+	// fast path, we have the checksum already
+	if checksum, ok := d.GetAnnotations()[helpersv1.SyncChecksumMetadataKey]; ok {
+		return checksum, nil
+	}
+	// get the object and calculate the checksum
+	object, err := c.getObjectFromMeta(d)
+	if err != nil {
+		return "", fmt.Errorf("get object: %w", err)
+	}
+	checksum, err := storageutils.CanonicalHash(object)
+	if err != nil {
+		return "", fmt.Errorf("calculate checksum: %w", err)
+	}
+	return checksum, nil
 }
 
 func (c *Client) DeleteObject(_ context.Context, id domain.KindName) error {
@@ -392,7 +376,7 @@ func (c *Client) DeleteObject(_ context.Context, id domain.KindName) error {
 }
 
 func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
-	obj, err := c.getResource(id.Namespace, id.Name, c.multiplier > 0)
+	obj, err := c.getResource(id.Namespace, id.Name)
 	if err != nil {
 		return fmt.Errorf("get resource: %w", err)
 	}
@@ -416,7 +400,7 @@ func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum s
 	if c.Strategy != domain.PatchStrategy {
 		return nil, fmt.Errorf("patch strategy not enabled for resource %s", id.Kind.String())
 	}
-	obj, err := c.getResource(id.Namespace, id.Name, c.multiplier > 0)
+	obj, err := c.getResource(id.Namespace, id.Name)
 	if err != nil {
 		return nil, fmt.Errorf("get resource: %w", err)
 	}
@@ -430,7 +414,7 @@ func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum s
 		return object, fmt.Errorf("apply patch: %w", err)
 	}
 	// verify checksum
-	newChecksum, err := utils.CanonicalHash(modified)
+	newChecksum, err := storageutils.CanonicalHash(modified)
 	if err != nil {
 		return object, fmt.Errorf("calculate checksum: %w", err)
 	}
@@ -507,7 +491,7 @@ func (c *Client) Batch(ctx context.Context, _ domain.Kind, batchType domain.Batc
 }
 
 func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, error) {
-	obj, err := c.getResource(id.Namespace, id.Name, c.multiplier > 0)
+	obj, err := c.getResource(id.Namespace, id.Name)
 	if err != nil {
 		return nil, fmt.Errorf("get resource: %w", err)
 	}
@@ -515,7 +499,7 @@ func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, e
 	if err != nil {
 		return nil, fmt.Errorf("marshal resource: %w", err)
 	}
-	checksum, err := utils.CanonicalHash(object)
+	checksum, err := storageutils.CanonicalHash(object)
 	if err != nil {
 		return object, fmt.Errorf("calculate checksum: %w", err)
 	}
@@ -540,24 +524,15 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 			Namespace:       d.GetNamespace(),
 			ResourceVersion: domain.ToResourceVersion(d.GetResourceVersion()),
 		}
-		obj, err := c.getResource(d.GetNamespace(), d.GetName(), false)
+		// get checksum
+		checksum, err := c.getChecksum(d)
 		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
+			logger.L().Ctx(ctx).Error("cannot get checksums", helpers.Error(err), helpers.String("id", id.String()))
 			return nil
 		}
-		if c.multiplier > 0 {
-			c.multiplyVerifyObject(ctx, id, obj)
-		} else {
-			newObject, err := c.filterAndMarshal(obj)
-			if err != nil {
-				logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
-				return nil
-			}
-			err = c.callVerifyObject(ctx, id, newObject)
-			if err != nil {
-				logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
-				return nil
-			}
+		err = c.callbacks.VerifyObject(ctx, id, checksum)
+		if err != nil {
+			logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
 		}
 		return nil
 	}); err != nil {
@@ -567,40 +542,14 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 	return resourceVersion, nil
 }
 
-func (c *Client) multiplyVerifyObject(ctx context.Context, id domain.KindName, obj metav1.Object) {
-	objectName := id.Name
-	for i := 0; i < c.multiplier; i++ {
-		id.Name = fmt.Sprintf("%s-%d", objectName, i)
-		obj.SetName(id.Name)
-		// change the workload-name label too - if applicable
-		labels := obj.GetLabels()
-		if labels != nil {
-			if workloadName, ok := labels[helpersv1.NameMetadataKey]; ok {
-				labels[helpersv1.NameMetadataKey] = fmt.Sprintf("%s-%d", workloadName, i)
-				obj.SetLabels(labels)
-			}
-		}
-		newObject, err := c.filterAndMarshal(obj)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot marshal object", helpers.Error(err), helpers.String("id", id.String()))
-			continue
-		}
-		err = c.callVerifyObject(ctx, id, newObject)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
-			continue
-		}
-	}
-}
-
 func (c *Client) filterAndMarshal(d metav1.Object) ([]byte, error) {
-	utils.RemoveManagedFields(d)
+	storageutils.RemoveManagedFields(d)
 	if un, ok := d.(*unstructured.Unstructured); ok {
 		fields, ok := fieldsToRemove[c.kind.String()]
 		if !ok {
 			fields = fieldsToRemove["default"]
 		}
-		if err := utils.RemoveSpecificFields(un, fields); err != nil {
+		if err := storageutils.RemoveSpecificFields(un, fields); err != nil {
 			return nil, fmt.Errorf("remove specific fields: %w", err)
 		}
 	} else {
@@ -616,7 +565,7 @@ func (c *Client) filterAndMarshal(d metav1.Object) ([]byte, error) {
 
 func (c *Client) getObjectFromMeta(d metav1.Object) ([]byte, error) {
 	if c.res.Group == kubescapeCustomResourceGroup {
-		obj, err := c.getResource(d.GetNamespace(), d.GetName(), c.multiplier > 0)
+		obj, err := c.getResource(d.GetNamespace(), d.GetName())
 		if err != nil {
 			return nil, fmt.Errorf("get resource: %w", err)
 		}
@@ -841,10 +790,7 @@ func (c *Client) chooseWatcher(opts metav1.ListOptions) (watch.Interface, error)
 	return c.dynamicClient.Resource(c.res).Namespace("").Watch(context.Background(), opts)
 }
 
-func (c *Client) getResource(namespace string, name string, strip bool) (metav1.Object, error) {
-	if strip {
-		name = stripSuffix(name)
-	}
+func (c *Client) getResource(namespace string, name string) (metav1.Object, error) {
 	if c.storageClient != nil {
 		switch c.res.Resource {
 		case "applicationprofiles":
