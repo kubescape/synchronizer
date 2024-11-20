@@ -2,10 +2,8 @@ package utils
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
@@ -15,7 +13,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/SergJa/jsonhash"
 	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/davecgh/go-spew/spew"
@@ -26,25 +23,13 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/pmezard/go-difflib/difflib"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/multierr"
 	"golang.org/x/mod/semver"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 )
-
-func CanonicalHash(in []byte) (string, error) {
-	hash, err := jsonhash.CalculateJsonHash(in, []string{
-		".status.conditions", // avoid Pod.status.conditions.lastProbeTime: null
-	})
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hash[:]), nil
-}
 
 func NewMsgId() string {
 	return uuid.NewString()
@@ -193,17 +178,12 @@ func getConfig() (*rest.Config, error) {
 	if err == nil {
 		return clusterConfig, nil
 	}
-	// fallback to kubeconfig
-	var kubeconfig *string
+	// fallback to local kubeconfig
 	if home := homedir.HomeDir(); home != "" {
-		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-	} else {
-		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
-	}
-	flag.Parse()
-	clusterConfig, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
-	if err == nil {
-		return clusterConfig, nil
+		clusterConfig, err = clientcmd.BuildConfigFromFlags("", filepath.Join(home, ".kube", "config"))
+		if err == nil {
+			return clusterConfig, nil
+		}
 	}
 	// nothing works
 	return nil, errors.New("unable to find config")
@@ -259,26 +239,6 @@ func StringValueBigger(s1, s2 string) bool {
 		return false
 	}
 	return i1 > i2
-}
-
-func RemoveManagedFields(d metav1.Object) {
-	// Remove managed fields
-	d.SetManagedFields(nil)
-	// Remove last-applied-configuration annotation
-	ann := d.GetAnnotations()
-	delete(ann, "kubectl.kubernetes.io/last-applied-configuration")
-	d.SetAnnotations(ann)
-}
-
-func RemoveSpecificFields(d *unstructured.Unstructured, fields [][]string) error {
-	var errs error
-	for _, f := range fields {
-		err := unstructured.SetNestedField(d.Object, nil, f...)
-		if err != nil {
-			errs = multierr.Append(errs, fmt.Errorf("failed to remove field %s: %w", f, err))
-		}
-	}
-	return errs
 }
 
 func NewBackOff() backoff.BackOff {

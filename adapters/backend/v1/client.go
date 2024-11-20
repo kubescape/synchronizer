@@ -8,6 +8,7 @@ import (
 
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	storageutils "github.com/kubescape/storage/pkg/utils"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
@@ -73,7 +74,7 @@ func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
 
 func (c *Client) callVerifyObject(ctx context.Context, id domain.KindName, object []byte) error {
 	// calculate checksum
-	checksum, err := utils.CanonicalHash(object)
+	checksum, err := storageutils.CanonicalHash(object)
 	if err != nil {
 		return fmt.Errorf("calculate checksum: %w", err)
 	}
