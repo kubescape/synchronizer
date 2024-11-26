@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
+	"time"
 
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -34,6 +36,10 @@ var _ adapters.Client = (*Client)(nil)
 func (c *Client) Start(ctx context.Context) error {
 	if err := c.sendServerConnectedMessage(ctx); err != nil {
 		return fmt.Errorf("failed to produce server connected message: %w", err)
+	}
+
+	if err := c.sendSingleConnectedClientsMessage(ctx); err != nil {
+		return fmt.Errorf("failed to produce connected clients message: %w", err)
 	}
 
 	return nil
@@ -67,6 +73,40 @@ func (c *Client) sendServerConnectedMessage(ctx context.Context) error {
 	}
 
 	return c.messageProducer.ProduceMessage(ctx, id, messaging.MsgPropEventValueServerConnectedMessage, data)
+}
+
+func (c *Client) sendSingleConnectedClientsMessage(ctx context.Context) error {
+	id := utils.ClientIdentifierFromContext(ctx)
+
+	hostname, _ := os.Hostname()
+	msg := messaging.ConnectedClientsMessage{
+		ServerName: hostname,
+		Clients: []messaging.ConnectedClient{
+			{
+				Account:             id.Account,
+				Cluster:             id.Cluster,
+				SynchronizerVersion: id.SyncVersion,
+				HelmVersion:         id.HelmVersion,
+				ConnectionId:        id.ConnectionId,
+				ConnectionTime:      id.ConnectionTime,
+				GitVersion:          id.GitVersion,
+				CloudProvider:       id.CloudProvider,
+			}},
+		Timestamp: time.Now(),
+		MsgId:     utils.NewMsgId(),
+	}
+
+	logger.L().Debug("sending connected client message to producer upon startup",
+		helpers.String("account", id.Account),
+		helpers.String("cluster", id.Cluster),
+		helpers.String("msgid", msg.MsgId))
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("marshal connected clients message: %w", err)
+	}
+
+	return c.messageProducer.ProduceMessage(ctx, id, messaging.MsgPropEventValueConnectedClientsMessage, data)
 }
 
 // no need to implement callPutOrPatch because we don't send patches from backend
