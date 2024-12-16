@@ -130,7 +130,7 @@ func main() {
 				return backoff.Permanent(fmt.Errorf("server rejected our client version <%s>, please update", version))
 			}
 			return err
-		}, utils.NewBackOff(), func(err error, d time.Duration) {
+		}, utils.NewBackOff(false), func(err error, d time.Duration) {
 			logger.L().Ctx(ctx).Warning("connection error", helpers.Error(err),
 				helpers.String("retry in", d.String()))
 		}); err != nil {

@@ -241,10 +241,12 @@ func StringValueBigger(s1, s2 string) bool {
 	return i1 > i2
 }
 
-func NewBackOff() backoff.BackOff {
+func NewBackOff(neverStop bool) backoff.BackOff {
 	b := backoff.NewExponentialBackOff()
 	// never stop retrying (unless PermanentError is returned)
-	b.MaxElapsedTime = 0
+	if neverStop {
+		b.MaxElapsedTime = 0
+	}
 	return b
 }
 

@@ -120,7 +120,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 		go func() {
 			if err := backoff.RetryNotify(func() error {
 				return client.Start(ctx)
-			}, utils.NewBackOff(), func(err error, d time.Duration) {
+			}, utils.NewBackOff(true), func(err error, d time.Duration) {
 				logger.L().Ctx(ctx).Warning("start client", helpers.Error(err),
 					helpers.String("resource", client.res.Resource),
 					helpers.String("retry in", d.String()))
