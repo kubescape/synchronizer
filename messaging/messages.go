@@ -9,7 +9,20 @@ const (
 	// MsgPropAccount is the property name for the account name
 	MsgPropAccount = "account"
 	// MsgPropEvent is the property name for the event type
-	MsgPropEvent                                  = "event"
+	MsgPropEvent = "event"
+	// MsgPropResourceKindGroup is the property name for the API Group of the resource
+	MsgPropResourceKindGroup = "group"
+	// MsgPropResourceKindVersion is the property name for the API Version of the resource
+	MsgPropResourceKindVersion = "version"
+	// MsgPropResourceKindResource is the property name for the API Resource of the resource
+	MsgPropResourceKindResource = "resource"
+	// MsgPropResourceName is the property name for the name of the resource
+	MsgPropResourceName = "name"
+	// MsgPropResourceNamespace is the property name for the namespace of the resource
+	MsgPropResourceNamespace = "namespace"
+	// MsgPropResourceVersion is the property name for the resource version of the resource
+	MsgPropResourceVersion = "resourceVersion"
+
 	MsgPropEventValueGetObjectMessage             = "GetObject"
 	MsgPropEventValuePatchObjectMessage           = "PatchObject"
 	MsgPropEventValueVerifyObjectMessage          = "VerifyObject"
