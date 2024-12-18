@@ -21,6 +21,7 @@ import (
 	"github.com/kubescape/go-logger/helpers"
 	spdxv1beta1 "github.com/kubescape/storage/pkg/generated/clientset/versioned/typed/softwarecomposition/v1beta1"
 	"github.com/kubescape/synchronizer/domain"
+
 	"github.com/pmezard/go-difflib/difflib"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/mod/semver"
@@ -197,7 +198,7 @@ func PulsarMessageIDtoString(msgID pulsar.MessageID) string {
 }
 
 func ServePprof() {
-	if logger.L().GetLevel() == helpers.DebugLevel.String() {
+	if _, present := os.LookupEnv("ENABLE_PROFILER"); present || logger.L().GetLevel() == helpers.DebugLevel.String() {
 		logger.L().Info("starting pprof server", helpers.String("port", "6060"))
 		pprofMux := http.NewServeMux()
 		pprofMux.HandleFunc("/debug/pprof/", pprof.Index)

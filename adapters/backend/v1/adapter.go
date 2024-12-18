@@ -16,6 +16,7 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
 	"github.com/kubescape/synchronizer/utils"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type Adapter struct {
@@ -165,6 +166,10 @@ func (b *Adapter) Stop(ctx context.Context) error {
 		b.clientsMap.Delete(toDelete.String())
 	}
 	connectedClientsGauge.Dec()
+	clientDisconnectionCounter.With(prometheus.Labels{
+		prometheusClusterLabel: toDelete.Cluster,
+		prometheusAccountLabel: toDelete.Account,
+	}).Inc()
 
 	return nil
 }
