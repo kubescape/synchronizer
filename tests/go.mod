@@ -381,7 +381,7 @@ require (
 	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
 	golang.org/x/mod v0.21.0 // indirect
-	golang.org/x/net v0.29.0 // indirect
+	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/oauth2 v0.22.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
@@ -421,6 +421,7 @@ replace github.com/kubescape/synchronizer => ../
 
 replace (
 	github.com/docker/docker => github.com/docker/docker v26.1.5+incompatible
+	github.com/mholt/archiver/v3 v3.5.1 => github.com/anchore/archiver/v3 v3.5.2
 	github.com/testcontainers/testcontainers-go => github.com/testcontainers/testcontainers-go v0.30.0
 	github.com/testcontainers/testcontainers-go/modules/k3s => github.com/testcontainers/testcontainers-go/modules/k3s v0.30.0
 )
