@@ -29,7 +29,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/k3s v0.33.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/mod v0.20.0
-	golang.org/x/net v0.29.0
+	golang.org/x/net v0.33.0
 	istio.io/pkg v0.0.0-20231221211216-7635388a563e
 	k8s.io/api v0.29.4
 	k8s.io/apimachinery v0.29.4
