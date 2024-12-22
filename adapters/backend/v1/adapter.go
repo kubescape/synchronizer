@@ -121,8 +121,11 @@ func (b *Adapter) Start(ctx context.Context) error {
 	b.connectionMap[incomingId.String()] = incomingId
 
 	client := NewClient(b.producer, b.skipAlertsFrom)
+	// increment connected clients gauge, only if client was not found
+	if !b.clientsMap.Has(incomingId.String()) {
+		connectedClientsGauge.Inc()
+	}
 	b.clientsMap.Set(incomingId.String(), client)
-	connectedClientsGauge.Inc()
 	callbacks, err := b.Callbacks(ctx)
 	if err != nil {
 		return err
@@ -158,18 +161,21 @@ func (b *Adapter) Stop(ctx context.Context) error {
 	logger.L().Info("removing connected client from backend adapter",
 		helpers.Interface("id", toDelete),
 	)
+
 	delete(b.connectionMap, toDelete.String())
 
 	b.callbacksMap.Delete(toDelete.String())
 	if client, ok := b.clientsMap.Load(toDelete.String()); ok {
 		_ = client.Stop(ctx)
 		b.clientsMap.Delete(toDelete.String())
+
+		// decrement connected clients gauge and increment client disconnection counter, only if client was found
+		connectedClientsGauge.Dec()
+		clientDisconnectionCounter.With(prometheus.Labels{
+			prometheusClusterLabel: toDelete.Cluster,
+			prometheusAccountLabel: toDelete.Account,
+		}).Inc()
 	}
-	connectedClientsGauge.Dec()
-	clientDisconnectionCounter.With(prometheus.Labels{
-		prometheusClusterLabel: toDelete.Cluster,
-		prometheusAccountLabel: toDelete.Account,
-	}).Inc()
 
 	return nil
 }
