@@ -129,6 +129,9 @@ func main() {
 			if errors.As(err, &status) && status == http.StatusFailedDependency {
 				return backoff.Permanent(fmt.Errorf("server rejected our client version <%s>, please update", version))
 			}
+			if errors.As(err, &status) && status == http.StatusUnauthorized {
+				return backoff.Permanent(fmt.Errorf("server rejected our credentials"))
+			}
 			return err
 		}, utils.NewBackOff(false), func(err error, d time.Duration) {
 			logger.L().Ctx(ctx).Warning("connection error", helpers.Error(err),
