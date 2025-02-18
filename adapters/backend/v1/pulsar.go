@@ -108,7 +108,7 @@ func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
 	for {
 		msg, err := c.reader.Next(ctx)
 		if err != nil {
-			panic(err)
+			logger.L().Ctx(ctx).Fatal("failed to read message from pulsar", helpers.Error(err))
 		}
 
 		// skip messages sent by the synchronizer server
@@ -122,7 +122,8 @@ func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
 		case c.messageChannel <- msg:
 			logger.L().Ctx(ctx).Debug("pulsar message enqueued", helpers.String("msgId", msgID))
 		default:
-			logger.L().Ctx(ctx).Warning("pulsar message will not be processed because channel was closed", helpers.String("msgId", msgID))
+			// this is not recoverable, so we log and quit
+			logger.L().Ctx(ctx).Fatal("pulsar message will not be processed because channel was closed", helpers.String("msgId", msgID))
 		}
 	}
 }
