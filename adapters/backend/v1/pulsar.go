@@ -102,6 +102,7 @@ func (c *PulsarMessageReader) stop() {
 	c.reader.Close()
 	logger.L().Info("closing pulsar message channel")
 	close(c.messageChannel)
+	logger.L().Fatal("pulsar messages will not be processed because channel was closed")
 }
 
 func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
@@ -118,13 +119,8 @@ func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
 
 		msgID := utils.PulsarMessageIDtoString(msg.ID())
 
-		select {
-		case c.messageChannel <- msg:
-			logger.L().Ctx(ctx).Debug("pulsar message enqueued", helpers.String("msgId", msgID))
-		default:
-			// this is not recoverable, so we log and quit
-			logger.L().Ctx(ctx).Fatal("pulsar message will not be processed because channel was closed", helpers.String("msgId", msgID))
-		}
+		c.messageChannel <- msg
+		logger.L().Ctx(ctx).Debug("pulsar message enqueued", helpers.String("msgId", msgID))
 	}
 }
 
