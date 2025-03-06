@@ -652,7 +652,10 @@ func initIntegrationTest(t *testing.T) *Test {
 	err = ingesterPgClient.Connect()
 	require.NoError(t, err)
 	// run migrations
-	_ = migration.DbMigrations(ingesterPgClient.GetClient(), migration.HotMigrationsTargetDbVersion)
+	err = migration.DbMigrations(ingesterPgClient.GetClient(), migration.HotMigrationsTargetDbVersion)
+	if err != nil {
+		panic(fmt.Sprintf("failed to run migrations: %v", err))
+	}
 	pulsarClient, err := pulsarconnector.NewClient(
 		pulsarconnector.WithConfig(&ingesterConf.Pulsar),
 		pulsarconnector.WithRetryAttempts(20),
