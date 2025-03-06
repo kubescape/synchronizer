@@ -19,10 +19,12 @@ import (
 	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
+	configserviceconnector "github.com/armosec/event-ingester-service/config_service_connector"
 	"github.com/armosec/event-ingester-service/ingesters"
 	ingesterutils "github.com/armosec/event-ingester-service/utils"
 	postgresConnector "github.com/armosec/postgres-connector"
 	postgresconnectordal "github.com/armosec/postgres-connector/dal"
+
 	migration "github.com/armosec/postgres-connector/migration"
 	"github.com/cenkalti/backoff/v4"
 
@@ -45,10 +47,10 @@ import (
 
 	"github.com/armosec/armoapi-go/armotypes"
 	"github.com/armosec/armoapi-go/identifiers"
-	"github.com/armosec/armosec-infra/resourceprocessor"
 	"github.com/armosec/armosec-infra/s3connector"
 	synchronizeringester "github.com/armosec/event-ingester-service/ingesters/synchronizer_ingester"
 	"github.com/armosec/event-ingester-service/synchronizer_producer"
+	"github.com/armosec/postgres-connector/resourceprocessor"
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -393,7 +395,7 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 						},
 						Containers: []corev1.Container{{
 							Name:  "apiserver",
-							Image: "quay.io/kubescape/storage:v0.0.69",
+							Image: "quay.io/kubescape/storage:v0.0.161",
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "data", MountPath: "/data"},
 								{Name: "ks-cloud-config", MountPath: "/etc/config"},
@@ -594,6 +596,14 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 	}
 }
 
+type csMock struct {
+	configserviceconnector.ConfigServiceConnector
+}
+
+func (s *csMock) GetOrCreateCluster(_, _ string, _ map[string]string) (*armotypes.PortalCluster, error) {
+	return &armotypes.PortalCluster{}, nil
+}
+
 func initIntegrationTest(t *testing.T) *Test {
 	ctx := context.TODO()
 
@@ -642,7 +652,10 @@ func initIntegrationTest(t *testing.T) *Test {
 	err = ingesterPgClient.Connect()
 	require.NoError(t, err)
 	// run migrations
-	_ = migration.DbMigrations(ingesterPgClient.GetClient(), migration.HotMigrationsTargetDbVersion)
+	err = migration.DbMigrations(ingesterPgClient.GetClient(), migration.HotMigrationsTargetDbVersion)
+	if err != nil {
+		panic(fmt.Sprintf("failed to run migrations: %v", err))
+	}
 	pulsarClient, err := pulsarconnector.NewClient(
 		pulsarconnector.WithConfig(&ingesterConf.Pulsar),
 		pulsarconnector.WithRetryAttempts(20),
@@ -656,12 +669,10 @@ func initIntegrationTest(t *testing.T) *Test {
 	ctx = context.WithValue(ctx, "resourceProcessor", ingesterProcessor)
 	onFinishProducer, err := pulsarClient.NewProducer(pulsarconnector.WithProducerTopic("onFinishTopic"), pulsarconnector.WithProducerNamespace("armo", "kubescape"))
 	require.NoError(t, err)
-	gvrProducerMap, err := synchronizeringester.InitGVRProducerMap(pulsarClient, ingesterConf.SynchronizerIngesterConfig)
-	require.NoError(t, err)
 	isReady := make(chan bool)
 
 	go synchronizeringester.ConsumeSynchronizerMessages(
-		gvrProducerMap,
+		nil,
 		ingesters.WithPulsarClient(pulsarClient),
 		ingesters.WithIngesterConfig(ingesterConf.SynchronizerIngesterConfig),
 		ingesters.WithPGConnector(ingesterPgClient),
@@ -669,6 +680,7 @@ func initIntegrationTest(t *testing.T) *Test {
 		ingesters.WithSynchronizerProducer(ingesterProducer),
 		ingesters.WithOnFinishProducer(onFinishProducer),
 		ingesters.WithIsReadyChannel(isReady),
+		ingesters.WithConfigServiceConnector(&csMock{}),
 	)
 	<-isReady
 
@@ -1241,7 +1253,7 @@ func TestSynchronizer_TC12(t *testing.T) {
 	// create a new dummy object directly in postgres (which does not exist in k8s) and confirm it is there
 	toBeDeletedName := name + "test"
 	b, _ := json.Marshal(createdAppProfileObj)
-	_, err = td.processor.Store(account, clusterName, kind, namespace, toBeDeletedName, b)
+	_, err = td.processor.Store(context.Background(), account, clusterName, kind, namespace, toBeDeletedName, b, nil)
 	assert.NoError(t, err)
 	_, objFound, err := td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, toBeDeletedName)
 	assert.NoError(t, err)
