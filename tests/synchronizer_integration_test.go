@@ -19,10 +19,12 @@ import (
 	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
+	configserviceconnector "github.com/armosec/event-ingester-service/config_service_connector"
 	"github.com/armosec/event-ingester-service/ingesters"
 	ingesterutils "github.com/armosec/event-ingester-service/utils"
 	postgresConnector "github.com/armosec/postgres-connector"
 	postgresconnectordal "github.com/armosec/postgres-connector/dal"
+
 	migration "github.com/armosec/postgres-connector/migration"
 	"github.com/cenkalti/backoff/v4"
 
@@ -594,6 +596,14 @@ func createAndStartSynchronizerServer(t *testing.T, pulsarUrl, pulsarAdminUrl st
 	}
 }
 
+type csMock struct {
+	configserviceconnector.ConfigServiceConnector
+}
+
+func (s *csMock) GetOrCreateCluster(_, _ string, _ map[string]string) (*armotypes.PortalCluster, error) {
+	return &armotypes.PortalCluster{}, nil
+}
+
 func initIntegrationTest(t *testing.T) *Test {
 	ctx := context.TODO()
 
@@ -667,6 +677,7 @@ func initIntegrationTest(t *testing.T) *Test {
 		ingesters.WithSynchronizerProducer(ingesterProducer),
 		ingesters.WithOnFinishProducer(onFinishProducer),
 		ingesters.WithIsReadyChannel(isReady),
+		ingesters.WithConfigServiceConnector(&csMock{}),
 	)
 	<-isReady
 
