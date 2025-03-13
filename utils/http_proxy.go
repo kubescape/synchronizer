@@ -5,6 +5,7 @@ package utils
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/http"
@@ -71,7 +72,8 @@ func (s *httpProxy) Dial(_, addr string) (net.Conn, error) {
 	}
 	req.Close = false
 	if s.haveAuth {
-		req.SetBasicAuth(s.username, s.password)
+		credential := base64.StdEncoding.EncodeToString([]byte(s.username + ":" + s.password))
+		req.Header.Set("Proxy-Authorization", "Basic "+credential)
 	}
 
 	err = req.Write(c)
