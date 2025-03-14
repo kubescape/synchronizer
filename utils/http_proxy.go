@@ -5,12 +5,16 @@ package utils
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"fmt"
-	"golang.org/x/net/proxy"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+
+	"github.com/kubescape/go-logger"
+	"github.com/kubescape/go-logger/helpers"
+	"golang.org/x/net/proxy"
 )
 
 type direct struct{}
@@ -35,10 +39,12 @@ func newHTTPProxy(uri *url.URL, forward proxy.Dialer) (proxy.Dialer, error) {
 	s := new(httpProxy)
 	s.host = uri.Host
 	s.forward = forward
+	logger.L().Info("setting proxy", helpers.String("scheme", uri.Scheme), helpers.String("host", s.host))
 	if uri.User != nil {
 		s.haveAuth = true
 		s.username = uri.User.Username()
 		s.password, _ = uri.User.Password()
+		logger.L().Info("setting basic auth for proxy", helpers.String("username", s.username), helpers.Int("len(password)", len(s.password)))
 	}
 
 	return s, nil
@@ -66,7 +72,8 @@ func (s *httpProxy) Dial(_, addr string) (net.Conn, error) {
 	}
 	req.Close = false
 	if s.haveAuth {
-		req.SetBasicAuth(s.username, s.password)
+		credential := base64.StdEncoding.EncodeToString([]byte(s.username + ":" + s.password))
+		req.Header.Set("Proxy-Authorization", "Basic "+credential)
 	}
 
 	err = req.Write(c)
@@ -107,9 +114,10 @@ func GetDialer() func(context.Context, string, string) (net.Conn, error) {
 	for _, envVar := range envVars {
 		if httpProxy := os.Getenv(envVar); httpProxy != "" {
 			uri, err := url.Parse(httpProxy)
-			if err == nil {
-				proxyURI = uri
+			if err != nil {
+				logger.L().Fatal("failed to parse proxy URI", helpers.Error(err))
 			}
+			proxyURI = uri
 		}
 	}
 	// default proxy net dial
@@ -117,9 +125,10 @@ func GetDialer() func(context.Context, string, string) (net.Conn, error) {
 	// if custom URI is defined, generate proxy net dial from that
 	if proxyURI != nil {
 		dial, err := proxy.FromURL(proxyURI, Direct)
-		if err == nil {
-			proxyNetDial = dial
+		if err != nil {
+			logger.L().Fatal("failed to create proxy dialer", helpers.Error(err))
 		}
+		proxyNetDial = dial
 	}
 	// return dialer as a net.DialContext function
 	return func(ctx context.Context, a, b string) (net.Conn, error) {
