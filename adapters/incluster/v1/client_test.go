@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kinbiko/jsonassert"
 	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
@@ -172,6 +171,14 @@ func TestClient_filterAndMarshal(t *testing.T) {
 			want: utils.FileContent("../../../utils/testdata/networkPolicyCleaned.json"),
 		},
 		{
+			name: "filter sbomsyfts",
+			fields: fields{
+				kind: domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/sbomsyfts"),
+			},
+			obj:  utils.FileToUnstructured("../../../utils/testdata/sbomsyft.json"),
+			want: utils.FileContent("../../../utils/testdata/sbomsyftCleaned.json"),
+		},
+		{
 			name: "filter networkNeighborhood",
 			fields: fields{
 				kind: domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/networkneighborhoods"),
@@ -229,8 +236,7 @@ func TestClient_filterAndMarshal(t *testing.T) {
 				t.Errorf("filterAndMarshal() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			ja := jsonassert.New(t)
-			ja.Assertf(string(got), string(tt.want))
+			assert.JSONEq(t, string(got), string(tt.want))
 		})
 	}
 }

@@ -47,6 +47,7 @@ const (
 var fieldsToRemove = map[string][][]string{
 	"default":   {},
 	"/v1/nodes": {{"status", "conditions"}},
+	"spdx.softwarecomposition.kubescape.io/v1beta1/sbomsyfts": {{"spec", "syft", "descriptor"}, {"spec", "syft", "files"}, {"spec", "syft", "artifactRelationships"}},
 }
 
 var emptyPatch = regexp.MustCompile(`\{"metadata":\{"resourceVersion":"(\d+)"\}\}`)
