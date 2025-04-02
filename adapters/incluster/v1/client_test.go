@@ -171,7 +171,7 @@ func TestClient_filterAndMarshal(t *testing.T) {
 			want: utils.FileContent("../../../utils/testdata/networkPolicyCleaned.json"),
 		},
 		{
-			name: "filter sbomsyfts",
+			name: "filter sbomsyft",
 			fields: fields{
 				kind: domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/sbomsyfts"),
 			},
