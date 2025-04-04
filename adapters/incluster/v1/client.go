@@ -447,6 +447,7 @@ func (c *Client) PutObject(_ context.Context, id domain.KindName, object []byte)
 				return getErr
 			}
 			// update the metadata
+			mergeMetadata(result.Object["metadata"].(map[string]interface{}), obj.Object["metadata"].(map[string]interface{}))
 			if err := unstructured.SetNestedField(obj.Object, result.Object["metadata"], "metadata"); err != nil {
 				return fmt.Errorf("set nested field: %w", err)
 			}
@@ -463,6 +464,25 @@ func (c *Client) PutObject(_ context.Context, id domain.KindName, object []byte)
 		return nil
 	}
 	return nil
+}
+
+func mergeMetadata(existing, new map[string]interface{}) {
+	// merge annotations and labels
+	for _, field := range []string{"annotations", "labels"} {
+		if existingValues, ok := existing[field].(map[string]interface{}); ok {
+			if newValues, ok := new[field].(map[string]interface{}); ok {
+				for k, v := range newValues {
+					// don't override existing values
+					if _, ok := existingValues[k]; ok {
+						continue
+					}
+					existingValues[k] = v
+				}
+			}
+		} else {
+			existing[field] = new[field]
+		}
+	}
 }
 
 func (c *Client) RegisterCallbacks(_ context.Context, callbacks domain.Callbacks) {

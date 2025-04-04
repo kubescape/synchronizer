@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
@@ -299,6 +300,51 @@ func TestClient_isFiltered(t *testing.T) {
 				operatorNamespace: "kubescape",
 			}
 			assert.Equalf(t, tt.filtered, c.isFiltered(tt.workload), "isFiltered(%v)", tt.workload)
+		})
+	}
+}
+
+func Test_mergeMetadata(t *testing.T) {
+	existingDeploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test",
+			Namespace:   "default",
+			Labels:      map[string]string{"app": "test"},
+			Annotations: map[string]string{"deployment.kubernetes.io/revision": "2"},
+		},
+	}
+	newDeploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test",
+			Namespace:   "default",
+			Labels:      map[string]string{"app": "test"},
+			Annotations: map[string]string{"action-guid": "4e4f9032-d03f-459f-b280-17125c50f88b", "deployment.kubernetes.io/revision": "1"},
+		},
+	}
+	existingUnstructured, err := runtime.DefaultUnstructuredConverter.ToUnstructured(existingDeploy)
+	require.NoError(t, err)
+	newUnstructured, err := runtime.DefaultUnstructuredConverter.ToUnstructured(newDeploy)
+	require.NoError(t, err)
+	type args struct {
+		existing map[string]interface{}
+		new      map[string]interface{}
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "test merge metadata",
+			args: args{
+				existing: existingUnstructured["metadata"].(map[string]interface{}),
+				new:      newUnstructured["metadata"].(map[string]interface{}),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mergeMetadata(tt.args.existing, tt.args.new)
+			assert.EqualValues(t, map[string]interface{}{"action-guid": "4e4f9032-d03f-459f-b280-17125c50f88b", "deployment.kubernetes.io/revision": "2"}, tt.args.existing["annotations"])
 		})
 	}
 }
