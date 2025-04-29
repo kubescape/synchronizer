@@ -44,11 +44,15 @@ const (
 )
 
 // fieldsToRemove contains fields to remove from resources fetched with the dynamic client
-var fieldsToRemove = map[string][][]string{
-	"default":   {},
-	"/v1/nodes": {{"status", "conditions"}},
-	"spdx.softwarecomposition.kubescape.io/v1beta1/sbomsyfts": {{"spec", "syft", "descriptor"}, {"spec", "syft", "files"}, {"spec", "syft", "artifactRelationships"}},
-}
+var (
+	sbomFieldsToRemove = [][]string{{"spec", "syft", "descriptor"}, {"spec", "syft", "files"}, {"spec", "syft", "artifactRelationships"}}
+	fieldsToRemove     = map[string][][]string{
+		"default":   {},
+		"/v1/nodes": {{"status", "conditions"}},
+		"spdx.softwarecomposition.kubescape.io/v1beta1/sbomsyfts":         sbomFieldsToRemove,
+		"spdx.softwarecomposition.kubescape.io/v1beta1/sbomsyftfiltereds": sbomFieldsToRemove,
+	}
+)
 
 var emptyPatch = regexp.MustCompile(`\{"metadata":\{"resourceVersion":"(\d+)"\}\}`)
 
