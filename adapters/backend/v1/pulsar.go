@@ -32,12 +32,13 @@ const (
 // ******************************
 
 type PulsarMessageReader struct {
-	name           string
-	reader         pulsar.Reader
-	done           chan bool
-	messageChannel chan pulsar.Message
-	wg             sync.WaitGroup
-	workers        int
+	name                       string
+	reader                     pulsar.Reader
+	done                       chan bool
+	messageChannel             chan pulsar.Message
+	wg                         sync.WaitGroup
+	workers                    int
+	reconciliationMessageMutex sync.Mutex
 }
 
 var _ messaging.MessageReader = (*PulsarMessageReader)(nil)
@@ -182,6 +183,10 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 	switch msgProperties[messaging.MsgPropEvent] {
 	case messaging.MsgPropEventValueReconciliationRequestMessage:
 		var data messaging.ReconciliationRequestMessage
+		// this is a mutex to prevent multiple goroutines from processing multiple reconciliation messages at the same time
+		// as they are can be large
+		c.reconciliationMessageMutex.Lock()
+		defer c.reconciliationMessageMutex.Unlock()
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
 			return fmt.Errorf("failed to unmarshal message: %w", err)
 		}
@@ -202,7 +207,7 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			}
 
 			items := domain.BatchItems{}
-			items.NewChecksum = []domain.NewChecksum{}
+			items.NewChecksum = make([]domain.NewChecksum, 0, len(objects))
 
 			for _, object := range objects {
 				items.NewChecksum = append(items.NewChecksum, domain.NewChecksum{

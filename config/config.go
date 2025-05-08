@@ -73,6 +73,7 @@ type ReconciliationTaskConfig struct {
 	CronSchedule                  string `mapstructure:"cronSchedule"` // when this is set, taskIntervalSeconds is ignored
 	TaskIntervalSeconds           int    `mapstructure:"taskIntervalSeconds"`
 	IntervalFromConnectionSeconds int    `mapstructure:"intervalFromConnectionSeconds"`
+	SendBatch                     bool   `mapstructure:"sendBatch"` // if true, a single message will be sent for all connected clients
 }
 
 type KeepAliveTaskConfig struct {

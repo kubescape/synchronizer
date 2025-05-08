@@ -237,6 +237,14 @@ func (a *Adapter) startReconciliationPeriodicTask(mainCtx context.Context, cfg *
 				ticker.Stop()
 				return
 			case <-ticker.Chan():
+				var batch messaging.ReconciliationRequestMessageBatch
+				if cfg.SendBatch {
+					batch = messaging.ReconciliationRequestMessageBatch{
+						MsgId:    utils.NewMsgId(),
+						Requests: []messaging.ReconciliationRequestMessage{},
+					}
+				}
+
 				a.connMapMutex.Lock()
 				logger.L().Info("running reconciliation task for connected clients", helpers.Int("clients", a.clientsMap.Len()))
 				for connId, clientId := range a.connectionMap {
@@ -259,14 +267,40 @@ func (a *Adapter) startReconciliationPeriodicTask(mainCtx context.Context, cfg *
 					}
 
 					clientCtx := utils.ContextFromIdentifiers(mainCtx, clientId)
-					err := client.SendReconciliationRequestMessage(clientCtx)
-					if err != nil {
-						logger.L().Error("failed to send reconciliation request message", helpers.String("error", err.Error()))
+					if cfg.SendBatch {
+						// add the reconciliation request message to the batch
+						batch.Requests = append(batch.Requests, messaging.ReconciliationRequestMessage{
+							Cluster:         clientId.Cluster,
+							Account:         clientId.Account,
+							ServerInitiated: true,
+						})
 					} else {
-						logger.L().Info("sent reconciliation request message", helpers.Interface("clientId", clientId))
+						err := client.SendReconciliationRequestMessage(clientCtx)
+						if err != nil {
+							logger.L().Error("failed to send reconciliation request message", helpers.String("error", err.Error()))
+						} else {
+							logger.L().Info("sent reconciliation request message", helpers.Interface("clientId", clientId))
+						}
 					}
 				}
 				a.connMapMutex.Unlock()
+
+				// send the batch message if configured
+				// if the batch is empty, we don't send it
+				if cfg.SendBatch && len(batch.Requests) > 0 {
+					msg, err := json.Marshal(batch)
+					if err != nil {
+						logger.L().Error("marshal reconciliation batch message: %w", helpers.Error(err))
+						continue
+					}
+					err = a.producer.ProduceMessageWithoutIdentifier(mainCtx, messaging.MsgPropEventValueReconciliationRequestMessageBatch, msg)
+					if err != nil {
+						logger.L().Error("failed to send reconciliation batch request message", helpers.String("error", err.Error()))
+					} else {
+						logger.L().Info("sent reconciliation batch request message", helpers.Int("batchSize", len(batch.Requests)))
+					}
+
+				}
 			}
 		}
 	}()

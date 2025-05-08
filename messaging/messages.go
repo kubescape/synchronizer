@@ -23,14 +23,15 @@ const (
 	// MsgPropResourceVersion is the property name for the resource version of the resource
 	MsgPropResourceVersion = "resourceVersion"
 
-	MsgPropEventValueGetObjectMessage             = "GetObject"
-	MsgPropEventValuePatchObjectMessage           = "PatchObject"
-	MsgPropEventValueVerifyObjectMessage          = "VerifyObject"
-	MsgPropEventValueDeleteObjectMessage          = "DeleteObject"
-	MsgPropEventValuePutObjectMessage             = "PutObject"
-	MsgPropEventValueServerConnectedMessage       = "ServerConnected"
-	MsgPropEventValueReconciliationRequestMessage = "ReconciliationRequest"
-	MsgPropEventValueConnectedClientsMessage      = "ConnectedClients"
+	MsgPropEventValueGetObjectMessage                  = "GetObject"
+	MsgPropEventValuePatchObjectMessage                = "PatchObject"
+	MsgPropEventValueVerifyObjectMessage               = "VerifyObject"
+	MsgPropEventValueDeleteObjectMessage               = "DeleteObject"
+	MsgPropEventValuePutObjectMessage                  = "PutObject"
+	MsgPropEventValueServerConnectedMessage            = "ServerConnected"
+	MsgPropEventValueReconciliationRequestMessage      = "ReconciliationRequest"
+	MsgPropEventValueReconciliationRequestMessageBatch = "ReconciliationRequestBatch"
+	MsgPropEventValueConnectedClientsMessage           = "ConnectedClients"
 )
 
 type DeleteObjectMessage struct {
@@ -131,6 +132,12 @@ type ReconciliationRequestMessage struct {
 	MsgId           string                                   `json:"msgId"`
 	ServerInitiated bool                                     `json:"serverInitiated"`
 	KindToObjects   map[string][]ReconciliationRequestObject `json:"kindToObject"`
+}
+
+type ReconciliationRequestMessageBatch struct {
+	Depth    int                            `json:"depth"`
+	MsgId    string                         `json:"msgId"`
+	Requests []ReconciliationRequestMessage `json:"requests"`
 }
 
 type ReconciliationRequestObject struct {
