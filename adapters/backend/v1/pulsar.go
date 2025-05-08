@@ -31,15 +31,14 @@ const (
 // * Pulsar Message Reader  *//
 // ******************************
 
-var reconciliationMessageMutex sync.Mutex
-
 type PulsarMessageReader struct {
-	name           string
-	reader         pulsar.Reader
-	done           chan bool
-	messageChannel chan pulsar.Message
-	wg             sync.WaitGroup
-	workers        int
+	name                       string
+	reader                     pulsar.Reader
+	done                       chan bool
+	messageChannel             chan pulsar.Message
+	wg                         sync.WaitGroup
+	workers                    int
+	reconciliationMessageMutex sync.Mutex
 }
 
 var _ messaging.MessageReader = (*PulsarMessageReader)(nil)
@@ -186,8 +185,8 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 		var data messaging.ReconciliationRequestMessage
 		// this is a mutex to prevent multiple goroutines from processing multiple reconciliation messages at the same time
 		// as they are can be large
-		reconciliationMessageMutex.Lock()
-		defer reconciliationMessageMutex.Unlock()
+		c.reconciliationMessageMutex.Lock()
+		defer c.reconciliationMessageMutex.Unlock()
 		if err := json.Unmarshal(msg.Payload(), &data); err != nil {
 			return fmt.Errorf("failed to unmarshal message: %w", err)
 		}
