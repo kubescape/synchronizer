@@ -577,6 +577,9 @@ func (c *Client) filterAndMarshal(d metav1.Object) ([]byte, error) {
 		if err := storageutils.RemoveSpecificFields(un, fields); err != nil {
 			return nil, fmt.Errorf("remove specific fields: %w", err)
 		}
+		if err := utils.MaskEnvironmentVariables(un); err != nil {
+			return nil, fmt.Errorf("mask environment variables: %w", err)
+		}
 	} else {
 		// add type meta information to the object
 		d.(runtime.Object).GetObjectKind().SetGroupVersionKind(schema.GroupVersionKind{

@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	"github.com/kubescape/k8s-interface/workloadinterface"
 	spdxv1beta1 "github.com/kubescape/storage/pkg/generated/clientset/versioned/typed/softwarecomposition/v1beta1"
 	"github.com/kubescape/synchronizer/domain"
 
@@ -31,6 +32,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 )
+
+const maskedValue = "XXXXXX"
 
 func NewMsgId() string {
 	return uuid.NewString()
@@ -276,4 +279,67 @@ func FileToUnstructured(path string) *unstructured.Unstructured {
 func FileContent(path string) []byte {
 	b, _ := os.ReadFile(path)
 	return b
+}
+
+// MaskEnvironmentVariables finds and masks the `value` of all environment variables
+// in a workload's containers (main, init, and ephemeral).
+// It modifies the input object in place.
+func MaskEnvironmentVariables(un *unstructured.Unstructured) error {
+	if un == nil {
+		return nil
+	}
+
+	// maskContainers is a helper to iterate over a list of containers and mask their env vars
+	maskContainers := func(containers []interface{}) error {
+		for i := range containers {
+			container, ok := containers[i].(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			env, found, _ := unstructured.NestedSlice(container, "env")
+			if !found {
+				continue
+			}
+
+			for j := range env {
+				envVar, ok := env[j].(map[string]interface{})
+				if !ok {
+					continue
+				}
+				// Only mask if 'value' field exists. 'valueFrom' is left untouched.
+				if _, ok := envVar["value"]; ok {
+					err := unstructured.SetNestedField(envVar, maskedValue, "value")
+					if err != nil {
+						return fmt.Errorf("error setting nested field: %w", err)
+					}
+				}
+			}
+			// Update the env slice in the container
+			err := unstructured.SetNestedSlice(container, env, "env")
+			if err != nil {
+				return fmt.Errorf("error setting nested slice: %w", err)
+			}
+		}
+		return nil
+	}
+
+	// Get pod spec path based on workload kind (e.g., "spec.template.spec" for Deployment)
+	podSpecPath := workloadinterface.PodSpec(un.GetKind())
+
+	for _, containerType := range []string{"containers", "initContainers", "ephemeralContainers"} {
+		// Mask containerType containers
+		if containers, found, _ := unstructured.NestedSlice(un.Object, append(podSpecPath, containerType)...); found {
+			err := maskContainers(containers)
+			if err != nil {
+				return fmt.Errorf("error masking containers: %w", err)
+			}
+			err = unstructured.SetNestedSlice(un.Object, containers, append(podSpecPath, containerType)...)
+			if err != nil {
+				return fmt.Errorf("error setting nested slice: %w", err)
+			}
+		}
+	}
+
+	return nil
 }
