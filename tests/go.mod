@@ -35,7 +35,7 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/99designs/keyring v1.2.2 // indirect
-	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24 // indirect
+	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20231105174938-2b5cbb29f3e2 // indirect
 	github.com/AthenZ/athenz v1.11.53 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.11.1 // indirect
@@ -271,6 +271,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
+	github.com/moby/go-archive v0.1.0 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/patternmatcher v0.6.0 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
@@ -350,7 +351,7 @@ require (
 	github.com/tkanos/gonfig v0.0.0-20210106201359-53e13348de2f // indirect
 	github.com/tklauser/go-sysconf v0.3.14 // indirect
 	github.com/tklauser/numcpus v0.8.0 // indirect
-	github.com/ulikunitz/xz v0.5.12 // indirect
+	github.com/ulikunitz/xz v0.5.14 // indirect
 	github.com/uptrace/opentelemetry-go-extra/otelutil v0.3.2 // indirect
 	github.com/uptrace/opentelemetry-go-extra/otelzap v0.3.2 // indirect
 	github.com/uptrace/uptrace-go v1.32.0 // indirect
@@ -439,13 +440,7 @@ require (
 replace github.com/kubescape/synchronizer => ../
 
 replace (
-	github.com/docker/docker => github.com/docker/docker v26.1.5+incompatible
-	// https://github.com/kubescape/synchronizer/security/dependabot/44
-	// https://github.com/kubescape/synchronizer/security/dependabot/43
 	github.com/go-git/go-git/v5 => github.com/go-git/go-git/v5 v5.13.0
-	// https://github.com/kubescape/synchronizer/security/dependabot/19
 	github.com/mholt/archiver/v3 => github.com/anchore/archiver/v3 v3.5.2
 	github.com/spf13/viper => github.com/spf13/viper v1.19.0
-	github.com/testcontainers/testcontainers-go => github.com/testcontainers/testcontainers-go v0.30.0
-	github.com/testcontainers/testcontainers-go/modules/k3s => github.com/testcontainers/testcontainers-go/modules/k3s v0.30.0
 )
