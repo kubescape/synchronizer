@@ -509,19 +509,14 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 	require.NoError(t, err)
 
 	// set cluster config
-	clientCfg.InCluster.Namespace = kubescapeNamespace
+	clientCfg.InCluster.Account = cluster.account
 	clientCfg.InCluster.ClusterName = cluster.cluster
 	clientCfg.InCluster.ExcludeNamespaces = []string{"kube-system", "kubescape"}
 	clientCfg.InCluster.IncludeNamespaces = []string{}
-	clientCfg.InCluster.Account = cluster.account
+	clientCfg.InCluster.ListPeriod = 5 * time.Second
+	clientCfg.InCluster.Namespace = kubescapeNamespace
 	clientCfg.InCluster.ServerUrl = syncServer.serverUrl
 	if watchDefaults {
-		clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
-			Group:    "",
-			Version:  "v1",
-			Resource: "configmaps",
-			Strategy: "copy",
-		})
 		clientCfg.InCluster.Resources = append(clientCfg.InCluster.Resources, config.Resource{
 			Group:    "",
 			Version:  "v1",
@@ -917,21 +912,23 @@ func TestSynchronizer_TC03(t *testing.T) {
 }
 
 // TestSynchronizer_TC04_InCluster: Deletion of a single entity
+// we use configmap here because our CRDs no longer propagates deletion because of the periodic listings
+// (we now rely on the reconciliation batch to detect deletions)
 func TestSynchronizer_TC04_InCluster(t *testing.T) {
 	td := initIntegrationTest(t)
 	// add applicationprofile to k8s
-	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	_, err := td.clusters[0].k8sclient.CoreV1().ConfigMaps(namespace).Create(context.TODO(), td.clusters[0].cm, metav1.CreateOptions{})
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in postgres
-	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name)
 	assert.NotNil(t, objMetadata)
 	// delete applicationprofile from k8s
-	err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
+	err = td.clusters[0].k8sclient.CoreV1().ConfigMaps(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
 	require.NoError(t, err)
 
 	// check object not in postgres
-	waitForObjectToBeDeletedInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	waitForObjectToBeDeletedInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "/v1/configmaps", namespace, name)
 
 	// tear down
 	tearDown(td)

@@ -65,16 +65,18 @@ func TestLoadConfig(t *testing.T) {
 			path: "../configuration/client",
 			want: Config{
 				InCluster: InCluster{
-					ServerUrl:         "ws://127.0.0.1:8080/",
-					Namespace:         "kubescape",
+					AccessKey:         "xxxxxxxx-1111-1111-1111-xxxxxxxx",
+					Account:           "11111111-2222-3333-4444-11111111",
 					ClusterName:       "cluster-1",
 					ExcludeNamespaces: []string{"kube-system", "kubescape"},
 					IncludeNamespaces: []string{},
-					Account:           "11111111-2222-3333-4444-11111111",
-					AccessKey:         "xxxxxxxx-1111-1111-1111-xxxxxxxx",
+					ListPeriod:        60000000000,
+					Namespace:         "kubescape",
+					ServerUrl:         "ws://127.0.0.1:8080/",
 					Resources: []Resource{
 						{Group: "", Version: "v1", Resource: "pods", Strategy: "patch"},
 						{Group: "", Version: "v1", Resource: "nodes", Strategy: "patch"},
+						{Group: "", Version: "v1", Resource: "configmaps", Strategy: "copy"},
 						{Group: "apps", Version: "v1", Resource: "deployments", Strategy: "patch"},
 						{Group: "apps", Version: "v1", Resource: "statefulsets", Strategy: "patch"},
 						{Group: "spdx.softwarecomposition.kubescape.io", Version: "v1beta1", Resource: "applicationprofiles", Strategy: "patch"},
@@ -107,6 +109,9 @@ func TestLoadConfig(t *testing.T) {
 					ProducerTopic:  "synchronizer",
 					ConsumerTopic:  "synchronizer",
 					SkipAlertsFrom: []string{"foo", "bar"},
+				},
+				InCluster: InCluster{
+					ListPeriod: 60000000000,
 				},
 			},
 		},
