@@ -19,53 +19,52 @@ import (
 	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
+	"github.com/armosec/armoapi-go/armotypes"
+	"github.com/armosec/armoapi-go/identifiers"
+	"github.com/armosec/armosec-infra/s3connector"
 	configserviceconnector "github.com/armosec/event-ingester-service/config_service_connector"
 	"github.com/armosec/event-ingester-service/ingesters"
+	synchronizeringester "github.com/armosec/event-ingester-service/ingesters/synchronizer_ingester"
+	"github.com/armosec/event-ingester-service/synchronizer_producer"
 	ingesterutils "github.com/armosec/event-ingester-service/utils"
 	postgresConnector "github.com/armosec/postgres-connector"
 	postgresconnectordal "github.com/armosec/postgres-connector/dal"
-
 	migration "github.com/armosec/postgres-connector/migration"
+	"github.com/armosec/postgres-connector/resourceprocessor"
+	"github.com/armosec/postgres-connector/router"
 	"github.com/cenkalti/backoff/v4"
-
+	mapset "github.com/deckarep/golang-set/v2"
+	"github.com/kubescape/go-logger"
+	"github.com/kubescape/go-logger/helpers"
+	helpersv1 "github.com/kubescape/k8s-interface/instanceidhandler/v1/helpers"
+	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
 	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
+	spdxv1beta1client "github.com/kubescape/storage/pkg/generated/clientset/versioned/typed/softwarecomposition/v1beta1"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/adapters/backend/v1"
+	"github.com/kubescape/synchronizer/adapters/httpendpoint/v1"
+	"github.com/kubescape/synchronizer/adapters/incluster/v1"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/core"
+	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/k3s"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
-	"k8s.io/utils/ptr"
-
-	"github.com/armosec/armoapi-go/armotypes"
-	"github.com/armosec/armoapi-go/identifiers"
-	"github.com/armosec/armosec-infra/s3connector"
-	synchronizeringester "github.com/armosec/event-ingester-service/ingesters/synchronizer_ingester"
-	"github.com/armosec/event-ingester-service/synchronizer_producer"
-	"github.com/armosec/postgres-connector/resourceprocessor"
-	mapset "github.com/deckarep/golang-set/v2"
-	"github.com/kubescape/go-logger"
-	"github.com/kubescape/go-logger/helpers"
-	pulsarconnector "github.com/kubescape/messaging/pulsar/connector"
-	spdxv1beta1client "github.com/kubescape/storage/pkg/generated/clientset/versioned/typed/softwarecomposition/v1beta1"
-	"github.com/kubescape/synchronizer/adapters/httpendpoint/v1"
-	"github.com/kubescape/synchronizer/adapters/incluster/v1"
-	"github.com/kubescape/synchronizer/domain"
-	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	apiregistrationclient "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/typed/apiregistration/v1"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -260,9 +259,7 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 	)
 
 	// k3s
-	k3sC, err := k3s.RunContainer(ctx,
-		testcontainers.WithImage("docker.io/rancher/k3s:v1.27.9-k3s1"),
-	)
+	k3sC, err := k3s.Run(ctx, "docker.io/rancher/k3s:v1.34.1-k3s1")
 	require.NoError(t, err)
 	kubeConfigYaml, err := k3sC.GetKubeConfig(ctx)
 	require.NoError(t, err)
@@ -304,12 +301,20 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 			},
 		}, metav1.CreateOptions{})
 	require.NoError(t, err)
-	// storage configmap
+	// storage configmaps
 	_, err = k8sclient.CoreV1().ConfigMaps("kubescape").Create(context.TODO(),
 		&corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Name: "ks-cloud-config"},
 			Data: map[string]string{
 				"clusterData": `{"clusterName":"k3s"}`,
+			},
+		}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	_, err = k8sclient.CoreV1().ConfigMaps("kubescape").Create(context.TODO(),
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "storage"},
+			Data: map[string]string{
+				"config.json": `{"cleanupInterval":"6h"}`,
 			},
 		}, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -395,10 +400,11 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 						},
 						Containers: []corev1.Container{{
 							Name:  "apiserver",
-							Image: "quay.io/kubescape/storage:v0.0.161",
+							Image: "quay.io/matthiasb_1/storage:checksum",
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "data", MountPath: "/data"},
-								{Name: "ks-cloud-config", MountPath: "/etc/config"},
+								{Name: "ks-cloud-config", MountPath: "/etc/config/clusterData.json", SubPath: "clusterData.json"},
+								{Name: "config", MountPath: "/etc/config/config.json", SubPath: "config.json"},
 							},
 						}},
 						Volumes: []corev1.Volume{
@@ -410,6 +416,14 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 									LocalObjectReference: corev1.LocalObjectReference{Name: "ks-cloud-config"},
 									Items: []corev1.KeyToPath{
 										{Key: "clusterData", Path: "clusterData.json"},
+									},
+								},
+							}},
+							{Name: "config", VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "storage"},
+									Items: []corev1.KeyToPath{
+										{Key: "config.json", Path: "config.json"},
 									},
 								},
 							}},
@@ -627,35 +641,68 @@ func initIntegrationTest(t *testing.T) *Test {
 	// ingester
 	t.Setenv("CONFIG_FILE", "../configuration/ingester/config.json")
 	ingesterConf := ingesterutils.GetConfig()
-	ingesterConf.Postgres.Host = strings.Split(pgHostPort, ":")[0]
-	ingesterConf.Postgres.Port = strings.Split(pgHostPort, ":")[1]
 	ingesterConf.Pulsar.URL = pulsarUrl
 	ingesterConf.Pulsar.AdminUrl = pulsarAdminUrl
-	rdsCredentials := postgresConnector.PostgresConfig{
-		Host:     strings.Split(pgHostPort, ":")[0],
-		Port:     strings.Split(pgHostPort, ":")[1],
-		User:     "admin",
-		Password: "admin",
-		DB:       "main_db",
-		SslMode:  "disable",
+
+	// Initialize PostgresRouter
+	var pgRouter *router.PostgresRouter
+	if ingesterConf.PostgresRouterConfig == nil {
+		pgRouter, ingesterConf.PostgresRouterConfig = router.NewSinglePostgresRouter(postgresConnector.PostgresConfig{
+			Enabled: true,
+		})
+	} else {
+		pgRouter, err = router.NewPostgresRouter(*ingesterConf.PostgresRouterConfig)
+		require.NoError(t, err)
 	}
-	rdsFile, err := os.CreateTemp("", "rds_credentials.json")
-	require.NoError(t, err)
-	err = json.NewEncoder(rdsFile).Encode(rdsCredentials)
-	require.NoError(t, err)
-	pgOpts := []postgresConnector.ConnectorOption{
-		postgresConnector.WithReloadFromFile(rdsFile.Name()),
-		postgresConnector.WithUseDebugConnection(ingesterConf.Logger.Level == "debug"),
+
+	// Track credentials files for cleanup
+	var rdsFiles []string
+
+	// Connect to each database in the router configuration
+	for dbKey, postgresConfig := range ingesterConf.PostgresRouterConfig.Configs {
+		// Prepare credentials file
+		rdsCredentials := postgresConnector.PostgresConfig{
+			Host:     strings.Split(pgHostPort, ":")[0],
+			Port:     strings.Split(pgHostPort, ":")[1],
+			User:     "admin",
+			Password: "admin",
+			DB:       "main_db",
+			SslMode:  "disable",
+		}
+		rdsFile, err := os.CreateTemp("", fmt.Sprintf("rds_credentials_%s.json", dbKey))
+		require.NoError(t, err)
+		rdsFileName := rdsFile.Name()
+		rdsFiles = append(rdsFiles, rdsFileName)
+		err = json.NewEncoder(rdsFile).Encode(rdsCredentials)
+		require.NoError(t, err)
+
+		// Setup connection options
+		pgOpts := []postgresConnector.ConnectorOption{
+			postgresConnector.WithReloadFromFile(rdsFileName),
+			postgresConnector.WithUseDebugConnection(ingesterConf.Logger.Level == "debug"),
+		}
+
+		// Create and connect postgres client
+		postgresClient := postgresConnector.NewPostgresClient(postgresConfig, pgOpts...)
+		time.Sleep(5 * time.Second)
+		err = postgresClient.Connect()
+		require.NoError(t, err)
+
+		// Run migrations
+		err = migration.DbMigrations(postgresClient.GetClient(), migration.HotMigrationsTargetDbVersion)
+		if err != nil {
+			panic(fmt.Sprintf("failed to run migrations: %v", err))
+		}
+
+		// Set connector in router
+		pgRouter.SetConnector(dbKey, postgresClient)
 	}
-	ingesterPgClient := postgresConnector.NewPostgresClient(*ingesterConf.Postgres, pgOpts...)
-	time.Sleep(5 * time.Second)
-	err = ingesterPgClient.Connect()
-	require.NoError(t, err)
-	// run migrations
-	err = migration.DbMigrations(ingesterPgClient.GetClient(), migration.HotMigrationsTargetDbVersion)
-	if err != nil {
-		panic(fmt.Sprintf("failed to run migrations: %v", err))
-	}
+
+	// Check if all postgres clients are ready
+	pgRouter.IsReady()
+
+	// Get default connector for backward compatibility
+	ingesterPgClient := pgRouter.GetPostgresConnector(ingesterConf.PostgresRouterConfig.DefaultConfigKey)
 	pulsarClient, err := pulsarconnector.NewClient(
 		pulsarconnector.WithConfig(&ingesterConf.Pulsar),
 		pulsarconnector.WithRetryAttempts(20),
@@ -675,7 +722,7 @@ func initIntegrationTest(t *testing.T) *Test {
 		nil,
 		ingesters.WithPulsarClient(pulsarClient),
 		ingesters.WithIngesterConfig(ingesterConf.SynchronizerIngesterConfig),
-		ingesters.WithPGConnector(ingesterPgClient),
+		ingesters.WithPGRouter(pgRouter),
 		ingesters.WithContext(ctx),
 		ingesters.WithSynchronizerProducer(ingesterProducer),
 		ingesters.WithOnFinishProducer(onFinishProducer),
@@ -704,7 +751,7 @@ func initIntegrationTest(t *testing.T) *Test {
 			"postgres": postgresC,
 			"pulsar":   pulsarC,
 		},
-		files:        []string{rdsFile.Name()},
+		files:        rdsFiles,
 		clusters:     []TestKubernetesCluster{*cluster1, *cluster2},
 		ingesterConf: ingesterConf,
 		pulsarClient: pulsarClient,
@@ -764,6 +811,10 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	// workaround for empty TypeMeta (from k3s?)
 	k8sAppProfile.TypeMeta.Kind = "ApplicationProfile"
 	k8sAppProfile.TypeMeta.APIVersion = "spdx.softwarecomposition.kubescape.io/v1beta1"
+	// remove sync-checksum annotation as it's added by synchronizer and not stored in S3
+	if k8sAppProfile.Annotations != nil {
+		delete(k8sAppProfile.Annotations, helpersv1.SyncChecksumMetadataKey)
+	}
 	var s3AppProfile v1beta1.ApplicationProfile
 	err = json.Unmarshal(b, &s3AppProfile)
 	require.NoError(t, err)

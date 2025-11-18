@@ -21,3 +21,5 @@
 go.work
 # debug files
 */__debug_*
+# IDE files
+.idea
