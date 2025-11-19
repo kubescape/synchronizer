@@ -259,7 +259,7 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 	)
 
 	// k3s
-	k3sC, err := k3s.Run(ctx, "docker.io/rancher/k3s:v1.34.1-k3s1")
+	k3sC, err := k3s.Run(ctx, "quay.io/kubescape/k3s:v1.34.1-k3s1")
 	require.NoError(t, err)
 	kubeConfigYaml, err := k3sC.GetKubeConfig(ctx)
 	require.NoError(t, err)
@@ -824,6 +824,28 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	sentNewChecksum := grepCount(logFile.Name(), "sent new checksum message")
 	// check the pulsar topic backlog is empty
 	// td.ingesterConf.Pulsar.AdminUrl
+
+	// stop old synchronizer servers and clients before creating new ones
+	for i := range td.syncServers {
+		if td.syncServers[i].syncServerContextCancelFn != nil {
+			td.syncServers[i].syncServerContextCancelFn()
+		}
+		if td.syncServers[i].conn != nil {
+			_ = td.syncServers[i].conn.Close()
+		}
+	}
+	for i := range td.clusters {
+		if td.clusters[i].syncClientContextCancelFn != nil {
+			td.clusters[i].syncClientContextCancelFn()
+		}
+		if td.clusters[i].clientConn != nil {
+			_ = td.clusters[i].clientConn.Close()
+		}
+	}
+
+	// wait for resources to be released
+	time.Sleep(2 * time.Second)
+
 	// create a new client/server pair for cluster1
 	clientConn, serverConn := net.Pipe()
 	// FIXME hope randomPorts(1)[0] is not the same as one of the previous ports
