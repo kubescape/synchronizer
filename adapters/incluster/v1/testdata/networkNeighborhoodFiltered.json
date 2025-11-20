@@ -3,8 +3,7 @@
   "kind" : "NetworkNeighborhood",
   "metadata" : {
     "name" : "test",
-    "namespace" : "default",
-    "creationTimestamp" : null
+    "namespace" : "default"
   },
   "spec" : {
     "matchLabels" : {
