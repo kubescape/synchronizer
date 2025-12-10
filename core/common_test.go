@@ -67,7 +67,7 @@ func TestSynchronizer_ObjectModifiedOnBothSides(t *testing.T) {
 	err := clientAdapter.TestCallPutOrPatch(ctx, kindKnownServers, object, objectClientV2)
 	assert.NoError(t, err)
 	// server message arrives just now on client
-	err = clientAdapter.PutObject(ctx, kindKnownServers, objectServerV2)
+	err = clientAdapter.PutObject(ctx, kindKnownServers, "", objectServerV2)
 	assert.NoError(t, err)
 	time.Sleep(1 * time.Second)
 	// check both sides have the one from the server

@@ -83,12 +83,12 @@ func (a *Adapter) PatchObject(ctx context.Context, id domain.KindName, checksum 
 	return client.PatchObject(ctx, id, checksum, patch)
 }
 
-func (a *Adapter) PutObject(ctx context.Context, id domain.KindName, object []byte) error {
+func (a *Adapter) PutObject(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
 	client, err := a.GetClient(id)
 	if err != nil {
 		return fmt.Errorf("failed to get client for resource %s: %w", id.Kind, err)
 	}
-	return client.PutObject(ctx, id, object)
+	return client.PutObject(ctx, id, checksum, object)
 }
 
 func (a *Adapter) VerifyObject(ctx context.Context, id domain.KindName, checksum string) error {

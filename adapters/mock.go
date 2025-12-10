@@ -82,7 +82,7 @@ func (m *MockAdapter) Batch(ctx context.Context, kind domain.Kind, _ domain.Batc
 			Namespace:       item.Namespace,
 			ResourceVersion: item.ResourceVersion,
 		}
-		err = multierr.Append(err, m.PutObject(ctx, id, []byte(item.Object)))
+		err = multierr.Append(err, m.PutObject(ctx, id, item.Checksum, []byte(item.Object)))
 	}
 	return err
 }
@@ -165,7 +165,7 @@ func (m *MockAdapter) patchObject(id domain.KindName, checksum string, patch []b
 	return nil, nil
 }
 
-func (m *MockAdapter) PutObject(_ context.Context, id domain.KindName, object []byte) error {
+func (m *MockAdapter) PutObject(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
 	m.saveIfNewer(id, object)
 	return nil
 }

@@ -140,9 +140,9 @@ func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum s
 	return c.sendPatchObjectMessage(ctx, id, checksum, patch)
 }
 
-func (c *Client) PutObject(ctx context.Context, id domain.KindName, object []byte) error {
+func (c *Client) PutObject(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
 	// putting the object into the data store is delegated to the ingester
-	return c.sendPutObjectMessage(ctx, id, object)
+	return c.sendPutObjectMessage(ctx, id, checksum, object)
 }
 
 func (c *Client) Batch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
@@ -194,7 +194,7 @@ func (c *Client) Batch(ctx context.Context, kind domain.Kind, batchType domain.B
 			Namespace:       item.Namespace,
 			ResourceVersion: item.ResourceVersion,
 		}
-		err = multierr.Append(err, c.PutObject(ctx, id, []byte(item.Object)))
+		err = multierr.Append(err, c.PutObject(ctx, id, item.Checksum, []byte(item.Object)))
 	}
 	return err
 }
@@ -302,7 +302,7 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 	return c.messageProducer.ProduceMessage(ctx, cId, messaging.MsgPropEventValuePatchObjectMessage, data, messaging.KindNameToCustomProperties(id))
 }
 
-func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, object []byte) error {
+func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
 	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	cId := utils.ClientIdentifierFromContext(ctx)
 
@@ -316,6 +316,7 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, o
 	}
 
 	msg := messaging.PutObjectMessage{
+		Checksum:  checksum,
 		Cluster:   cId.Cluster,
 		Account:   cId.Account,
 		Depth:     depth + 1,

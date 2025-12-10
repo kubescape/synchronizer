@@ -429,10 +429,10 @@ func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum s
 	// update known resources
 	c.ShadowObjects[id.String()] = modified
 	// save object
-	return object, c.PutObject(ctx, id, modified)
+	return object, c.PutObject(ctx, id, checksum, modified)
 }
 
-func (c *Client) PutObject(_ context.Context, id domain.KindName, object []byte) error {
+func (c *Client) PutObject(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
 	var obj unstructured.Unstructured
 	err := obj.UnmarshalJSON(object)
 	if err != nil {
@@ -777,7 +777,7 @@ func defaultBatchProcessingFunc(ctx context.Context, c *Client, items domain.Bat
 			Namespace:       item.Namespace,
 			ResourceVersion: item.ResourceVersion,
 		}
-		err = multierr.Append(err, c.PutObject(ctx, id, []byte(item.Object)))
+		err = multierr.Append(err, c.PutObject(ctx, id, item.Checksum, []byte(item.Object)))
 	}
 	return err
 }

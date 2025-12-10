@@ -71,7 +71,7 @@ func (a *Adapter) PatchObject(ctx context.Context, id domain.KindName, checksum 
 	return nil
 }
 
-func (a *Adapter) PutObject(ctx context.Context, id domain.KindName, object []byte) error {
+func (a *Adapter) PutObject(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
 	return nil
 }
 
