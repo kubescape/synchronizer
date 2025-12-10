@@ -429,7 +429,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				Namespace:       msg.Namespace,
 				ResourceVersion: msg.ResourceVersion,
 			}
-			err := s.handleSyncPutObject(ctx, id, []byte(msg.Object))
+			err := s.handleSyncPutObject(ctx, id, msg.Checksum, []byte(msg.Object))
 			if err != nil {
 				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
 					helpers.String("account", clientId.Account),
@@ -521,9 +521,9 @@ func (s *Synchronizer) handleSyncPatchObject(ctx context.Context, id domain.Kind
 	return nil
 }
 
-func (s *Synchronizer) handleSyncPutObject(ctx context.Context, id domain.KindName, object []byte) error {
+func (s *Synchronizer) handleSyncPutObject(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
 	for _, adapter := range s.adapters {
-		err := adapter.PutObject(ctx, id, object)
+		err := adapter.PutObject(ctx, id, checksum, object)
 		if err != nil {
 			return fmt.Errorf("put object: %w", err)
 		}

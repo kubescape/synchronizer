@@ -95,6 +95,7 @@ type PatchObjectMessage struct {
 }
 
 type PutObjectMessage struct {
+	Checksum        string `json:"checksum"`
 	Cluster         string `json:"cluster"`
 	Account         string `json:"account"`
 	Depth           int    `json:"depth"`

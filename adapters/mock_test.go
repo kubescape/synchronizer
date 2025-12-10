@@ -422,7 +422,7 @@ func TestMockAdapter_PutObject(t *testing.T) {
 			ctx := context.TODO()
 			m := NewMockAdapter(false)
 			m.Resources[tt.id.String()] = tt.oldObject
-			if err := m.PutObject(ctx, tt.id, tt.object); (err != nil) != tt.wantErr {
+			if err := m.PutObject(ctx, tt.id, "", tt.object); (err != nil) != tt.wantErr {
 				t.Errorf("PutObject() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			assert.Equal(t, tt.wantResources, m.Resources)

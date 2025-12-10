@@ -85,12 +85,12 @@ func (b *Adapter) PatchObject(ctx context.Context, id domain.KindName, checksum 
 	return client.PatchObject(ctx, id, checksum, patch)
 }
 
-func (b *Adapter) PutObject(ctx context.Context, id domain.KindName, object []byte) error {
+func (b *Adapter) PutObject(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
 	client, err := b.getClient(ctx)
 	if err != nil {
 		return err
 	}
-	return client.PutObject(ctx, id, object)
+	return client.PutObject(ctx, id, checksum, object)
 }
 
 func (b *Adapter) RegisterCallbacks(ctx context.Context, callbacks domain.Callbacks) {
