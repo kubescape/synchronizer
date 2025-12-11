@@ -183,7 +183,11 @@ func (c *Client) Start(ctx context.Context) error {
 				logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
 				continue
 			}
-			err = c.callPutOrPatch(ctx, id, nil, newObject)
+			checksum, err := c.getChecksum(d)
+			if err != nil {
+				logger.L().Ctx(ctx).Error("cannot get checksum", helpers.Error(err), helpers.String("id", id.String()))
+			}
+			err = c.callPutOrPatch(ctx, id, checksum, nil, newObject)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot handle modified resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
@@ -294,7 +298,7 @@ func hasParent(workload metav1.Object) bool {
 	return false
 }
 
-func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObject []byte, newObject []byte) error {
+func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, checksum string, baseObject []byte, newObject []byte) error {
 	if c.Strategy == domain.PatchStrategy {
 		if len(baseObject) > 0 {
 			// update reference object
@@ -325,7 +329,7 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObj
 				return fmt.Errorf("send patch object: %w", err)
 			}
 		} else {
-			err := c.callbacks.PutObject(ctx, id, newObject)
+			err := c.callbacks.PutObject(ctx, id, checksum, newObject)
 			if err != nil {
 				return fmt.Errorf("send put object: %w", err)
 			}
@@ -333,7 +337,7 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, baseObj
 		// add/update known resources
 		c.ShadowObjects[id.String()] = newObject
 	} else {
-		err := c.callbacks.PutObject(ctx, id, newObject)
+		err := c.callbacks.PutObject(ctx, id, checksum, newObject)
 		if err != nil {
 			return fmt.Errorf("send put object: %w", err)
 		}
@@ -389,7 +393,11 @@ func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject [
 	if err != nil {
 		return fmt.Errorf("marshal resource: %w", err)
 	}
-	return c.callPutOrPatch(ctx, id, baseObject, newObject)
+	checksum, err := c.getChecksum(obj)
+	if err != nil {
+		logger.L().Ctx(ctx).Warning("get object, cannot get checksum", helpers.Error(err), helpers.String("id", id.String()))
+	}
+	return c.callPutOrPatch(ctx, id, checksum, baseObject, newObject)
 }
 
 func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
@@ -686,7 +694,12 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 			Namespace:       item.Namespace,
 			ResourceVersion: item.ResourceVersion,
 		}
-		err = multierr.Append(err, c.callbacks.PutObject(ctx, id, newObject))
+		checksum, errChecksum := c.getChecksum(resource)
+		if errChecksum != nil {
+			err = multierr.Append(err, fmt.Errorf("get checksum: %w", errChecksum))
+			continue
+		}
+		err = multierr.Append(err, c.callbacks.PutObject(ctx, id, checksum, newObject))
 	}
 
 	// resources missing in server, send verify checksum
