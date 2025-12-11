@@ -115,7 +115,7 @@ func TestCallPutOrPatch(t *testing.T) {
 						patchedIDs = append(patchedIDs, id)
 						return nil
 					},
-					PutObject: func(ctx context.Context, id domain.KindName, object []byte) error {
+					PutObject: func(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
 						putIDs = append(putIDs, id)
 						return nil
 					},
@@ -281,7 +281,7 @@ func TestMockAdapter_GetObject(t *testing.T) {
 						patchedIDs = append(patchedIDs, id)
 						return nil
 					},
-					PutObject: func(ctx context.Context, id domain.KindName, object []byte) error {
+					PutObject: func(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
 						putIDs = append(putIDs, id)
 						putObjects = append(putObjects, object)
 						return nil
@@ -647,7 +647,7 @@ func TestMockAdapter_Batch(t *testing.T) {
 						gotIDs = append(gotIDs, id)
 						return nil
 					},
-					PutObject: func(ctx context.Context, id domain.KindName, object []byte) error {
+					PutObject: func(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
 						operations = append(operations, put)
 						gotIDs = append(gotIDs, id)
 						return nil

@@ -290,7 +290,7 @@ func (c *PulsarMessageReader) handleSingleSynchronizerMessage(ctx context.Contex
 			Name:            data.Name,
 			Namespace:       data.Namespace,
 			ResourceVersion: data.ResourceVersion,
-		}, data.Object); err != nil {
+		}, data.Checksum, data.Object); err != nil {
 			return fmt.Errorf("failed to send PutObject message: %w", err)
 		}
 	case messaging.MsgPropEventValueDeleteObjectMessage:

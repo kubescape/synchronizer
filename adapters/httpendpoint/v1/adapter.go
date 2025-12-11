@@ -197,7 +197,7 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case domain.CopyStrategy:
-		if err := a.callbacks.PutObject(r.Context(), kindName, bodyBytes); err != nil {
+		if err := a.callbacks.PutObject(r.Context(), kindName, "", bodyBytes); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			logger.L().Ctx(r.Context()).Warning("httpendpoint PutObject callback error", helpers.Error(err))
 			return

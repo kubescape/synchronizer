@@ -128,10 +128,10 @@ func (m *MockAdapter) GetObject(ctx context.Context, id domain.KindName, baseObj
 			}
 			return m.callbacks.PatchObject(ctx, id, checksum, patch)
 		} else {
-			return m.callbacks.PutObject(ctx, id, object)
+			return m.callbacks.PutObject(ctx, id, "", object)
 		}
 	} else {
-		return m.callbacks.PutObject(ctx, id, object)
+		return m.callbacks.PutObject(ctx, id, "", object)
 	}
 }
 
@@ -274,7 +274,7 @@ func (m *MockAdapter) TestCallPutOrPatch(ctx context.Context, id domain.KindName
 				return fmt.Errorf("send patch object: %w", err)
 			}
 		} else {
-			err := m.callbacks.PutObject(ctx, id, newObject)
+			err := m.callbacks.PutObject(ctx, id, "", newObject)
 			if err != nil {
 				return fmt.Errorf("send put object: %w", err)
 			}
@@ -282,7 +282,7 @@ func (m *MockAdapter) TestCallPutOrPatch(ctx context.Context, id domain.KindName
 		// add/update known resources
 		m.shadowObjects[id.String()] = newObject
 	} else {
-		err := m.callbacks.PutObject(ctx, id, newObject)
+		err := m.callbacks.PutObject(ctx, id, "", newObject)
 		if err != nil {
 			return fmt.Errorf("send put object: %w", err)
 		}

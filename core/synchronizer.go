@@ -143,8 +143,8 @@ func (s *Synchronizer) PatchObjectCallback(ctx context.Context, id domain.KindNa
 	return nil
 }
 
-func (s *Synchronizer) PutObjectCallback(ctx context.Context, id domain.KindName, object []byte) error {
-	err := s.sendPutObject(ctx, id, object)
+func (s *Synchronizer) PutObjectCallback(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
+	err := s.sendPutObject(ctx, id, checksum, object)
 	if err != nil {
 		return fmt.Errorf("send put object: %w", err)
 	}
@@ -714,10 +714,11 @@ func (s *Synchronizer) sendBatch(ctx context.Context, kind domain.Kind, batchTyp
 	return nil
 }
 
-func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, object []byte) error {
+func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
 	event := domain.EventPutObject
 	depth, msgId := utils.DeptMsgIdFromContext(ctx)
 	msg := domain.PutObject{
+		Checksum:  checksum,
 		Depth:     depth + 1,
 		Event:     &event,
 		Kind:      id.Kind,
