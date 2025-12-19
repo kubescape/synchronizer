@@ -12,6 +12,7 @@ import (
 
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	helpers2 "github.com/kubescape/k8s-interface/instanceidhandler/v1/helpers"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
@@ -191,13 +192,13 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// call the PutObject callback
 	switch strategy {
 	case domain.PatchStrategy:
-		if err := a.callbacks.PatchObject(r.Context(), kindName, "", bodyBytes); err != nil {
+		if err := a.callbacks.PatchObject(r.Context(), kindName, obj.GetAnnotations()[helpers2.SyncChecksumMetadataKey], bodyBytes); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			logger.L().Ctx(r.Context()).Warning("httpendpoint PatchObject callback error", helpers.Error(err))
 			return
 		}
 	case domain.CopyStrategy:
-		if err := a.callbacks.PutObject(r.Context(), kindName, bodyBytes); err != nil {
+		if err := a.callbacks.PutObject(r.Context(), kindName, obj.GetAnnotations()[helpers2.SyncChecksumMetadataKey], bodyBytes); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			logger.L().Ctx(r.Context()).Warning("httpendpoint PutObject callback error", helpers.Error(err))
 			return
