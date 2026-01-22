@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/armosec/utils-k8s-go/armometadata"
 	"github.com/kubescape/backend/pkg/servicediscovery"
@@ -36,14 +37,15 @@ type Backend struct {
 }
 
 type InCluster struct {
-	ServerUrl         string     `mapstructure:"serverUrl"`
-	Namespace         string     `mapstructure:"namespace"`
-	ClusterName       string     `mapstructure:"clusterName"`
-	ExcludeNamespaces []string   `mapstructure:"excludeNamespaces"`
-	IncludeNamespaces []string   `mapstructure:"includeNamespaces"`
-	Account           string     `mapstructure:"account"`
-	AccessKey         string     `mapstructure:"accessKey"`
-	Resources         []Resource `mapstructure:"resources"`
+	AccessKey         string        `mapstructure:"accessKey"`
+	Account           string        `mapstructure:"account"`
+	ClusterName       string        `mapstructure:"clusterName"`
+	ExcludeNamespaces []string      `mapstructure:"excludeNamespaces"`
+	IncludeNamespaces []string      `mapstructure:"includeNamespaces"`
+	ListPeriod        time.Duration `mapstructure:"listPeriod"`
+	Namespace         string        `mapstructure:"namespace"`
+	Resources         []Resource    `mapstructure:"resources"`
+	ServerUrl         string        `mapstructure:"serverUrl"`
 }
 
 type HTTPEndpoint struct {
@@ -94,6 +96,8 @@ func LoadConfig(path string) (Config, error) {
 	v.AddConfigPath(path)
 	v.SetConfigName("config")
 	v.SetConfigType("json")
+
+	v.SetDefault("inCluster.listPeriod", time.Minute)
 
 	v.AutomaticEnv()
 

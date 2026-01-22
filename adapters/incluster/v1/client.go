@@ -15,6 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
 	"go.uber.org/multierr"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/pager"
@@ -65,19 +66,20 @@ type resourceVersionGetter interface {
 }
 
 type Client struct {
-	dynamicClient       dynamic.Interface
-	storageClient       spdxv1beta1.SpdxV1beta1Interface
 	account             string
+	batchProcessingFunc map[domain.BatchType]BatchProcessingFunc
+	callbacks           domain.Callbacks
 	cluster             string
+	dynamicClient       dynamic.Interface
 	excludeNamespaces   []string
 	includeNamespaces   []string
-	operatorNamespace   string // the namespace where the kubescape operator is running
 	kind                *domain.Kind
-	callbacks           domain.Callbacks
+	listPeriod          time.Duration
+	operatorNamespace   string // the namespace where the kubescape operator is running
 	res                 schema.GroupVersionResource
+	storageClient       spdxv1beta1.SpdxV1beta1Interface
 	ShadowObjects       map[string][]byte
 	Strategy            domain.Strategy
-	batchProcessingFunc map[domain.BatchType]BatchProcessingFunc
 }
 
 var errWatchClosed = errors.New("watch channel closed")
@@ -90,25 +92,26 @@ func NewClient(dynamicClient dynamic.Interface, storageClient spdxv1beta1.SpdxV1
 		logger.L().Warning("event multiplier config detected, but it is deprecated", helpers.String("resource", res.String()), helpers.Int("multiplier", multiplier))
 	}
 	return &Client{
-		account:           cfg.Account,
+		account: cfg.Account,
+		batchProcessingFunc: map[domain.BatchType]BatchProcessingFunc{
+			domain.DefaultBatch:        defaultBatchProcessingFunc, // regular processing, when batch type is not set
+			domain.ReconciliationBatch: reconcileBatchProcessingFunc,
+		},
+		cluster:           cfg.ClusterName,
 		dynamicClient:     dynamicClient,
-		storageClient:     storageClient,
 		excludeNamespaces: cfg.ExcludeNamespaces,
 		includeNamespaces: cfg.IncludeNamespaces,
-		operatorNamespace: cfg.Namespace,
-		cluster:           cfg.ClusterName,
 		kind: &domain.Kind{
 			Group:    res.Group,
 			Version:  res.Version,
 			Resource: res.Resource,
 		},
-		res:           res,
-		ShadowObjects: map[string][]byte{},
-		Strategy:      r.Strategy,
-		batchProcessingFunc: map[domain.BatchType]BatchProcessingFunc{
-			domain.DefaultBatch:        defaultBatchProcessingFunc, // regular processing, when batch type is not set
-			domain.ReconciliationBatch: reconcileBatchProcessingFunc,
-		},
+		listPeriod:        cfg.ListPeriod,
+		operatorNamespace: cfg.Namespace,
+		res:               res,
+		storageClient:     storageClient,
+		ShadowObjects:     map[string][]byte{},
+		Strategy:          r.Strategy,
 	}
 }
 
@@ -116,26 +119,15 @@ var _ adapters.Client = (*Client)(nil)
 
 func (c *Client) Start(ctx context.Context) error {
 	logger.L().Info("starting incluster client", helpers.String("resource", c.res.Resource))
-	watchOpts := metav1.ListOptions{}
-	// for our storage, we need to list all resources and get them one by one
-	// as list returns objects with empty spec
-	// and watch does not return existing objects
-	if c.res.Group == kubescapeCustomResourceGroup {
-		if err := backoff.RetryNotify(func() error {
-			var err error
-			watchOpts.ResourceVersion, err = c.getExistingStorageObjects(ctx)
-			return err
-		}, utils.NewBackOff(true), func(err error, d time.Duration) {
-			logger.L().Ctx(ctx).Warning("get existing storage objects", helpers.Error(err),
-				helpers.String("resource", c.res.Resource),
-				helpers.String("retry in", d.String()))
-		}); err != nil {
-			return fmt.Errorf("giving up get existing storage objects: %w", err)
-		}
-	}
 	// begin watch
 	eventQueue := utils.NewCooldownQueue()
-	go c.watchRetry(ctx, watchOpts, eventQueue)
+	if c.res.Group == kubescapeCustomResourceGroup {
+		// our custom resources no longer support watch, use periodic listing
+		go c.periodicList(ctx, eventQueue, c.listPeriod)
+	} else {
+		watchOpts := metav1.ListOptions{}
+		go c.watchRetry(ctx, watchOpts, eventQueue)
+	}
 	// process events
 	for event := range eventQueue.ResultChan {
 		// skip non-objects
@@ -208,7 +200,7 @@ func (c *Client) Stop(_ context.Context) error {
 func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, eventQueue *utils.CooldownQueue) {
 	exitFatal := true
 	if err := backoff.RetryNotify(func() error {
-		watcher, err := c.chooseWatcher(watchOpts)
+		watcher, err := c.dynamicClient.Resource(c.res).Namespace("").Watch(context.Background(), watchOpts)
 		if err != nil {
 			if k8sErrors.ReasonForError(err) == metav1.StatusReasonNotFound {
 				exitFatal = false
@@ -543,37 +535,40 @@ func (c *Client) verifyObject(id domain.KindName, newChecksum string) ([]byte, e
 	return object, nil
 }
 
-func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) {
-	logger.L().Debug("getting existing objects from storage", helpers.String("resource", c.res.Resource))
-	var resourceVersion string
-	if err := pager.New(func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
-		return c.chooseLister(opts)
-	}).EachListItem(context.Background(), metav1.ListOptions{}, func(run runtime.Object) error {
-		d := run.(metav1.Object)
-		resourceVersion = d.GetResourceVersion()
-		// no need for skip ns since these are our CRDs
-		id := domain.KindName{
-			Kind:            c.kind,
-			Name:            d.GetName(),
-			Namespace:       d.GetNamespace(),
-			ResourceVersion: domain.ToResourceVersion(d.GetResourceVersion()),
+func (c *Client) periodicList(ctx context.Context, queue *utils.CooldownQueue, duration time.Duration) {
+	ticker := time.NewTicker(duration)
+	defer ticker.Stop()
+	var since string
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			var continueToken string
+			for {
+				logger.L().Debug("periodicList - listing resources", helpers.String("resource", c.res.Resource), helpers.String("continueToken", continueToken), helpers.String("since", since))
+				items, nextToken, lastUpdated, err := c.listFunc(metav1.ListOptions{
+					Limit:           int64(100),
+					Continue:        continueToken,
+					ResourceVersion: since, // ensure we only get changes since the last check
+				})
+				if err != nil {
+					logger.L().Ctx(ctx).Error("periodicList - error in listFunc", helpers.Error(err))
+					break
+				}
+				for _, obj := range items {
+					// added and modified events are treated the same, so we enqueue a Modified event for both
+					// deleted events are not possible with listing, so we rely on the reconciliation batch to detect deletions
+					queue.Enqueue(watch.Event{Type: watch.Modified, Object: obj})
+				}
+				since = lastUpdated
+				if nextToken == "" {
+					break
+				}
+				continueToken = nextToken
+			}
 		}
-		// get checksum
-		checksum, err := c.getChecksum(d)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot get checksums", helpers.Error(err), helpers.String("id", id.String()))
-			return nil
-		}
-		err = c.callbacks.VerifyObject(ctx, id, checksum)
-		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
-		}
-		return nil
-	}); err != nil {
-		return "", fmt.Errorf("list resources: %w", err)
 	}
-	// set resource version to watch from
-	return resourceVersion, nil
 }
 
 func (c *Client) filterAndMarshal(d metav1.Object) ([]byte, error) {
@@ -801,6 +796,8 @@ func (c *Client) chooseLister(opts metav1.ListOptions) (runtime.Object, error) {
 		switch c.res.Resource {
 		case "applicationprofiles":
 			return c.storageClient.ApplicationProfiles("").List(context.Background(), opts)
+		case "knownservers":
+			return c.storageClient.KnownServers("").List(context.Background(), opts)
 		case "networkneighborhoods":
 			return c.storageClient.NetworkNeighborhoods("").List(context.Background(), opts)
 		case "sbomsyfts":
@@ -814,22 +811,52 @@ func (c *Client) chooseLister(opts metav1.ListOptions) (runtime.Object, error) {
 	return c.dynamicClient.Resource(c.res).Namespace("").List(context.Background(), opts)
 }
 
-func (c *Client) chooseWatcher(opts metav1.ListOptions) (watch.Interface, error) {
+func (c *Client) listFunc(opts metav1.ListOptions) ([]runtime.Object, string, string, error) {
 	if c.storageClient != nil {
-		switch c.res.Resource {
-		case "applicationprofiles":
-			return c.storageClient.ApplicationProfiles("").Watch(context.Background(), opts)
-		case "networkneighborhoods":
-			return c.storageClient.NetworkNeighborhoods("").Watch(context.Background(), opts)
-		case "sbomsyfts":
-			return c.storageClient.SBOMSyfts("").Watch(context.Background(), opts)
-		case "seccompprofiles":
-			return c.storageClient.SeccompProfiles("").Watch(context.Background(), opts)
-		case "vulnerabilitymanifests":
-			return c.storageClient.VulnerabilityManifests("").Watch(context.Background(), opts)
+		list, err := c.chooseLister(opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		switch l := list.(type) {
+		case *v1beta1.ApplicationProfileList:
+			items := make([]runtime.Object, len(l.Items))
+			for i := range l.Items {
+				items[i] = &l.Items[i]
+			}
+			return items, l.Continue, l.ResourceVersion, nil
+		case *v1beta1.KnownServerList:
+			items := make([]runtime.Object, len(l.Items))
+			for i := range l.Items {
+				items[i] = &l.Items[i]
+			}
+			return items, l.Continue, l.ResourceVersion, nil
+		case *v1beta1.NetworkNeighborhoodList:
+			items := make([]runtime.Object, len(l.Items))
+			for i := range l.Items {
+				items[i] = &l.Items[i]
+			}
+			return items, l.Continue, l.ResourceVersion, nil
+		case *v1beta1.SBOMSyftList:
+			items := make([]runtime.Object, len(l.Items))
+			for i := range l.Items {
+				items[i] = &l.Items[i]
+			}
+			return items, l.Continue, l.ResourceVersion, nil
+		case *v1beta1.SeccompProfileList:
+			items := make([]runtime.Object, len(l.Items))
+			for i := range l.Items {
+				items[i] = &l.Items[i]
+			}
+			return items, l.Continue, l.ResourceVersion, nil
+		case *v1beta1.VulnerabilityManifestList:
+			items := make([]runtime.Object, len(l.Items))
+			for i := range l.Items {
+				items[i] = &l.Items[i]
+			}
+			return items, l.Continue, l.ResourceVersion, nil
 		}
 	}
-	return c.dynamicClient.Resource(c.res).Namespace("").Watch(context.Background(), opts)
+	return nil, "", "", fmt.Errorf("list function not implemented for resource %s", c.res.Resource)
 }
 
 func (c *Client) getResource(namespace string, name string) (metav1.Object, error) {
