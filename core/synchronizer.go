@@ -414,9 +414,6 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				return
 			}
 		case domain.EventPutObject:
-			if !s.isClient {
-
-			}
 			var msg domain.PutObject
 			err = json.Unmarshal(data, &msg)
 			if err != nil {
@@ -434,7 +431,6 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				Namespace:       msg.Namespace,
 				ResourceVersion: msg.ResourceVersion,
 			}
-
 			err := s.handleSyncPutObject(ctx, id, msg.Checksum, unsafe.Slice(unsafe.StringData(msg.Object), len(msg.Object)))
 			if err != nil {
 				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
