@@ -41,7 +41,7 @@ func NewClient(producer messaging.MessageProducer, skipAlertsFrom []string) *Cli
 func getMaxObjectSizeBytes() *int {
 	if val, ok := os.LookupEnv(MaxObjectSizeEnvVar); ok && val != "" {
 		if intVal, err := strconv.Atoi(val); err != nil {
-			logger.L().Error("failed to parse MAX_OBJECT_SIZE_BYTES", helpers.String("value", val), helpers.Error(err))
+			logger.L().Error("failed to parse env var as int", helpers.String("var", MaxObjectSizeEnvVar), helpers.String("value", val), helpers.Error(err))
 		} else {
 			return &intVal
 		}
