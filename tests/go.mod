@@ -1,8 +1,6 @@
 module github.com/kubescape/synchronizer/tests
 
-go 1.24.1
-
-toolchain go1.24.3
+go 1.25.6
 
 require (
 	github.com/apache/pulsar-client-go v0.12.1
