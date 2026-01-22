@@ -43,6 +43,10 @@ func getMaxObjectSizeBytes() *int {
 		if intVal, err := strconv.Atoi(val); err != nil {
 			logger.L().Error("failed to parse env var as int", helpers.String("var", MaxObjectSizeEnvVar), helpers.String("value", val), helpers.Error(err))
 		} else {
+			if intVal < 0 {
+				logger.L().Error("only positive integers are allowed for env var", helpers.String("var", MaxObjectSizeEnvVar), helpers.String("value", val))
+				return nil
+			}
 			return &intVal
 		}
 	}
