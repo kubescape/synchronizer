@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"time"
+	"unsafe"
 
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -18,17 +20,37 @@ import (
 	"go.uber.org/multierr"
 )
 
+const MaxObjectSizeEnvVar = "MAX_OBJECT_SIZE"
+
 type Client struct {
-	callbacks       domain.Callbacks
-	messageProducer messaging.MessageProducer
-	skipAlertsFrom  []string
+	callbacks          domain.Callbacks
+	messageProducer    messaging.MessageProducer
+	skipAlertsFrom     []string
+	maxObjectSizeBytes *int
 }
 
-func NewClient(producer messaging.MessageProducer, skipKdrFrom []string) *Client {
+func NewClient(producer messaging.MessageProducer, skipAlertsFrom []string) *Client {
 	return &Client{
-		messageProducer: producer,
-		skipAlertsFrom:  skipKdrFrom,
+		messageProducer:    producer,
+		skipAlertsFrom:     skipAlertsFrom,
+		maxObjectSizeBytes: getMaxObjectSizeBytes(),
 	}
+}
+
+// an optional safe guard to prevent sending too large objects to the server
+func getMaxObjectSizeBytes() *int {
+	if val, ok := os.LookupEnv(MaxObjectSizeEnvVar); ok && val != "" {
+		if intVal, err := strconv.Atoi(val); err != nil {
+			logger.L().Error("failed to parse env var as int", helpers.String("var", MaxObjectSizeEnvVar), helpers.String("value", val), helpers.Error(err))
+		} else {
+			if intVal < 0 {
+				logger.L().Error("only positive integers are allowed for env var", helpers.String("var", MaxObjectSizeEnvVar), helpers.String("value", val))
+				return nil
+			}
+			return &intVal
+		}
+	}
+	return nil
 }
 
 var _ adapters.Client = (*Client)(nil)
@@ -154,7 +176,7 @@ func (c *Client) Batch(ctx context.Context, kind domain.Kind, batchType domain.B
 			Namespace:       item.Namespace,
 			ResourceVersion: item.ResourceVersion,
 		}
-		err = multierr.Append(err, c.GetObject(ctx, id, []byte(item.BaseObject)))
+		err = multierr.Append(err, c.GetObject(ctx, id, unsafe.Slice(unsafe.StringData(item.BaseObject), len(item.BaseObject))))
 	}
 
 	for _, item := range items.NewChecksum {
@@ -184,7 +206,8 @@ func (c *Client) Batch(ctx context.Context, kind domain.Kind, batchType domain.B
 			Namespace:       item.Namespace,
 			ResourceVersion: item.ResourceVersion,
 		}
-		err = multierr.Append(err, c.PatchObject(ctx, id, item.Checksum, []byte(item.Patch)))
+
+		err = multierr.Append(err, c.PatchObject(ctx, id, item.Checksum, unsafe.Slice(unsafe.StringData(item.Patch), len(item.Patch))))
 	}
 
 	for _, item := range items.PutObject {
@@ -194,7 +217,7 @@ func (c *Client) Batch(ctx context.Context, kind domain.Kind, batchType domain.B
 			Namespace:       item.Namespace,
 			ResourceVersion: item.ResourceVersion,
 		}
-		err = multierr.Append(err, c.PutObject(ctx, id, item.Checksum, []byte(item.Object)))
+		err = multierr.Append(err, c.PutObject(ctx, id, item.Checksum, unsafe.Slice(unsafe.StringData(item.Object), len(item.Object))))
 	}
 	return err
 }
@@ -291,8 +314,7 @@ func (c *Client) sendPatchObjectMessage(ctx context.Context, id domain.KindName,
 		helpers.String("kind", id.Kind.String()),
 		helpers.String("msgid", msg.MsgId),
 		helpers.String("name", id.Name),
-		helpers.String("checksum", msg.Checksum),
-		helpers.String("patch", string(msg.Patch))) // FIXME remove before merge
+		helpers.String("checksum", msg.Checksum))
 
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -315,6 +337,18 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, c
 		return nil
 	}
 
+	// a safe guard to prevent sending too large objects to the server
+	if c.maxObjectSizeBytes != nil && len(object) > *c.maxObjectSizeBytes {
+		logger.L().Error("skipping put object message for object size too large",
+			helpers.String("account", cId.Account),
+			helpers.String("cluster", cId.Cluster),
+			helpers.String("kind", id.Kind.String()),
+			helpers.String("name", id.Name),
+			helpers.Int("object size", len(object)),
+			helpers.Int("max object size", *c.maxObjectSizeBytes))
+		return nil
+	}
+
 	msg := messaging.PutObjectMessage{
 		Checksum:  checksum,
 		Cluster:   cId.Cluster,
@@ -331,8 +365,7 @@ func (c *Client) sendPutObjectMessage(ctx context.Context, id domain.KindName, c
 		helpers.String("cluster", msg.Cluster),
 		helpers.String("kind", id.Kind.String()),
 		helpers.String("msgid", msg.MsgId),
-		helpers.String("name", id.Name),
-		helpers.String("object", string(msg.Object))) // FIXME remove before merge
+		helpers.String("name", id.Name))
 
 	data, err := json.Marshal(msg)
 	if err != nil {

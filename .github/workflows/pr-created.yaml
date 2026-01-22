@@ -20,7 +20,7 @@ jobs:
   pr-created:
     uses: kubescape/workflows/.github/workflows/incluster-comp-pr-created.yaml@main
     with:
-      GO_VERSION: "1.25"
+      GO_VERSION: "1.25.6"
       CGO_ENABLED: 0
     secrets: inherit
 
@@ -55,9 +55,12 @@ jobs:
       - name: Set up Go
         env:
           CGO_ENABLED: 0
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version-file: 'go.mod'
+
+      - name: Print Go version
+        run: go version
 
       - name: Run test
         run: |

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"time"
+	"unsafe"
 
 	"github.com/cenkalti/backoff/v4"
 
@@ -247,7 +248,8 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 		var generic domain.Generic
 		err := json.Unmarshal(data, &generic)
 		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err), helpers.String("target", "domain.Generic"), helpers.String("data", string(data)))
+			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err), helpers.String("target", "domain.Generic"),
+				helpers.String("data", string(data)))
 			return
 		}
 		var kind string
@@ -317,7 +319,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				Namespace:       msg.Namespace,
 				ResourceVersion: msg.ResourceVersion,
 			}
-			err := s.handleSyncGetObject(ctx, id, []byte(msg.BaseObject))
+			err := s.handleSyncGetObject(ctx, id, unsafe.Slice(unsafe.StringData(msg.BaseObject), len(msg.BaseObject)))
 			if err != nil {
 				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
 					helpers.String("account", clientId.Account),
@@ -429,7 +431,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				Namespace:       msg.Namespace,
 				ResourceVersion: msg.ResourceVersion,
 			}
-			err := s.handleSyncPutObject(ctx, id, msg.Checksum, []byte(msg.Object))
+			err := s.handleSyncPutObject(ctx, id, msg.Checksum, unsafe.Slice(unsafe.StringData(msg.Object), len(msg.Object)))
 			if err != nil {
 				logger.L().Ctx(ctx).Error("error handling message", helpers.Error(err),
 					helpers.String("account", clientId.Account),

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/cenkalti/backoff/v4"
 	"go.uber.org/multierr"
@@ -750,7 +751,7 @@ func defaultBatchProcessingFunc(ctx context.Context, c *Client, items domain.Bat
 			Namespace:       item.Namespace,
 			ResourceVersion: item.ResourceVersion,
 		}
-		err = multierr.Append(err, c.GetObject(ctx, id, []byte(item.BaseObject)))
+		err = multierr.Append(err, c.GetObject(ctx, id, unsafe.Slice(unsafe.StringData(item.BaseObject), len(item.BaseObject))))
 	}
 
 	for _, item := range items.NewChecksum {
@@ -780,7 +781,7 @@ func defaultBatchProcessingFunc(ctx context.Context, c *Client, items domain.Bat
 			Namespace:       item.Namespace,
 			ResourceVersion: item.ResourceVersion,
 		}
-		err = multierr.Append(err, c.PatchObject(ctx, id, item.Checksum, []byte(item.Patch)))
+		err = multierr.Append(err, c.PatchObject(ctx, id, item.Checksum, unsafe.Slice(unsafe.StringData(item.Patch), len(item.Patch))))
 	}
 
 	for _, item := range items.PutObject {
@@ -790,7 +791,7 @@ func defaultBatchProcessingFunc(ctx context.Context, c *Client, items domain.Bat
 			Namespace:       item.Namespace,
 			ResourceVersion: item.ResourceVersion,
 		}
-		err = multierr.Append(err, c.PutObject(ctx, id, item.Checksum, []byte(item.Object)))
+		err = multierr.Append(err, c.PutObject(ctx, id, item.Checksum, unsafe.Slice(unsafe.StringData(item.Object), len(item.Object))))
 	}
 	return err
 }
