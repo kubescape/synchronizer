@@ -112,6 +112,14 @@ func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
 	for {
 		msg, err := c.reader.Next(ctx)
 		if err != nil {
+			if ctx.Err() != nil {
+				logger.L().Ctx(ctx).Info("pulsar reader closed due to context cancellation")
+				return
+			}
+			if pulsarErr, ok := err.(*pulsar.Error); ok && pulsarErr.Result() == pulsar.ConsumerClosed {
+				logger.L().Ctx(ctx).Info("pulsar reader closed normally")
+				return
+			}
 			logger.L().Ctx(ctx).Fatal("failed to read message from pulsar", helpers.Error(err))
 		}
 
