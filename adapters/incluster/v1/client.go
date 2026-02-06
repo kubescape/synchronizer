@@ -797,7 +797,7 @@ func defaultBatchProcessingFunc(ctx context.Context, c *Client, items domain.Bat
 }
 
 func (c *Client) chooseLister(opts metav1.ListOptions) (runtime.Object, error) {
-	if c.storageClient != nil {
+	if c.storageClient != nil && c.res.Group == "spdx.softwarecomposition.kubescape.io" {
 		switch c.res.Resource {
 		case "applicationprofiles":
 			return c.storageClient.ApplicationProfiles("").List(context.Background(), opts)
@@ -815,7 +815,7 @@ func (c *Client) chooseLister(opts metav1.ListOptions) (runtime.Object, error) {
 }
 
 func (c *Client) chooseWatcher(opts metav1.ListOptions) (watch.Interface, error) {
-	if c.storageClient != nil {
+	if c.storageClient != nil && c.res.Group == "spdx.softwarecomposition.kubescape.io" {
 		switch c.res.Resource {
 		case "applicationprofiles":
 			return c.storageClient.ApplicationProfiles("").Watch(context.Background(), opts)
@@ -833,7 +833,7 @@ func (c *Client) chooseWatcher(opts metav1.ListOptions) (watch.Interface, error)
 }
 
 func (c *Client) getResource(namespace string, name string) (metav1.Object, error) {
-	if c.storageClient != nil {
+	if c.storageClient != nil && c.res.Group == "spdx.softwarecomposition.kubescape.io" {
 		switch c.res.Resource {
 		case "applicationprofiles":
 			return c.storageClient.ApplicationProfiles(namespace).Get(context.Background(), name, metav1.GetOptions{})
