@@ -281,7 +281,7 @@ require (
 	github.com/knqyf263/go-apk-version v0.0.0-20200609155635-041fdbb8563f // indirect
 	github.com/knqyf263/go-deb-version v0.0.0-20230223133812-3ed183d23422 // indirect
 	github.com/kubescape/backend v0.0.26 // indirect
-	github.com/kubescape/k8s-interface v0.0.199 // indirect
+	github.com/kubescape/k8s-interface v0.0.202 // indirect
 	github.com/kubescape/opa-utils v0.0.284 // indirect
 	github.com/kubescape/rbac-utils v0.0.21-0.20230806101615-07e36f555520 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect

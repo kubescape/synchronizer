@@ -2,6 +2,7 @@ package incluster
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -32,9 +33,13 @@ func GetApiServerGitVersionAndCloudProvider(ctx context.Context) (string, string
 }
 
 func getCloudProvider(ctx context.Context, k8sApi *k8sinterface.KubernetesApi) (string, error) {
-	nodeList, err := k8sApi.KubernetesClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	// Fetch only a single node to extract the providerID, instead of listing all nodes.
+	nodeList, err := k8sApi.KubernetesClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 1})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to list nodes: %w", err)
+	}
+	if len(nodeList.Items) == 0 {
+		return "", fmt.Errorf("no nodes found in the cluster")
 	}
 	return clouds.GetCloudProvider(nodeList), nil
 }
