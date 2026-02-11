@@ -15,7 +15,7 @@ require (
 	github.com/goradd/maps v1.0.0
 	github.com/kubescape/backend v0.0.20
 	github.com/kubescape/go-logger v0.0.26
-	github.com/kubescape/k8s-interface v0.0.199
+	github.com/kubescape/k8s-interface v0.0.202
 	github.com/kubescape/messaging v0.0.33
 	github.com/kubescape/storage v0.0.225
 	github.com/panjf2000/ants/v2 v2.9.1
@@ -224,6 +224,7 @@ require (
 	github.com/yl2chen/cidranger v1.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	go.mongodb.org/mongo-driver v1.17.1 // indirect
+	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.14.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.62.0 // indirect
