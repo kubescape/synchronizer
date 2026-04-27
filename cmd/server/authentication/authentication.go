@@ -15,10 +15,47 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 )
 
+const defaultCacheTTLSeconds = 600
+
 var (
 	client *http.Client
 	once   sync.Once // used to initialize authHttpClient
+
+	// authCache stores positive auth results (200 OK from the upstream auth
+	// server) keyed by accessKey+account. Values are the absolute expiry
+	// time. Failures are not cached and fall through to the existing error
+	// path so an outage at the auth URL does not lock customers out longer
+	// than it would today.
+	authCache    sync.Map
+	authCacheTTL time.Duration
 )
+
+func authCacheKey(accessKey, account string) string {
+	return accessKey + account
+}
+
+// authCacheLookup returns true if the key has a non-expired entry. Expired
+// entries are removed opportunistically.
+func authCacheLookup(key string, now time.Time) bool {
+	v, ok := authCache.Load(key)
+	if !ok {
+		return false
+	}
+	expiry, ok := v.(time.Time)
+	if !ok {
+		authCache.Delete(key)
+		return false
+	}
+	if now.After(expiry) {
+		authCache.Delete(key)
+		return false
+	}
+	return true
+}
+
+func authCacheStore(key string, expiry time.Time) {
+	authCache.Store(key, expiry)
+}
 
 func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,6 +64,13 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 				logger.L().Warning("authentication server is not set; Incoming connections will not be authenticated")
 			} else {
 				client = &http.Client{}
+				ttlSeconds := cfg.CacheTTLSeconds
+				if ttlSeconds <= 0 {
+					ttlSeconds = defaultCacheTTLSeconds
+				}
+				authCacheTTL = time.Duration(ttlSeconds) * time.Second
+				logger.L().Info("authentication cache enabled",
+					helpers.Int("ttlSeconds", ttlSeconds))
 			}
 		})
 		connectionTime := time.Now()
@@ -57,57 +101,71 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 
 		if client != nil {
 
-			u, err := url.Parse(cfg.Url)
-			if err != nil {
-				panic(err)
-			}
-
-			// copy headers to authentication request query params (configurable)
-			q := u.Query()
-			for header, queryParam := range cfg.HeaderToQueryParamMapping {
-				q.Set(queryParam, r.Header.Get(header))
-			}
-			u.RawQuery = q.Encode()
-
-			logger.L().Debug("creating authentication request",
-				helpers.String("connId", connectionId),
-				helpers.String("url", u.String()))
-
-			authenticationRequest, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
-			if err != nil {
-				logger.L().Error("unable to create authentication request", helpers.Error(err))
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-
-			for origin, dest := range cfg.HeaderToHeaderMapping {
-				authenticationRequest.Header.Set(dest, r.Header.Get(origin))
-			}
-			logger.L().Debug("authenticating incoming connection",
-				helpers.Int("accessKey (length)", len(accessKey)),
-				helpers.String("account", account),
-				helpers.String("cluster", cluster),
-				helpers.String("connId", connectionId),
-				helpers.String("url", u.String()))
-
-			response, err := client.Do(authenticationRequest)
-			if err != nil {
-				logger.L().Error("authentication request failed", helpers.Error(err),
+			cacheKey := authCacheKey(accessKey, account)
+			if authCacheLookup(cacheKey, connectionTime) {
+				logger.L().Debug("authentication cache hit; skipping upstream call",
 					helpers.String("account", account),
 					helpers.String("cluster", cluster),
+					helpers.String("connId", connectionId))
+			} else {
+				u, err := url.Parse(cfg.Url)
+				if err != nil {
+					panic(err)
+				}
+
+				// copy headers to authentication request query params (configurable)
+				q := u.Query()
+				for header, queryParam := range cfg.HeaderToQueryParamMapping {
+					q.Set(queryParam, r.Header.Get(header))
+				}
+				u.RawQuery = q.Encode()
+
+				logger.L().Debug("creating authentication request",
 					helpers.String("connId", connectionId),
 					helpers.String("url", u.String()))
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			} else if response.StatusCode != http.StatusOK {
-				logger.L().Error("authentication server did not authorize the connection",
+
+				authenticationRequest, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
+				if err != nil {
+					logger.L().Error("unable to create authentication request", helpers.Error(err))
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+
+				for origin, dest := range cfg.HeaderToHeaderMapping {
+					authenticationRequest.Header.Set(dest, r.Header.Get(origin))
+				}
+				logger.L().Debug("authenticating incoming connection",
 					helpers.Int("accessKey (length)", len(accessKey)),
 					helpers.String("account", account),
 					helpers.String("cluster", cluster),
 					helpers.String("connId", connectionId),
-					helpers.Int("statusCode", response.StatusCode))
-				w.WriteHeader(http.StatusUnauthorized)
-				return
+					helpers.String("url", u.String()))
+
+				response, err := client.Do(authenticationRequest)
+				if err != nil {
+					logger.L().Error("authentication request failed", helpers.Error(err),
+						helpers.String("account", account),
+						helpers.String("cluster", cluster),
+						helpers.String("connId", connectionId),
+						helpers.String("url", u.String()))
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				} else if response.StatusCode != http.StatusOK {
+					logger.L().Error("authentication server did not authorize the connection",
+						helpers.Int("accessKey (length)", len(accessKey)),
+						helpers.String("account", account),
+						helpers.String("cluster", cluster),
+						helpers.String("connId", connectionId),
+						helpers.Int("statusCode", response.StatusCode))
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+
+				// success: cache the positive result. Only positive results
+				// are cached so transient failures do not poison the cache.
+				if authCacheTTL > 0 {
+					authCacheStore(cacheKey, connectionTime.Add(authCacheTTL))
+				}
 			}
 		}
 

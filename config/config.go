@@ -63,6 +63,12 @@ type AuthenticationServerConfig struct {
 	Url                       string            `mapstructure:"url"`
 	HeaderToQueryParamMapping map[string]string `mapstructure:"headerToQueryParamMapping"`
 	HeaderToHeaderMapping     map[string]string `mapstructure:"headerToHeaderMapping"`
+	// CacheTTLSeconds controls the in-process TTL for positive auth results
+	// (status 200 from the upstream auth server). Repeated connections from
+	// the same (accessKey, account) within the TTL window will skip the
+	// upstream auth call. Failures are never cached. When zero or unset, a
+	// default of 600 seconds (10 minutes) is applied.
+	CacheTTLSeconds int `mapstructure:"cacheTTLSeconds"`
 }
 
 type PrometheusConfig struct {
