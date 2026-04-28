@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -78,6 +79,12 @@ type Client struct {
 	ShadowObjects       map[string][]byte
 	Strategy            domain.Strategy
 	batchProcessingFunc map[domain.BatchType]BatchProcessingFunc
+	// driftSweepPeriod, when > 0, runs a periodic list of cluster state
+	// and emits synthetic DELETEs for objects the watch had marked alive
+	// but are no longer present (recovers from missed watch.Deleted).
+	driftSweepPeriod time.Duration
+	knownObjects     map[string]struct{} // key: namespace/name (or /name for cluster-scoped)
+	knownObjectsMu   sync.RWMutex
 }
 
 var errWatchClosed = errors.New("watch channel closed")
@@ -109,6 +116,8 @@ func NewClient(dynamicClient dynamic.Interface, storageClient spdxv1beta1.SpdxV1
 			domain.DefaultBatch:        defaultBatchProcessingFunc, // regular processing, when batch type is not set
 			domain.ReconciliationBatch: reconcileBatchProcessingFunc,
 		},
+		driftSweepPeriod: time.Duration(r.DriftSweepPeriodSeconds) * time.Second,
+		knownObjects:     map[string]struct{}{},
 	}
 }
 
@@ -136,6 +145,10 @@ func (c *Client) Start(ctx context.Context) error {
 	// begin watch
 	eventQueue := utils.NewCooldownQueue()
 	go c.watchRetry(ctx, watchOpts, eventQueue)
+	// drift sweep recovers from missed watch.Deleted events (SUB-7252)
+	if c.driftSweepPeriod > 0 {
+		go c.driftSweepLoop(ctx)
+	}
 	// process events
 	for event := range eventQueue.ResultChan {
 		// skip non-objects
@@ -158,6 +171,7 @@ func (c *Client) Start(ctx context.Context) error {
 		switch {
 		case event.Type == watch.Added:
 			logger.L().Debug("added resource", helpers.String("id", id.String()))
+			c.markKnown(d)
 			checksum, err := c.getChecksum(d)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot get checksum", helpers.Error(err), helpers.String("id", id.String()))
@@ -169,6 +183,7 @@ func (c *Client) Start(ctx context.Context) error {
 			}
 		case event.Type == watch.Deleted:
 			logger.L().Debug("deleted resource", helpers.String("id", id.String()))
+			c.markUnknown(d)
 			err := c.callbacks.DeleteObject(ctx, id)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot handle deleted resource", helpers.Error(err), helpers.String("id", id.String()))
@@ -179,6 +194,7 @@ func (c *Client) Start(ctx context.Context) error {
 			}
 		case event.Type == watch.Modified:
 			logger.L().Debug("modified resource", helpers.String("id", id.String()))
+			c.markKnown(d)
 			newObject, err := c.getObjectFromMeta(d)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot get object", helpers.Error(err), helpers.String("id", id.String()))
@@ -250,6 +266,117 @@ func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, e
 			os.Exit(1)
 		}
 	}
+}
+
+// objectKey returns the namespace/name key used by the drift-sweep set.
+// Cluster-scoped resources have an empty namespace, yielding "/<name>".
+func objectKey(d metav1.Object) string {
+	return d.GetNamespace() + "/" + d.GetName()
+}
+
+func (c *Client) markKnown(d metav1.Object) {
+	c.knownObjectsMu.Lock()
+	c.knownObjects[objectKey(d)] = struct{}{}
+	c.knownObjectsMu.Unlock()
+}
+
+func (c *Client) markUnknown(d metav1.Object) {
+	c.knownObjectsMu.Lock()
+	delete(c.knownObjects, objectKey(d))
+	c.knownObjectsMu.Unlock()
+}
+
+// driftSweepLoop periodically lists the cluster state and emits synthetic
+// DELETE callbacks for resources the watch had marked alive but are no
+// longer present. This recovers from missed watch.Deleted events (e.g.
+// dropped during a watch channel restart). Tracked under SUB-7252.
+func (c *Client) driftSweepLoop(ctx context.Context) {
+	ticker := time.NewTicker(c.driftSweepPeriod)
+	defer ticker.Stop()
+	logger.L().Info("starting drift sweep",
+		helpers.String("resource", c.res.Resource),
+		helpers.String("period", c.driftSweepPeriod.String()))
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := c.driftSweep(ctx); err != nil {
+				logger.L().Ctx(ctx).Warning("drift sweep failed",
+					helpers.Error(err),
+					helpers.String("resource", c.res.Resource))
+			}
+		}
+	}
+}
+
+// driftSweep performs one drift-detection pass: list every cluster object
+// for this resource, then DELETE any object that was previously marked
+// known but is no longer present. New cluster items are silently added to
+// the known-set (seeding it; missed Adds are not back-filled to avoid
+// flapping the backend on first run).
+func (c *Client) driftSweep(ctx context.Context) error {
+	inCluster := mapset.NewSet[string]()
+	if err := pager.New(func(_ context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+		return c.chooseLister(opts)
+	}).EachListItem(context.Background(), metav1.ListOptions{}, func(obj runtime.Object) error {
+		item, ok := obj.(metav1.Object)
+		if !ok {
+			return nil
+		}
+		if c.isFiltered(item) {
+			return nil
+		}
+		inCluster.Add(objectKey(item))
+		return nil
+	}); err != nil {
+		return fmt.Errorf("list resources: %w", err)
+	}
+
+	// Collect orphans: in known-set but not in cluster.
+	c.knownObjectsMu.Lock()
+	orphans := make([]string, 0)
+	for k := range c.knownObjects {
+		if !inCluster.Contains(k) {
+			orphans = append(orphans, k)
+			delete(c.knownObjects, k)
+		}
+	}
+	// Seed known-set with anything new in the cluster so a future
+	// disappearance is detectable. We do not emit Verify here: the watch
+	// will catch up on its own and we want to avoid retransmit storms on
+	// process start.
+	for k := range inCluster.Iter() {
+		c.knownObjects[k] = struct{}{}
+	}
+	c.knownObjectsMu.Unlock()
+
+	if len(orphans) == 0 {
+		return nil
+	}
+
+	logger.L().Info("drift sweep detected missed deletes",
+		helpers.String("resource", c.res.Resource),
+		helpers.Int("count", len(orphans)))
+
+	for _, k := range orphans {
+		ns, name, _ := strings.Cut(k, "/")
+		id := domain.KindName{
+			Kind:      c.kind,
+			Name:      name,
+			Namespace: ns,
+		}
+		if err := c.callbacks.DeleteObject(ctx, id); err != nil {
+			logger.L().Ctx(ctx).Error("drift sweep: send delete failed",
+				helpers.Error(err),
+				helpers.String("id", id.String()))
+			continue
+		}
+		// PatchStrategy shadow entries are keyed by id.String() including a
+		// resource version we no longer have, so we leave them; they are
+		// overwritten on the next watch.Added or evicted on Client restart.
+	}
+	return nil
 }
 
 // isFiltered returns true if workload should be filtered out.

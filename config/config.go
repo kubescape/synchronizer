@@ -57,6 +57,13 @@ type Resource struct {
 	Version  string          `mapstructure:"version"`
 	Resource string          `mapstructure:"resource"`
 	Strategy domain.Strategy `mapstructure:"strategy"`
+	// DriftSweepPeriodSeconds enables a periodic drift sweep that lists the
+	// live cluster state for this resource and emits synthetic DELETE events
+	// for any object the watch had marked alive but is no longer present.
+	// This recovers from missed watch.Deleted events (e.g. dropped during a
+	// watch channel restart). 0 disables the sweep. Recommended for /v1/nodes
+	// and /v1/pods where stale records leak into account/billing views.
+	DriftSweepPeriodSeconds int `mapstructure:"driftSweepPeriodSeconds"`
 }
 
 type AuthenticationServerConfig struct {
