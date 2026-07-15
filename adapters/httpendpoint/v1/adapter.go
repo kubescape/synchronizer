@@ -3,6 +3,7 @@ package httpendpoint
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +19,11 @@ import (
 	"github.com/kubescape/synchronizer/domain"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
+
+// maxRequestBodyBytes caps request body size, matching the 1MB default
+// ingress-nginx enforced (proxy-body-size) before the ALB migration; ALB does
+// not enforce a body-size limit.
+const maxRequestBodyBytes = 1 << 20
 
 type Adapter struct {
 	callbacks      domain.Callbacks
@@ -169,8 +175,14 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
-	bodyBytes, err := io.ReadAll(r.Body)
+	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBodyBytes))
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			logger.L().Ctx(r.Context()).Warning("httpendpoint request body too large", helpers.Int("limitBytes", int(maxBytesErr.Limit)))
+			return
+		}
 		w.WriteHeader(http.StatusInternalServerError)
 		logger.L().Ctx(r.Context()).Warning("httpendpoint request body read error", helpers.Error(err))
 		return
