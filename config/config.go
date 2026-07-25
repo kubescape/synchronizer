@@ -52,14 +52,13 @@ type KafkaConfig struct {
 	GroupIDPrefix    string   `mapstructure:"groupIdPrefix"`
 	CompressionType  string   `mapstructure:"compressionType"` // default "zstd"
 	MaxMessageBytes  int      `mapstructure:"maxMessageBytes"` // default 67108864 (64 MB)
-	// Security fields are parsed now but only PLAINTEXT is honored in this phase;
-	// SASL/TLS enforcement ships in the immediate follow-up.
+	// securityProtocol is the authoritative selector: the SASL_ prefix enables SASL,
+	// the _SSL suffix enables TLS, and an empty value is treated as PLAINTEXT.
 	SecurityProtocol string `mapstructure:"securityProtocol"` // PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL
-	SASLMechanism    string `mapstructure:"saslMechanism"`
+	SASLMechanism    string `mapstructure:"saslMechanism"`    // PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
 	SASLUsername     string `mapstructure:"saslUsername"`
-	SASLPassword     string `mapstructure:"saslPassword"`
-	TLSEnabled       bool   `mapstructure:"tlsEnabled"`
-	TLSCaCertPath    string `mapstructure:"tlsCaCertPath"`
+	SASLPassword     string `mapstructure:"saslPassword"`  // rendered from a Secret by Helm
+	TLSCaCertPath    string `mapstructure:"tlsCaCertPath"` // optional custom CA for the _SSL protocols
 }
 
 type InCluster struct {

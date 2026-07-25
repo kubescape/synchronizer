@@ -49,15 +49,7 @@ func newKafkaFromConfig(cfg config.Config) (*messaging.Components, error) {
 	if kafkaCfg.ConsumerTopic == "" {
 		return nil, fmt.Errorf("kafkaConfig.consumerTopic is required")
 	}
-	// SASL/TLS is not wired into the client yet, so reject any populated security
-	// setting rather than connecting in plaintext while the operator believes otherwise.
-	if protocol := strings.ToUpper(kafkaCfg.SecurityProtocol); protocol != "" && protocol != "PLAINTEXT" {
-		return nil, fmt.Errorf("kafkaConfig.securityProtocol %q is not yet supported (only PLAINTEXT); SASL/TLS ships in a follow-up", kafkaCfg.SecurityProtocol)
-	}
-	if kafkaCfg.TLSEnabled || kafkaCfg.TLSCaCertPath != "" ||
-		kafkaCfg.SASLMechanism != "" || kafkaCfg.SASLUsername != "" || kafkaCfg.SASLPassword != "" {
-		return nil, fmt.Errorf("kafkaConfig TLS/SASL settings are not yet enforced (only PLAINTEXT is supported); SASL/TLS ships in a follow-up")
-	}
+	// SASL/TLS settings are validated in kafkaSecurityOptions when the clients are built.
 
 	logger.L().Info("initializing kafka client",
 		helpers.Interface("bootstrapServers", kafkaCfg.BootstrapServers))
@@ -147,13 +139,21 @@ func NewKafkaMessageProducer(cfg config.Config) (*KafkaMessageProducer, error) {
 	kafkaCfg := cfg.Backend.MessageQueue.KafkaConfig
 	maxMessageBytes := kafkaMaxMessageBytes(kafkaCfg)
 
-	client, err := kgo.NewClient(
+	securityOpts, err := kafkaSecurityOptions(kafkaCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build kafka producer security options: %w", err)
+	}
+
+	opts := []kgo.Opt{
 		kgo.SeedBrokers(kafkaCfg.BootstrapServers...),
 		kgo.DefaultProduceTopic(kafkaCfg.ProducerTopic),
 		kgo.ProducerBatchCompression(kafkaCompressionCodec(kafkaCfg.CompressionType)),
 		kgo.ProducerBatchMaxBytes(kafkaRecordByteLimit(maxMessageBytes)),
 		kgo.BrokerMaxWriteBytes(kafkaBrokerByteLimit(maxMessageBytes)),
-	)
+	}
+	opts = append(opts, securityOpts...)
+
+	client, err := kgo.NewClient(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka producer client: %w", err)
 	}
@@ -273,7 +273,12 @@ func NewKafkaMessageReader(cfg config.Config) (*KafkaMessageReader, error) {
 	// consumes the full topic, starting at latest and never committing (at-most-once).
 	groupID := fmt.Sprintf("%s-%s", groupIDPrefix, hostname)
 
-	client, err := kgo.NewClient(
+	securityOpts, err := kafkaSecurityOptions(kafkaCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build kafka consumer security options: %w", err)
+	}
+
+	opts := []kgo.Opt{
 		kgo.SeedBrokers(kafkaCfg.BootstrapServers...),
 		kgo.ConsumeTopics(kafkaCfg.ConsumerTopic),
 		kgo.ConsumerGroup(groupID),
@@ -281,7 +286,10 @@ func NewKafkaMessageReader(cfg config.Config) (*KafkaMessageReader, error) {
 		kgo.DisableAutoCommit(),
 		kgo.FetchMaxBytes(kafkaRecordByteLimit(kafkaMaxMessageBytes(kafkaCfg))),
 		kgo.BrokerMaxReadBytes(kafkaBrokerByteLimit(kafkaMaxMessageBytes(kafkaCfg))),
-	)
+	}
+	opts = append(opts, securityOpts...)
+
+	client, err := kgo.NewClient(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka consumer client: %w", err)
 	}
