@@ -799,10 +799,8 @@ func defaultBatchProcessingFunc(ctx context.Context, c *Client, items domain.Bat
 func (c *Client) chooseLister(opts metav1.ListOptions) (runtime.Object, error) {
 	if c.storageClient != nil && c.res.Group == "spdx.softwarecomposition.kubescape.io" {
 		switch c.res.Resource {
-		case "applicationprofiles":
-			return c.storageClient.ApplicationProfiles("").List(context.Background(), opts)
-		case "networkneighborhoods":
-			return c.storageClient.NetworkNeighborhoods("").List(context.Background(), opts)
+		case "containerprofiles":
+			return c.storageClient.ContainerProfiles("").List(context.Background(), opts)
 		case "sbomsyfts":
 			return c.storageClient.SBOMSyfts("").List(context.Background(), opts)
 		case "seccompprofiles":
@@ -817,10 +815,8 @@ func (c *Client) chooseLister(opts metav1.ListOptions) (runtime.Object, error) {
 func (c *Client) chooseWatcher(opts metav1.ListOptions) (watch.Interface, error) {
 	if c.storageClient != nil && c.res.Group == "spdx.softwarecomposition.kubescape.io" {
 		switch c.res.Resource {
-		case "applicationprofiles":
-			return c.storageClient.ApplicationProfiles("").Watch(context.Background(), opts)
-		case "networkneighborhoods":
-			return c.storageClient.NetworkNeighborhoods("").Watch(context.Background(), opts)
+		case "containerprofiles":
+			return c.storageClient.ContainerProfiles("").Watch(context.Background(), opts)
 		case "sbomsyfts":
 			return c.storageClient.SBOMSyfts("").Watch(context.Background(), opts)
 		case "seccompprofiles":
@@ -835,10 +831,8 @@ func (c *Client) chooseWatcher(opts metav1.ListOptions) (watch.Interface, error)
 func (c *Client) getResource(namespace string, name string) (metav1.Object, error) {
 	if c.storageClient != nil && c.res.Group == "spdx.softwarecomposition.kubescape.io" {
 		switch c.res.Resource {
-		case "applicationprofiles":
-			return c.storageClient.ApplicationProfiles(namespace).Get(context.Background(), name, metav1.GetOptions{})
-		case "networkneighborhoods":
-			return c.storageClient.NetworkNeighborhoods(namespace).Get(context.Background(), name, metav1.GetOptions{})
+		case "containerprofiles":
+			return c.storageClient.ContainerProfiles(namespace).Get(context.Background(), name, metav1.GetOptions{})
 		case "sbomsyfts":
 			return c.storageClient.SBOMSyfts(namespace).Get(context.Background(), name, metav1.GetOptions{})
 		case "seccompprofiles":
