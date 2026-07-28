@@ -33,7 +33,7 @@ func startRedpandaContainer(t *testing.T, ctx context.Context) string {
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_ = container.Terminate(ctx)
+		require.NoError(t, container.Terminate(context.Background()))
 	})
 
 	broker, err := container.KafkaSeedBroker(ctx)

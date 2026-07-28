@@ -63,13 +63,43 @@ func TestNewFromConfig_KafkaValidation(t *testing.T) {
 		{name: "missing bootstrapServers", kafka: &config.KafkaConfig{ProducerTopic: "out", ConsumerTopic: "in"}},
 		{name: "missing producerTopic", kafka: &config.KafkaConfig{BootstrapServers: []string{"localhost:9092"}, ConsumerTopic: "in"}},
 		{name: "missing consumerTopic", kafka: &config.KafkaConfig{BootstrapServers: []string{"localhost:9092"}, ProducerTopic: "out"}},
-		// Security settings must be rejected while enforcement is unimplemented.
-		{name: "unsupported securityProtocol", kafka: validKafkaConfig(func(k *config.KafkaConfig) { k.SecurityProtocol = "SASL_SSL" })},
-		{name: "tls enabled", kafka: validKafkaConfig(func(k *config.KafkaConfig) { k.TLSEnabled = true })},
-		{name: "tls ca cert set", kafka: validKafkaConfig(func(k *config.KafkaConfig) { k.TLSCaCertPath = "/etc/kafka/ca.crt" })},
-		{name: "sasl mechanism set", kafka: validKafkaConfig(func(k *config.KafkaConfig) { k.SASLMechanism = "SCRAM-SHA-256" })},
-		{name: "sasl username set", kafka: validKafkaConfig(func(k *config.KafkaConfig) { k.SASLUsername = "svc" })},
-		{name: "sasl password set", kafka: validKafkaConfig(func(k *config.KafkaConfig) { k.SASLPassword = "hunter2" })},
+		// securityProtocol is authoritative; the following are inconsistent configs.
+		{name: "unknown securityProtocol", kafka: validKafkaConfig(func(k *config.KafkaConfig) { k.SecurityProtocol = "KERBEROS" })},
+		{name: "sasl protocol without mechanism", kafka: validKafkaConfig(func(k *config.KafkaConfig) {
+			k.SecurityProtocol = "SASL_PLAINTEXT"
+			k.SASLUsername = "svc"
+			k.SASLPassword = "hunter2"
+		})},
+		{name: "sasl protocol with invalid mechanism", kafka: validKafkaConfig(func(k *config.KafkaConfig) {
+			k.SecurityProtocol = "SASL_PLAINTEXT"
+			k.SASLMechanism = "SCRAM-SHA-1"
+			k.SASLUsername = "svc"
+			k.SASLPassword = "hunter2"
+		})},
+		{name: "sasl protocol without username", kafka: validKafkaConfig(func(k *config.KafkaConfig) {
+			k.SecurityProtocol = "SASL_SSL"
+			k.SASLMechanism = "SCRAM-SHA-512"
+			k.SASLPassword = "hunter2"
+		})},
+		{name: "sasl protocol without password", kafka: validKafkaConfig(func(k *config.KafkaConfig) {
+			k.SecurityProtocol = "SASL_SSL"
+			k.SASLMechanism = "SCRAM-SHA-512"
+			k.SASLUsername = "svc"
+		})},
+		{name: "sasl fields on non-sasl protocol", kafka: validKafkaConfig(func(k *config.KafkaConfig) {
+			k.SecurityProtocol = "SSL"
+			k.SASLMechanism = "PLAIN"
+			k.SASLUsername = "svc"
+			k.SASLPassword = "hunter2"
+		})},
+		// PLAIN would send the password in cleartext without TLS.
+		{name: "plain mechanism without tls", kafka: validKafkaConfig(func(k *config.KafkaConfig) {
+			k.SecurityProtocol = "SASL_PLAINTEXT"
+			k.SASLMechanism = "PLAIN"
+			k.SASLUsername = "svc"
+			k.SASLPassword = "hunter2"
+		})},
+		{name: "tlsCaCertPath on non-tls protocol", kafka: validKafkaConfig(func(k *config.KafkaConfig) { k.TLSCaCertPath = "/etc/kafka/ca.crt" })},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -79,6 +109,49 @@ func TestNewFromConfig_KafkaValidation(t *testing.T) {
 				},
 			})
 			require.Error(t, err)
+		})
+	}
+}
+
+// TestValidateKafkaSecurity_Accepts covers the security configurations that must
+// now pass validation (they were rejected while SASL/TLS was unimplemented).
+func TestValidateKafkaSecurity_Accepts(t *testing.T) {
+	tests := []struct {
+		name  string
+		kafka *config.KafkaConfig
+	}{
+		{name: "plaintext (empty protocol)", kafka: validKafkaConfig(func(k *config.KafkaConfig) {})},
+		{name: "explicit plaintext", kafka: validKafkaConfig(func(k *config.KafkaConfig) { k.SecurityProtocol = "PLAINTEXT" })},
+		{name: "lowercase protocol", kafka: validKafkaConfig(func(k *config.KafkaConfig) {
+			k.SecurityProtocol = "sasl_ssl"
+			k.SASLMechanism = "scram-sha-512"
+			k.SASLUsername = "svc"
+			k.SASLPassword = "hunter2"
+		})},
+		{name: "ssl only", kafka: validKafkaConfig(func(k *config.KafkaConfig) { k.SecurityProtocol = "SSL" })},
+		{name: "sasl plaintext scram", kafka: validKafkaConfig(func(k *config.KafkaConfig) {
+			k.SecurityProtocol = "SASL_PLAINTEXT"
+			k.SASLMechanism = "SCRAM-SHA-256"
+			k.SASLUsername = "svc"
+			k.SASLPassword = "hunter2"
+		})},
+		// PLAIN is allowed once TLS encrypts the channel.
+		{name: "sasl ssl plain", kafka: validKafkaConfig(func(k *config.KafkaConfig) {
+			k.SecurityProtocol = "SASL_SSL"
+			k.SASLMechanism = "PLAIN"
+			k.SASLUsername = "svc"
+			k.SASLPassword = "hunter2"
+		})},
+		{name: "sasl ssl scram-256", kafka: validKafkaConfig(func(k *config.KafkaConfig) {
+			k.SecurityProtocol = "SASL_SSL"
+			k.SASLMechanism = "SCRAM-SHA-256"
+			k.SASLUsername = "svc"
+			k.SASLPassword = "hunter2"
+		})},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NoError(t, validateKafkaSecurity(tt.kafka))
 		})
 	}
 }
