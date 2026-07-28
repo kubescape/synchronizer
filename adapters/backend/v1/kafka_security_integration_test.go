@@ -2,9 +2,8 @@ package backend
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -45,7 +44,9 @@ func startRedpandaSecure(t *testing.T, ctx context.Context, opts ...testcontaine
 	container, err := redpanda.Run(ctx, redpandaTestImage,
 		append([]testcontainers.ContainerCustomizer{redpanda.WithAutoCreateTopics()}, opts...)...)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = container.Terminate(ctx) })
+	t.Cleanup(func() {
+		require.NoError(t, container.Terminate(context.Background()))
+	})
 
 	broker, err := container.KafkaSeedBroker(ctx)
 	require.NoError(t, err)
@@ -78,7 +79,7 @@ func writeCACert(t *testing.T, certPEM []byte) string {
 func generateSelfSignedCert(t *testing.T) (certPEM, keyPEM []byte) {
 	t.Helper()
 
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
 	// A random serial keeps two independently generated certs distinct (used by the
@@ -91,7 +92,7 @@ func generateSelfSignedCert(t *testing.T) (certPEM, keyPEM []byte) {
 		Subject:               pkix.Name{CommonName: "localhost"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		IsCA:                  true,
@@ -102,11 +103,8 @@ func generateSelfSignedCert(t *testing.T) (certPEM, keyPEM []byte) {
 	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 	require.NoError(t, err)
 
-	keyDER, err := x509.MarshalECPrivateKey(key)
-	require.NoError(t, err)
-
 	certPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
 	return certPEM, keyPEM
 }
 
