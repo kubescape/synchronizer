@@ -79,7 +79,7 @@ func TestLoadConfig(t *testing.T) {
 						{Group: "", Version: "v1", Resource: "nodes", Strategy: "patch"},
 						{Group: "apps", Version: "v1", Resource: "deployments", Strategy: "patch"},
 						{Group: "apps", Version: "v1", Resource: "statefulsets", Strategy: "patch"},
-						{Group: "spdx.softwarecomposition.kubescape.io", Version: "v1beta1", Resource: "applicationprofiles", Strategy: "patch"},
+						{Group: "spdx.softwarecomposition.kubescape.io", Version: "v1beta1", Resource: "containerprofiles", Strategy: "patch"},
 					},
 				},
 				HTTPEndpoint: HTTPEndpoint{
