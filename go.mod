@@ -16,9 +16,9 @@ require (
 	github.com/goradd/maps v1.0.0
 	github.com/kubescape/backend v0.0.40
 	github.com/kubescape/go-logger v0.0.35
-	github.com/kubescape/k8s-interface v0.0.206
+	github.com/kubescape/k8s-interface v0.0.214
 	github.com/kubescape/messaging v0.0.101
-	github.com/kubescape/storage v0.0.267
+	github.com/kubescape/storage v0.0.290
 	github.com/kubescape/storage/pkg/apiauth v0.1.0
 	github.com/moby/moby/api v1.55.0
 	github.com/panjf2000/ants/v2 v2.9.1
