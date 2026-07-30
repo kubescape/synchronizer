@@ -108,13 +108,13 @@ type TestKubernetesCluster struct {
 	storageclient *spdxv1beta1client.SpdxV1beta1Client
 
 	// objects
-	applicationprofile            *v1beta1.ApplicationProfile
-	applicationprofileDesignators identifiers.PortalDesignator
-	cm                            *corev1.ConfigMap
-	deploy                        *appsv1.Deployment
-	sa                            *corev1.ServiceAccount
-	secret                        *corev1.Secret
-	ss                            *appsv1.StatefulSet
+	containerprofile            *v1beta1.ContainerProfile
+	containerprofileDesignators identifiers.PortalDesignator
+	cm                          *corev1.ConfigMap
+	deploy                      *appsv1.Deployment
+	sa                          *corev1.ServiceAccount
+	secret                      *corev1.Secret
+	ss                          *appsv1.StatefulSet
 
 	// synchronizer
 	syncClient                *core.Synchronizer
@@ -159,32 +159,30 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 	})
 
 	var (
-		applicationprofile = &v1beta1.ApplicationProfile{
+		containerprofile = &v1beta1.ContainerProfile{
 			TypeMeta: metav1.TypeMeta{
 				APIVersion: "spdx.softwarecomposition.kubescape.io/v1beta1",
-				Kind:       "ApplicationProfile",
+				Kind:       "ContainerProfile",
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name: name,
 			},
-			Spec: v1beta1.ApplicationProfileSpec{
-				Containers: []v1beta1.ApplicationProfileContainer{{
-					Name: "nginx",
-					Execs: []v1beta1.ExecCalls{
-						{Path: "/usr/sbin/nginx", Args: []string{"-g", "/usr/sbin/nginx", "daemon off;"}},
-					},
-				}},
+			// ContainerProfile has a flat, per-container spec (no Containers[] nesting).
+			Spec: v1beta1.ContainerProfileSpec{
+				Execs: []v1beta1.ExecCalls{
+					{Path: "/usr/sbin/nginx", Args: []string{"-g", "/usr/sbin/nginx", "daemon off;"}},
+				},
 			},
 		}
-		applicationprofileDesignators = identifiers.PortalDesignator{
+		containerprofileDesignators = identifiers.PortalDesignator{
 			Attributes: map[string]string{
 				"apiVersion":   "spdx.softwarecomposition.kubescape.io/v1beta1",
 				"cluster":      cluster,
 				"customerGUID": account,
 				"namespace":    namespace,
-				"kind":         "ApplicationProfile",
+				"kind":         "ContainerProfile",
 				"name":         name,
-				"syncKind":     "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles",
+				"syncKind":     "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles",
 			},
 		}
 		cm = &corev1.ConfigMap{
@@ -423,19 +421,19 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 	require.NoError(t, err)
 
 	kubernetesCluster := &TestKubernetesCluster{
-		account:                       account,
-		cluster:                       cluster,
-		ctx:                           ctx,
-		clusterConfig:                 clusterConfig,
-		k3sC:                          k3sC,
-		k8sclient:                     k8sclient,
-		applicationprofile:            applicationprofile,
-		applicationprofileDesignators: applicationprofileDesignators,
-		cm:                            cm,
-		deploy:                        deploy,
-		sa:                            sa,
-		secret:                        secret,
-		ss:                            ss,
+		account:                     account,
+		cluster:                     cluster,
+		ctx:                         ctx,
+		clusterConfig:               clusterConfig,
+		k3sC:                        k3sC,
+		k8sclient:                   k8sclient,
+		containerprofile:            containerprofile,
+		containerprofileDesignators: containerprofileDesignators,
+		cm:                          cm,
+		deploy:                      deploy,
+		sa:                          sa,
+		secret:                      secret,
+		ss:                          ss,
 	}
 	waitForStorage(t, kubernetesCluster)
 	return kubernetesCluster
@@ -494,14 +492,14 @@ func waitForStorage(t *testing.T, cluster *TestKubernetesCluster) {
 	cluster.storageclient = storageclient
 
 	err := backoff.RetryNotify(func() error {
-		_, err := storageclient.ApplicationProfiles(namespace).Create(context.TODO(), cluster.applicationprofile, metav1.CreateOptions{})
+		_, err := storageclient.ContainerProfiles(namespace).Create(context.TODO(), cluster.containerprofile, metav1.CreateOptions{})
 		return err
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(5*time.Second), 20), func(err error, d time.Duration) {
 		logger.L().Info("waiting for storage to be ready", helpers.Error(err), helpers.String("retry in", d.String()))
 	})
 	require.NoError(t, err)
 	// cleanup
-	err = storageclient.ApplicationProfiles(namespace).Delete(context.TODO(), cluster.applicationprofile.Name, metav1.DeleteOptions{})
+	err = storageclient.ContainerProfiles(namespace).Delete(context.TODO(), cluster.containerprofile.Name, metav1.DeleteOptions{})
 	require.NoError(t, err)
 }
 
@@ -763,13 +761,13 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	require.NoError(t, err)
 	logger.L().SetWriter(logFile)
 	td := initIntegrationTest(t)
-	// add applicationprofile to k8s
-	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	// add containerprofile to k8s
+	_, err = td.clusters[0].storageclient.ContainerProfiles(namespace).Create(context.TODO(), td.clusters[0].containerprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
 
 	// check object in postgres
-	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
-	assert.Equal(t, td.clusters[0].applicationprofileDesignators, objMetadata.Designators)
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", namespace, name)
+	assert.Equal(t, td.clusters[0].containerprofileDesignators, objMetadata.Designators)
 	// check object in s3
 	var objPath s3connector.S3ObjectPath
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
@@ -778,15 +776,15 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, b)
 	// compare object in s3 with object in k8s
-	k8sAppProfile, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	k8sContainerProfile, err := td.clusters[0].storageclient.ContainerProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	require.NoError(t, err)
 	// workaround for empty TypeMeta (from k3s?)
-	k8sAppProfile.TypeMeta.Kind = "ApplicationProfile"
-	k8sAppProfile.TypeMeta.APIVersion = "spdx.softwarecomposition.kubescape.io/v1beta1"
-	var s3AppProfile v1beta1.ApplicationProfile
-	err = json.Unmarshal(b, &s3AppProfile)
+	k8sContainerProfile.TypeMeta.Kind = "ContainerProfile"
+	k8sContainerProfile.TypeMeta.APIVersion = "spdx.softwarecomposition.kubescape.io/v1beta1"
+	var s3ContainerProfile v1beta1.ContainerProfile
+	err = json.Unmarshal(b, &s3ContainerProfile)
 	require.NoError(t, err)
-	assert.Equal(t, k8sAppProfile, &s3AppProfile)
+	assert.Equal(t, k8sContainerProfile, &s3ContainerProfile)
 	// check how many times the get object message was sent
 	sentGetObject := grepCount(logFile.Name(), "sent get object message")
 	sentNewChecksum := grepCount(logFile.Name(), "sent new checksum message")
@@ -831,23 +829,23 @@ func TestSynchronizer_TC01_Backend(t *testing.T) {
 // TestSynchronizer_TC02_InCluster: Delta synchronization of a single entity
 func TestSynchronizer_TC02_InCluster(t *testing.T) {
 	td := initIntegrationTest(t)
-	// add applicationprofile to k8s
-	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	// add containerprofile to k8s
+	_, err := td.clusters[0].storageclient.ContainerProfiles(namespace).Create(context.TODO(), td.clusters[0].containerprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
 
-	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", namespace, name)
 	checksumInPostgresBeforeModify := objMetadata.Checksum
 
 	time.Sleep(10 * time.Second)
-	// modify applicationprofile in k8s
-	k8sAppProfile, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	// modify containerprofile in k8s
+	k8sContainerProfile, err := td.clusters[0].storageclient.ContainerProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	require.NoError(t, err)
-	k8sAppProfile.Spec.Containers[0].Name = "nginx2"
-	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Update(context.TODO(), k8sAppProfile, metav1.UpdateOptions{})
+	k8sContainerProfile.Spec.ImageTag = "nginx2"
+	_, err = td.clusters[0].storageclient.ContainerProfiles(namespace).Update(context.TODO(), k8sContainerProfile, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
-	// get object path from postgres, wait for checksum to change (we don't rely on resourceVersion because it's not implemented for ApplicationProfile)
-	objMetadata = waitForObjectInPostgresWithDifferentChecksum(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name, checksumInPostgresBeforeModify)
+	// get object path from postgres, wait for checksum to change (we don't rely on resourceVersion because it's not implemented for ContainerProfile)
+	objMetadata = waitForObjectInPostgresWithDifferentChecksum(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", namespace, name, checksumInPostgresBeforeModify)
 
 	var objPath s3connector.S3ObjectPath
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
@@ -855,10 +853,10 @@ func TestSynchronizer_TC02_InCluster(t *testing.T) {
 	// check object in s3
 	b, err := td.processor.GetObjectFromS3(objPath)
 	assert.NoError(t, err)
-	var s3AppProfile v1beta1.ApplicationProfile
-	err = json.Unmarshal(b, &s3AppProfile)
+	var s3ContainerProfile v1beta1.ContainerProfile
+	err = json.Unmarshal(b, &s3ContainerProfile)
 	require.NoError(t, err)
-	assert.Equal(t, "nginx2", s3AppProfile.Spec.Containers[0].Name)
+	assert.Equal(t, "nginx2", s3ContainerProfile.Spec.ImageTag)
 	// tear down
 	tearDown(td)
 }
@@ -938,19 +936,19 @@ func TestSynchronizer_TC03(t *testing.T) {
 // TestSynchronizer_TC04_InCluster: Deletion of a single entity
 func TestSynchronizer_TC04_InCluster(t *testing.T) {
 	td := initIntegrationTest(t)
-	// add applicationprofile to k8s
-	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	// add containerprofile to k8s
+	_, err := td.clusters[0].storageclient.ContainerProfiles(namespace).Create(context.TODO(), td.clusters[0].containerprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in postgres
-	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", namespace, name)
 	assert.NotNil(t, objMetadata)
-	// delete applicationprofile from k8s
-	err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
+	// delete containerprofile from k8s
+	err = td.clusters[0].storageclient.ContainerProfiles(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
 	require.NoError(t, err)
 
 	// check object not in postgres
-	waitForObjectToBeDeletedInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	waitForObjectToBeDeletedInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", namespace, name)
 
 	// tear down
 	tearDown(td)
@@ -1000,7 +998,7 @@ func TestSynchronizer_TC05_InCluster(t *testing.T) {
 	td := initIntegrationTest(t)
 
 	// add objects to k8s
-	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	_, err := td.clusters[0].storageclient.ContainerProfiles(namespace).Create(context.TODO(), td.clusters[0].containerprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
 	_, err = td.clusters[0].k8sclient.AppsV1().Deployments(namespace).Create(context.TODO(), td.clusters[0].deploy, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -1008,7 +1006,7 @@ func TestSynchronizer_TC05_InCluster(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(20 * time.Second)
 	// check objects in postgres
-	for _, kind := range []string{"spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", "apps/v1/deployments", "apps/v1/statefulsets"} {
+	for _, kind := range []string{"spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", "apps/v1/deployments", "apps/v1/statefulsets"} {
 		_ = waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, kind, namespace, name)
 	}
 	// check that pods in a non-kubescape namespace were not synchronized
@@ -1088,39 +1086,39 @@ func TestSynchronizer_TC05_Backend(t *testing.T) {
 // it is similar to TC-02_InCluster, but altering the reference object in client before generating a patch
 func TestSynchronizer_TC06(t *testing.T) {
 	td := initIntegrationTest(t)
-	// add applicationprofile to k8s
-	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	// add containerprofile to k8s
+	_, err := td.clusters[0].storageclient.ContainerProfiles(namespace).Create(context.TODO(), td.clusters[0].containerprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
 
-	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", namespace, name)
 	checksumInPostgresBeforeModify := objMetadata.Checksum
 
 	time.Sleep(20 * time.Second)
 	// prepare to alter shadow object in client
-	appClient, err := td.clusters[0].syncClientAdapter.GetClient(domain.KindName{Kind: domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles")})
+	appClient, err := td.clusters[0].syncClientAdapter.GetClient(domain.KindName{Kind: domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles")})
 	require.NoError(t, err)
-	// modify applicationprofile in k8s
-	k8sAppProfile, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	// modify containerprofile in k8s
+	k8sContainerProfile, err := td.clusters[0].storageclient.ContainerProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	require.NoError(t, err)
-	k8sAppProfile.Spec.Containers[0].Name = "nginx2"
+	k8sContainerProfile.Spec.ImageTag = "nginx2"
 	// alter shadow object in client before updating k8s, the patch won't include the image change
-	appClient.(*incluster.Client).ShadowObjects["spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles/default/test"], err = json.Marshal(k8sAppProfile)
+	appClient.(*incluster.Client).ShadowObjects["spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles/default/test"], err = json.Marshal(k8sContainerProfile)
 	require.NoError(t, err)
-	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Update(context.TODO(), k8sAppProfile, metav1.UpdateOptions{})
+	_, err = td.clusters[0].storageclient.ContainerProfiles(namespace).Update(context.TODO(), k8sContainerProfile, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
-	// get object path from postgres, wait for checksum to change (we don't rely on resourceVersion because it's not implemented for ApplicationProfile)
-	objMetadata = waitForObjectInPostgresWithDifferentChecksum(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name, checksumInPostgresBeforeModify)
+	// get object path from postgres, wait for checksum to change (we don't rely on resourceVersion because it's not implemented for ContainerProfile)
+	objMetadata = waitForObjectInPostgresWithDifferentChecksum(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", namespace, name, checksumInPostgresBeforeModify)
 	var objPath s3connector.S3ObjectPath
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
 	require.NoError(t, err)
 	// check object in s3
 	b, err := td.processor.GetObjectFromS3(objPath)
 	assert.NoError(t, err)
-	var s3AppProfile v1beta1.ApplicationProfile
-	err = json.Unmarshal(b, &s3AppProfile)
+	var s3ContainerProfile v1beta1.ContainerProfile
+	err = json.Unmarshal(b, &s3ContainerProfile)
 	require.NoError(t, err)
-	assert.Equal(t, "nginx2", s3AppProfile.Spec.Containers[0].Name)
+	assert.Equal(t, "nginx2", s3ContainerProfile.Spec.ImageTag)
 	// tear down
 	tearDown(td)
 }
@@ -1129,11 +1127,11 @@ func TestSynchronizer_TC06(t *testing.T) {
 // it is similar to TC-02_InCluster, but altering the reference object in s3 before applying a patch
 func TestSynchronizer_TC07(t *testing.T) {
 	td := initIntegrationTest(t)
-	// add applicationprofile to k8s
-	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	// add containerprofile to k8s
+	_, err := td.clusters[0].storageclient.ContainerProfiles(namespace).Create(context.TODO(), td.clusters[0].containerprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
 
-	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", namespace, name)
 
 	var objPath s3connector.S3ObjectPath
 	err = json.Unmarshal([]byte(objMetadata.ResourceObjectRef), &objPath)
@@ -1141,20 +1139,20 @@ func TestSynchronizer_TC07(t *testing.T) {
 	// alter object in s3, the patched object won't match the checksum
 	_, err = td.s3.UpdateObject(objPath, strings.NewReader("{}"))
 	require.NoError(t, err)
-	// modify applicationprofile in k8s
-	k8sAppProfile, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	// modify containerprofile in k8s
+	k8sContainerProfile, err := td.clusters[0].storageclient.ContainerProfiles(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	require.NoError(t, err)
-	k8sAppProfile.Spec.Containers[0].Name = "nginx2"
-	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Update(context.TODO(), k8sAppProfile, metav1.UpdateOptions{})
+	k8sContainerProfile.Spec.ImageTag = "nginx2"
+	_, err = td.clusters[0].storageclient.ContainerProfiles(namespace).Update(context.TODO(), k8sContainerProfile, metav1.UpdateOptions{})
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in s3
 	b, err := td.processor.GetObjectFromS3(objPath)
 	assert.NoError(t, err)
-	var s3AppProfile v1beta1.ApplicationProfile
-	err = json.Unmarshal(b, &s3AppProfile)
+	var s3ContainerProfile v1beta1.ContainerProfile
+	err = json.Unmarshal(b, &s3ContainerProfile)
 	require.NoError(t, err)
-	assert.Equal(t, "nginx2", s3AppProfile.Spec.Containers[0].Name)
+	assert.Equal(t, "nginx2", s3ContainerProfile.Spec.ImageTag)
 	// tear down
 	tearDown(td)
 }
@@ -1168,12 +1166,12 @@ func TestSynchronizer_TC08(t *testing.T) {
 	err := dead.Close()
 	require.NoError(t, err)
 	*td.clusters[0].syncClient.Conn = dead
-	// add applicationprofile to k8s
-	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	// add containerprofile to k8s
+	_, err = td.clusters[0].storageclient.ContainerProfiles(namespace).Create(context.TODO(), td.clusters[0].containerprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
 	time.Sleep(20 * time.Second)
 	// check object in postgres
-	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", namespace, name)
 	assert.NotNil(t, objMetadata)
 	// tear down
 	tearDown(td)
@@ -1188,8 +1186,8 @@ func TestSynchronizer_TC09(t *testing.T) {
 	// stop pulsar
 	err := td.containers["pulsar"].Stop(td.ctx, nil)
 	require.NoError(t, err)
-	// add applicationprofile to k8s
-	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	// add containerprofile to k8s
+	_, err = td.clusters[0].storageclient.ContainerProfiles(namespace).Create(context.TODO(), td.clusters[0].containerprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// restart pulsar
@@ -1217,7 +1215,7 @@ func TestSynchronizer_TC09(t *testing.T) {
 	// reconnect, retransmit the pending message, and allow the ingester to process it.
 	var objFound bool
 	err = backoff.RetryNotify(func() error {
-		_, objFound, err = td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+		_, objFound, err = td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", namespace, name)
 		if err != nil {
 			return err
 		}
@@ -1226,7 +1224,7 @@ func TestSynchronizer_TC09(t *testing.T) {
 		}
 		return nil
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(3*time.Second), 20), func(err error, d time.Duration) {
-		logger.L().Info("waiting for applicationprofile in postgres", helpers.Error(err), helpers.String("retry in", d.String()))
+		logger.L().Info("waiting for containerprofile in postgres", helpers.Error(err), helpers.String("retry in", d.String()))
 	})
 	assert.NoError(t, err)
 	assert.True(t, objFound)
@@ -1242,8 +1240,8 @@ func TestSynchronizer_TC10(t *testing.T) {
 	// stop postgres
 	err := td.containers["postgres"].Stop(td.ctx, nil)
 	require.NoError(t, err)
-	// add applicationprofile to k8s
-	_, err = td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	// add containerprofile to k8s
+	_, err = td.clusters[0].storageclient.ContainerProfiles(namespace).Create(context.TODO(), td.clusters[0].containerprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// restart postgres
@@ -1252,7 +1250,7 @@ func TestSynchronizer_TC10(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// check object in postgres
-	_, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	_, objFound, err := td.processor.GetObjectFromPostgres(td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", namespace, name)
 	assert.NoError(t, err)
 	assert.True(t, objFound)
 	// tear down
@@ -1266,15 +1264,15 @@ func TestSynchronizer_TC11(t *testing.T) {
 	td := initIntegrationTest(t)
 	// disable S3Mock
 	td.s3.SetReturnError(true)
-	// add applicationprofile to k8s
-	_, err := td.clusters[0].storageclient.ApplicationProfiles(namespace).Create(context.TODO(), td.clusters[0].applicationprofile, metav1.CreateOptions{})
+	// add containerprofile to k8s
+	_, err := td.clusters[0].storageclient.ContainerProfiles(namespace).Create(context.TODO(), td.clusters[0].containerprofile, metav1.CreateOptions{})
 	require.NoError(t, err)
 	time.Sleep(10 * time.Second)
 	// re-enable S3Mock
 	td.s3.SetReturnError(false)
 
 	// check object in postgres
-	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles", namespace, name)
+	objMetadata := waitForObjectInPostgres(t, td, td.clusters[0].account, td.clusters[0].cluster, "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles", namespace, name)
 	require.NotNil(t, objMetadata)
 
 	// tear down
@@ -1291,17 +1289,17 @@ func TestSynchronizer_TC12(t *testing.T) {
 	cluster := td.clusters[0]
 	clusterName := cluster.cluster
 	account := cluster.account
-	kind := "spdx.softwarecomposition.kubescape.io/v1beta1/applicationprofiles"
+	kind := "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles"
 
-	// add applicationprofile to k8s
-	createdAppProfileObj, err := cluster.storageclient.ApplicationProfiles(namespace).Create(context.TODO(), cluster.applicationprofile, metav1.CreateOptions{})
+	// add containerprofile to k8s
+	createdContainerProfileObj, err := cluster.storageclient.ContainerProfiles(namespace).Create(context.TODO(), cluster.containerprofile, metav1.CreateOptions{})
 
 	// wait for the object to be created in postgres
 	_ = waitForObjectInPostgres(t, td, account, clusterName, kind, namespace, name)
 
 	// create a new dummy object directly in postgres (which does not exist in k8s) and confirm it is there
 	toBeDeletedName := name + "test"
-	b, _ := json.Marshal(createdAppProfileObj)
+	b, _ := json.Marshal(createdContainerProfileObj)
 	_, err = td.processor.Store(context.Background(), account, clusterName, kind, namespace, toBeDeletedName, b, nil)
 	assert.NoError(t, err)
 	_, objFound, err := td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, toBeDeletedName)
