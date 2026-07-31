@@ -1293,13 +1293,15 @@ func TestSynchronizer_TC12(t *testing.T) {
 
 	// add containerprofile to k8s
 	createdContainerProfileObj, err := cluster.storageclient.ContainerProfiles(namespace).Create(context.TODO(), cluster.containerprofile, metav1.CreateOptions{})
+	require.NoError(t, err)
 
 	// wait for the object to be created in postgres
 	_ = waitForObjectInPostgres(t, td, account, clusterName, kind, namespace, name)
 
 	// create a new dummy object directly in postgres (which does not exist in k8s) and confirm it is there
 	toBeDeletedName := name + "test"
-	b, _ := json.Marshal(createdContainerProfileObj)
+	b, err := json.Marshal(createdContainerProfileObj)
+	require.NoError(t, err)
 	_, err = td.processor.Store(context.Background(), account, clusterName, kind, namespace, toBeDeletedName, b, nil)
 	assert.NoError(t, err)
 	_, objFound, err := td.processor.GetObjectFromPostgres(account, clusterName, kind, namespace, toBeDeletedName)
