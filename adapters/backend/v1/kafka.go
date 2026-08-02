@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/adapters"
@@ -31,6 +32,14 @@ const (
 	// (100 MB) and rejects a broker limit below the batch/fetch limit; 1 GB is its cap.
 	kafkaDefaultBrokerBytes = 100 << 20
 	kafkaMaxBrokerBytes     = 1 << 30
+)
+
+// startup connectivity budget, mirroring the pulsar client's 20 attempts at 3s delay.
+// variables so tests can shrink them.
+var (
+	kafkaPingRetries    uint64 = 20
+	kafkaPingRetryDelay        = 3 * time.Second
+	kafkaPingTimeout           = 10 * time.Second
 )
 
 // newKafkaFromConfig creates the Kafka producer and reader from configuration.
@@ -65,6 +74,13 @@ func newKafkaFromConfig(cfg config.Config) (*messaging.Components, error) {
 		return nil, fmt.Errorf("failed to create kafka reader: %w", err)
 	}
 
+	// franz-go connects lazily, so fail startup here instead of running healthy but never syncing
+	if err := pingKafkaBrokers(producer.client, reader.client); err != nil {
+		producer.Close()
+		reader.Close()
+		return nil, fmt.Errorf("failed to reach kafka brokers: %w", err)
+	}
+
 	logger.L().Info("kafka message queue initialized",
 		helpers.String("producerTopic", kafkaCfg.ProducerTopic),
 		helpers.String("consumerTopic", kafkaCfg.ConsumerTopic))
@@ -77,6 +93,29 @@ func newKafkaFromConfig(cfg config.Config) (*messaging.Components, error) {
 			reader.Close()
 		},
 	}, nil
+}
+
+// pingKafkaBrokers checks every client can reach the cluster, retrying while a broker starts
+// up. Ping sends a metadata request, so it covers TCP, TLS and SASL.
+func pingKafkaBrokers(clients ...*kgo.Client) error {
+	attempt := func() error {
+		for _, client := range clients {
+			ctx, cancel := context.WithTimeout(context.Background(), kafkaPingTimeout)
+			err := client.Ping(ctx)
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	policy := backoff.WithMaxRetries(backoff.NewConstantBackOff(kafkaPingRetryDelay), kafkaPingRetries)
+	return backoff.RetryNotify(attempt, policy, func(err error, retryIn time.Duration) {
+		logger.L().Warning("failed to reach kafka brokers, retrying",
+			helpers.Error(err),
+			helpers.String("retryIn", retryIn.String()))
+	})
 }
 
 // kafkaCompressionCodec maps the configured compression name to a franz-go codec.

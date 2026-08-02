@@ -195,6 +195,37 @@ func TestKafkaSecurity_SASLRoundTrip(t *testing.T) {
 	produceAndAssertRoundTrip(t, ctx, broker, topic, kafkaCfg)
 }
 
+// a rejected credential must fail startup, not leave a client that never authenticates
+func TestKafkaSecurity_BadCredentialsFailStartup(t *testing.T) {
+	requireIntegration(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	shortenKafkaPingBudget(t)
+	broker := startRedpandaSecure(t, ctx, saslContainerOptions()...)
+
+	components, err := newFromConfig(config.Config{
+		Backend: config.Backend{
+			MessageQueue: &config.MessageQueueConfig{
+				Type: "kafka",
+				KafkaConfig: &config.KafkaConfig{
+					BootstrapServers: []string{broker},
+					ProducerTopic:    "armo.kubescape.synchronizer.out",
+					ConsumerTopic:    "armo.kubescape.synchronizer.in",
+					GroupIDPrefix:    fmt.Sprintf("synchronizer-server-badcreds-%d", time.Now().UnixNano()),
+					SecurityProtocol: "SASL_PLAINTEXT",
+					SASLMechanism:    kafkaTestSASLMechanism,
+					SASLUsername:     kafkaTestSASLUser,
+					SASLPassword:     "wrong-" + kafkaTestSASLPassword,
+				},
+			},
+		},
+	})
+	require.Error(t, err)
+	assert.Nil(t, components)
+	assert.Contains(t, err.Error(), "failed to reach kafka brokers")
+}
+
 func TestKafkaSecurity_TLSRoundTrip(t *testing.T) {
 	requireIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

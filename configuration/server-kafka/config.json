@@ -1,0 +1,43 @@
+{
+  "backend": {
+    "messageQueue": {
+      "type": "kafka",
+      "kafkaConfig": {
+        "bootstrapServers": [
+          "localhost:9092"
+        ],
+        "producerTopic": "armo.kubescape.synchronizer.out",
+        "consumerTopic": "armo.kubescape.synchronizer.in",
+        "groupIdPrefix": "synchronizer-server",
+        "compressionType": "zstd",
+        "maxMessageBytes": 67108864,
+        "securityProtocol": "PLAINTEXT"
+      }
+    },
+    "consumerWorkers": 10,
+    "skipAlertsFrom": [
+      "foo",
+      "bar"
+    ]
+  },
+  "resources": [
+    {
+      "group": "",
+      "version": "v1",
+      "resource": "configmaps",
+      "strategy": "copy"
+    },
+    {
+      "group": "",
+      "version": "v1",
+      "resource": "secrets",
+      "strategy": "copy"
+    },
+    {
+      "group": "",
+      "version": "v1",
+      "resource": "serviceaccounts",
+      "strategy": "copy"
+    }
+  ]
+}

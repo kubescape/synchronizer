@@ -2,6 +2,7 @@ package backend
 
 import (
 	"testing"
+	"time"
 
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/messaging"
@@ -40,6 +41,37 @@ func TestNewFromConfig_UnknownType(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
+}
+
+// shortenKafkaPingBudget shrinks the startup retry budget so failure paths finish in seconds
+func shortenKafkaPingBudget(t *testing.T) {
+	t.Helper()
+	retries, delay, timeout := kafkaPingRetries, kafkaPingRetryDelay, kafkaPingTimeout
+	kafkaPingRetries, kafkaPingRetryDelay, kafkaPingTimeout = 0, 10*time.Millisecond, 2*time.Second
+	t.Cleanup(func() {
+		kafkaPingRetries, kafkaPingRetryDelay, kafkaPingTimeout = retries, delay, timeout
+	})
+}
+
+// without the startup check a server pointed at unreachable brokers would run healthy and
+// silently never sync
+func TestNewFromConfig_KafkaUnreachableBrokers(t *testing.T) {
+	shortenKafkaPingBudget(t)
+
+	components, err := newFromConfig(config.Config{
+		Backend: config.Backend{
+			MessageQueue: &config.MessageQueueConfig{
+				Type: "kafka",
+				KafkaConfig: validKafkaConfig(func(k *config.KafkaConfig) {
+					// nothing is listening here, so the ping cannot succeed
+					k.BootstrapServers = []string{"127.0.0.1:1"}
+				}),
+			},
+		},
+	})
+	require.Error(t, err)
+	assert.Nil(t, components)
+	assert.Contains(t, err.Error(), "failed to reach kafka brokers")
 }
 
 // validKafkaConfig returns an otherwise-valid Kafka config with one field mutated,
