@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -11,13 +12,13 @@ import (
 )
 
 func TestNewFromConfig_NoPulsarConfig(t *testing.T) {
-	components, err := newFromConfig(config.Config{})
+	components, err := newFromConfig(context.Background(), config.Config{})
 	require.NoError(t, err)
 	assert.Nil(t, components)
 }
 
 func TestNewFromConfig_RegistersWithMessaging(t *testing.T) {
-	components, err := messaging.NewFromConfig(config.Config{})
+	components, err := messaging.NewFromConfig(context.Background(), config.Config{})
 	require.NoError(t, err)
 	assert.Nil(t, components)
 }
@@ -25,7 +26,7 @@ func TestNewFromConfig_RegistersWithMessaging(t *testing.T) {
 func TestNewFromConfig_ExplicitPulsarType(t *testing.T) {
 	// An explicit type: "pulsar" selects Pulsar just like an absent type; with no
 	// pulsarConfig it falls through to the mock (nil components, no error).
-	components, err := newFromConfig(config.Config{
+	components, err := newFromConfig(context.Background(), config.Config{
 		Backend: config.Backend{
 			MessageQueue: &config.MessageQueueConfig{Type: "pulsar"},
 		},
@@ -35,7 +36,7 @@ func TestNewFromConfig_ExplicitPulsarType(t *testing.T) {
 }
 
 func TestNewFromConfig_UnknownType(t *testing.T) {
-	_, err := newFromConfig(config.Config{
+	_, err := newFromConfig(context.Background(), config.Config{
 		Backend: config.Backend{
 			MessageQueue: &config.MessageQueueConfig{Type: "rabbitmq"},
 		},
@@ -46,10 +47,10 @@ func TestNewFromConfig_UnknownType(t *testing.T) {
 // shortenKafkaPingBudget shrinks the startup retry budget so failure paths finish in seconds
 func shortenKafkaPingBudget(t *testing.T) {
 	t.Helper()
-	retries, delay, timeout := kafkaPingRetries, kafkaPingRetryDelay, kafkaPingTimeout
-	kafkaPingRetries, kafkaPingRetryDelay, kafkaPingTimeout = 0, 10*time.Millisecond, 2*time.Second
+	attempts, delay, timeout, budget := kafkaPingAttempts, kafkaPingDelay, kafkaPingTimeout, kafkaPingBudget
+	kafkaPingAttempts, kafkaPingDelay, kafkaPingTimeout, kafkaPingBudget = 1, 10*time.Millisecond, 2*time.Second, 10*time.Second
 	t.Cleanup(func() {
-		kafkaPingRetries, kafkaPingRetryDelay, kafkaPingTimeout = retries, delay, timeout
+		kafkaPingAttempts, kafkaPingDelay, kafkaPingTimeout, kafkaPingBudget = attempts, delay, timeout, budget
 	})
 }
 
@@ -58,7 +59,7 @@ func shortenKafkaPingBudget(t *testing.T) {
 func TestNewFromConfig_KafkaUnreachableBrokers(t *testing.T) {
 	shortenKafkaPingBudget(t)
 
-	components, err := newFromConfig(config.Config{
+	components, err := newFromConfig(context.Background(), config.Config{
 		Backend: config.Backend{
 			MessageQueue: &config.MessageQueueConfig{
 				Type: "kafka",
@@ -95,6 +96,9 @@ func TestNewFromConfig_KafkaValidation(t *testing.T) {
 		{name: "missing bootstrapServers", kafka: &config.KafkaConfig{ProducerTopic: "out", ConsumerTopic: "in"}},
 		{name: "missing producerTopic", kafka: &config.KafkaConfig{BootstrapServers: []string{"localhost:9092"}, ConsumerTopic: "in"}},
 		{name: "missing consumerTopic", kafka: &config.KafkaConfig{BootstrapServers: []string{"localhost:9092"}, ProducerTopic: "out"}},
+		// one topic for both directions would make the server consume its own output, which
+		// only the pulsar path guards against
+		{name: "producerTopic equals consumerTopic", kafka: validKafkaConfig(func(k *config.KafkaConfig) { k.ConsumerTopic = k.ProducerTopic })},
 		// securityProtocol is authoritative; the following are inconsistent configs.
 		{name: "unknown securityProtocol", kafka: validKafkaConfig(func(k *config.KafkaConfig) { k.SecurityProtocol = "KERBEROS" })},
 		{name: "sasl protocol without mechanism", kafka: validKafkaConfig(func(k *config.KafkaConfig) {
@@ -135,7 +139,7 @@ func TestNewFromConfig_KafkaValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := newFromConfig(config.Config{
+			_, err := newFromConfig(context.Background(), config.Config{
 				Backend: config.Backend{
 					MessageQueue: &config.MessageQueueConfig{Type: "kafka", KafkaConfig: tt.kafka},
 				},

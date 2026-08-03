@@ -34,17 +34,14 @@ const shutdownTimeout = 30 * time.Second
 const readHeaderTimeout = 10 * time.Second
 
 func main() {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// load config
 	cfg, err := config.LoadConfig("/etc/config")
 	if err != nil {
 		logger.L().Fatal("unable to load configuration", helpers.Error(err))
 	}
-
-	// backend adapter
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 
 	// enable prometheus metrics
 	if cfg.Backend.Prometheus != nil && cfg.Backend.Prometheus.Enabled {
@@ -55,9 +52,27 @@ func main() {
 		}()
 	}
 
+	// start pprof server
+	utils.ServePprof()
+
+	// start the liveness probe before connecting to the message queue, so a slow broker shows
+	// up as a startup failure rather than as kubelet killing a pod with nothing on the port
+	utils.StartLivenessProbe()
+
+	// connecting retries for a while, so let a shutdown signal abort it. Scoped to
+	// initialization: the running server has its own shutdown path below.
+	initCtx, stopInit := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+
 	var adapter adapters.Adapter
-	mq, err := messaging.NewFromConfig(cfg)
+	mq, err := messaging.NewFromConfig(initCtx, cfg)
+	// read before stopInit, which cancels initCtx itself and would make this always true
+	interrupted := initCtx.Err() != nil
+	stopInit()
 	if err != nil {
+		if interrupted {
+			logger.L().Info("shutting down before the message queue was initialized", helpers.Error(err))
+			return
+		}
 		logger.L().Fatal("failed to initialize message queue", helpers.Error(err))
 	}
 	if mq != nil {
@@ -68,12 +83,6 @@ func main() {
 		logger.L().Info("initializing mock adapter")
 		adapter = adapters.NewMockAdapter(false)
 	}
-
-	// start pprof server
-	utils.ServePprof()
-
-	// start liveness probe
-	utils.StartLivenessProbe()
 
 	var addr string
 	if cfg.Backend.Port > 0 {

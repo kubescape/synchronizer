@@ -19,10 +19,16 @@ fi
 # profiles routinely exceed Kafka's 1 MB default, so the broker is sized up front.
 MAX_MESSAGE_BYTES=67108864
 
+# so re-running the script does not fail on a name collision with a previous run
+$cr rm -f redpanda >/dev/null 2>&1 || true
+
+# published on loopback only: this broker has no authentication, so it should not be
+# reachable from the rest of the network. The image matches the one the tests use, so
+# running both does not pull it twice.
 $cr run --name=redpanda -d \
-    -p 9092:9092 \
-    -p 9644:9644 \
-    docker.redpanda.com/redpandadata/redpanda:v24.2.7 \
+    -p 127.0.0.1:9092:9092 \
+    -p 127.0.0.1:9644:9644 \
+    redpandadata/redpanda:v24.2.7 \
     redpanda start \
     --mode dev-container \
     --smp 1 \
@@ -34,10 +40,17 @@ $cr run --name=redpanda -d \
 echo "waiting for redpanda to accept connections..."
 for _ in $(seq 1 30); do
     if $cr exec redpanda rpk cluster info >/dev/null 2>&1; then
+        ready=1
         break
     fi
     sleep 1
 done
+
+# without this the failure would surface as a confusing `rpk topic create` error
+if [ -z "$ready" ]; then
+    echo "redpanda did not become ready in time; check '$cr logs redpanda'" >&2
+    exit 1
+fi
 
 for topic in armo.kubescape.synchronizer.out armo.kubescape.synchronizer.in; do
     # the .out topic is keyed by {account}/{cluster}: partitions preserve per-cluster

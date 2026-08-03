@@ -69,11 +69,11 @@ func pulsarTestConfig(pulsarURL, pulsarAdminURL string) config.Config {
 			ProducerTopic: "synchronizer",
 			ConsumerTopic: "synchronizer",
 			PulsarConfig: &pulsarconfig.PulsarConfig{
-				URL:      pulsarURL,
-				AdminUrl: pulsarAdminURL,
-				Tenant:   "armo",
+				URL:       pulsarURL,
+				AdminUrl:  pulsarAdminURL,
+				Tenant:    "armo",
 				Namespace: "kubescape",
-				Clusters: []string{"standalone"},
+				Clusters:  []string{"standalone"},
 			},
 		},
 	}
@@ -84,7 +84,7 @@ func TestNewFromConfig_WithPulsar(t *testing.T) {
 	ctx := context.Background()
 	_, pulsarURL, pulsarAdminURL := startPulsarContainer(t, ctx)
 
-	components, err := messaging.NewFromConfig(pulsarTestConfig(pulsarURL, pulsarAdminURL))
+	components, err := messaging.NewFromConfig(ctx, pulsarTestConfig(pulsarURL, pulsarAdminURL))
 	require.NoError(t, err)
 	require.NotNil(t, components)
 	require.NotNil(t, components.Producer)

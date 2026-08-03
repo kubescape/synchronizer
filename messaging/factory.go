@@ -1,6 +1,10 @@
 package messaging
 
-import "github.com/kubescape/synchronizer/config"
+import (
+	"context"
+
+	"github.com/kubescape/synchronizer/config"
+)
 
 type Components struct {
 	Producer MessageProducer
@@ -8,7 +12,7 @@ type Components struct {
 	Close    func()
 }
 
-type factoryFunc func(cfg config.Config) (*Components, error)
+type factoryFunc func(ctx context.Context, cfg config.Config) (*Components, error)
 
 var fromConfigFactory factoryFunc
 
@@ -18,11 +22,12 @@ func RegisterFromConfigFactory(f factoryFunc) {
 	fromConfigFactory = f
 }
 
-// NewFromConfig creates message queue components from configuration.
-// Returns (nil, nil) when no message queue backend is configured.
-func NewFromConfig(cfg config.Config) (*Components, error) {
+// NewFromConfig creates message queue components from configuration. The context bounds
+// any connection attempt made while building them, so a shutdown signal during startup
+// is not ignored. Returns (nil, nil) when no message queue backend is configured.
+func NewFromConfig(ctx context.Context, cfg config.Config) (*Components, error) {
 	if fromConfigFactory == nil {
 		return nil, nil
 	}
-	return fromConfigFactory(cfg)
+	return fromConfigFactory(ctx, cfg)
 }

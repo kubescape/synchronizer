@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -15,21 +16,22 @@ func init() {
 	messaging.RegisterFromConfigFactory(newFromConfig)
 }
 
-func newFromConfig(cfg config.Config) (*messaging.Components, error) {
+func newFromConfig(ctx context.Context, cfg config.Config) (*messaging.Components, error) {
 	if mq := cfg.Backend.MessageQueue; mq != nil && mq.Type != "" {
 		switch mq.Type {
 		case "kafka":
-			return newKafkaFromConfig(cfg)
+			return newKafkaFromConfig(ctx, cfg)
 		case "pulsar":
-			return newPulsarFromConfig(cfg)
+			return newPulsarFromConfig(ctx, cfg)
 		default:
 			return nil, fmt.Errorf("unknown message queue type %q", mq.Type)
 		}
 	}
-	return newPulsarFromConfig(cfg)
+	return newPulsarFromConfig(ctx, cfg)
 }
 
-func newPulsarFromConfig(cfg config.Config) (*messaging.Components, error) {
+// the pulsar client does its own connection retries internally, so it takes no context here
+func newPulsarFromConfig(_ context.Context, cfg config.Config) (*messaging.Components, error) {
 	if cfg.Backend.PulsarConfig == nil {
 		return nil, nil
 	}
