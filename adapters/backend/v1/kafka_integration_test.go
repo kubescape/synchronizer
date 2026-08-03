@@ -5,17 +5,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	dockercontainer "github.com/docker/docker/api/types/container"
+	"github.com/docker/go-connections/nat"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/redpanda"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -25,20 +29,61 @@ const kafkaTestMaxMessageBytes = 128 * 1024 * 1024 // 128 MB, headroom above the
 
 func startRedpandaContainer(t *testing.T, ctx context.Context) string {
 	t.Helper()
+	broker, _ := runRedpandaContainer(t, ctx)
+	return broker
+}
 
-	container, err := redpanda.Run(ctx,
-		"redpandadata/redpanda:v24.2.7",
+// runRedpandaContainer also returns a terminate func, for tests that end the broker early.
+// It is idempotent and shared with the registered cleanup, so termination stays asserted
+// for every test while a caller can still tear the broker down mid-test. Calling
+// Terminate twice is not an option: it closes the docker client on the way out.
+func runRedpandaContainer(t *testing.T, ctx context.Context, opts ...testcontainers.ContainerCustomizer) (string, func()) {
+	t.Helper()
+
+	opts = append([]testcontainers.ContainerCustomizer{
 		// Raise the broker-wide batch limit so 64 MB payloads are accepted.
 		redpanda.WithBootstrapConfig("kafka_batch_max_bytes", kafkaTestMaxMessageBytes),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, container.Terminate(context.Background()))
-	})
+	}, opts...)
 
-	broker, err := container.KafkaSeedBroker(ctx)
+	ctr, err := redpanda.Run(ctx, redpandaTestImage, opts...)
 	require.NoError(t, err)
-	return broker
+
+	var once sync.Once
+	terminate := func() {
+		once.Do(func() {
+			if err := ctr.Terminate(context.Background()); err != nil {
+				t.Errorf("failed to terminate redpanda container: %v", err)
+			}
+		})
+	}
+	t.Cleanup(terminate)
+
+	broker, err := ctr.KafkaSeedBroker(ctx)
+	require.NoError(t, err)
+	return broker, terminate
+}
+
+// withPinnedKafkaPort binds the kafka API to a fixed host port on the loopback interface.
+// The advertised listener is baked from the mapped port at first start, so a replaced broker
+// must reuse that port.
+func withPinnedKafkaPort(hostPort int) testcontainers.ContainerCustomizer {
+	return testcontainers.WithHostConfigModifier(func(hostConfig *dockercontainer.HostConfig) {
+		hostConfig.PortBindings = nat.PortMap{
+			nat.Port("9092/tcp"): []nat.PortBinding{{HostIP: "127.0.0.1", HostPort: strconv.Itoa(hostPort)}},
+		}
+	})
+}
+
+// freeKafkaHostPort asks the kernel for an unused port and releases it, so the broker can be
+// rebuilt on the same address. Racy in principle, but against the whole machine rather than
+// against a hardcoded range that overlaps the pulsar tests'.
+func freeKafkaHostPort(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := listener.Addr().(*net.TCPAddr).Port
+	require.NoError(t, listener.Close())
+	return port
 }
 
 func kafkaTestConfig(broker, producerTopic, consumerTopic string) config.Config {
@@ -98,13 +143,38 @@ func TestNewFromConfig_WithKafka(t *testing.T) {
 	createKafkaTopic(t, ctx, broker, cfg.Backend.MessageQueue.KafkaConfig.ProducerTopic, 1)
 	createKafkaTopic(t, ctx, broker, cfg.Backend.MessageQueue.KafkaConfig.ConsumerTopic, 1)
 
-	components, err := messaging.NewFromConfig(cfg)
+	components, err := messaging.NewFromConfig(ctx, cfg)
 	require.NoError(t, err)
 	require.NotNil(t, components)
 	require.NotNil(t, components.Producer)
 	require.NotNil(t, components.Reader)
 	require.NotNil(t, components.Close)
 	t.Cleanup(components.Close)
+}
+
+// the startup topic check must not turn "topic not created yet" into a startup failure:
+// brokers may auto-create on first produce, and the operator may create them out of band
+func TestNewFromConfig_KafkaToleratesMissingTopics(t *testing.T) {
+	requireIntegration(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	broker := startRedpandaContainer(t, ctx)
+
+	components, err := messaging.NewFromConfig(ctx, kafkaTestConfig(broker, "not.created.yet.out", "not.created.yet.in"))
+	require.NoError(t, err)
+	require.NotNil(t, components)
+	t.Cleanup(components.Close)
+
+	// and the check itself must not have created them: describing a topic is a read, and a
+	// startup probe that silently provisions topics would hide a misconfigured topic name
+	admClient, err := kgo.NewClient(kgo.SeedBrokers(broker))
+	require.NoError(t, err)
+	defer admClient.Close()
+	topics, err := kadm.NewClient(admClient).ListTopics(ctx)
+	require.NoError(t, err)
+	assert.NotContains(t, topics, "not.created.yet.out")
+	assert.NotContains(t, topics, "not.created.yet.in")
 }
 
 func TestKafkaMessageProducer_SetsHeadersAndPartitionKey(t *testing.T) {
@@ -332,6 +402,80 @@ func TestKafkaMessageReader_FanOutAcrossGroups(t *testing.T) {
 		}(received[i])
 	}
 	wg.Wait()
+}
+
+func TestKafkaMessageReader_SurvivesBrokerRestart(t *testing.T) {
+	requireIntegration(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// pin the port up front: the broker must come back at the same address to reconnect to
+	hostPort := freeKafkaHostPort(t)
+	broker, terminateBroker := runRedpandaContainer(t, ctx, withPinnedKafkaPort(hostPort))
+
+	inTopic := "armo.kubescape.synchronizer.in"
+	createKafkaTopic(t, ctx, broker, inTopic, 1)
+
+	cfg := kafkaTestConfig(broker, inTopic, inTopic)
+	reader, err := NewKafkaMessageReader(cfg)
+	require.NoError(t, err)
+	t.Cleanup(reader.Close)
+
+	received := make(chan string, 16)
+	adapter := adapters.NewMockAdapter(false)
+	adapter.RegisterCallbacks(ctx, domain.Callbacks{
+		PutObject: func(_ context.Context, id domain.KindName, _ string, _ []byte) error {
+			// non-blocking: a burst on reconnect would otherwise wedge a reader worker
+			select {
+			case received <- id.Name:
+			default:
+			}
+			return nil
+		},
+	})
+	reader.Start(ctx, adapter)
+	waitForGroupsStable(t, ctx, broker, reader.GroupID())
+
+	producer, err := NewKafkaMessageProducer(cfg)
+	require.NoError(t, err)
+	t.Cleanup(producer.Close)
+
+	// prove the pipeline works before the outage
+	produceUntilReceived(t, ctx, producer, received, "before-restart")
+
+	// replace the broker rather than Stop/Start it: redpanda rewrites redpanda.yaml on first
+	// boot, dropping the marker the testcontainers entrypoint waits for, so a restart hangs
+	terminateBroker()
+	brokerAfter, _ := runRedpandaContainer(t, ctx, withPinnedKafkaPort(hostPort))
+	require.Equal(t, broker, brokerAfter, "broker must return on the same address")
+	createKafkaTopic(t, ctx, brokerAfter, inTopic, 1)
+
+	// the reader is at-most-once, so messages sent during the outage are not expected to
+	// survive it. what must hold is that new traffic flows again: resilience, not durability.
+	produceUntilReceived(t, ctx, producer, received, "after-restart")
+}
+
+// produceUntilReceived produces until the reader hands a message to its adapter. it retries
+// because the reader consumes from the end, so anything sent before it (re)joins is missed.
+func produceUntilReceived(t *testing.T, ctx context.Context, producer *KafkaMessageProducer, received <-chan string, name string) {
+	t.Helper()
+
+	payload, err := json.Marshal(messaging.PutObjectMessage{Kind: "/v1/configmaps", Name: name, Depth: 1})
+	require.NoError(t, err)
+
+	deadline := time.Now().Add(90 * time.Second)
+	for time.Now().Before(deadline) {
+		require.NoError(t, producer.ProduceMessage(ctx, domain.ClientIdentifier{Account: "account", Cluster: "cluster"},
+			messaging.MsgPropEventValuePutObjectMessage, payload))
+		select {
+		case got := <-received:
+			if got == name {
+				return
+			}
+		case <-time.After(2 * time.Second):
+		}
+	}
+	t.Fatalf("timed out waiting for %q to reach the adapter", name)
 }
 
 // waitForGroupsStable polls until every given consumer group is Stable with at least

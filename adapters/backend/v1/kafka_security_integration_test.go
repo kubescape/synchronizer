@@ -195,6 +195,77 @@ func TestKafkaSecurity_SASLRoundTrip(t *testing.T) {
 	produceAndAssertRoundTrip(t, ctx, broker, topic, kafkaCfg)
 }
 
+// a rejected credential must fail startup, not leave a client that never authenticates
+func TestKafkaSecurity_BadCredentialsFailStartup(t *testing.T) {
+	requireIntegration(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	shortenKafkaPingBudget(t)
+	broker := startRedpandaSecure(t, ctx, saslContainerOptions()...)
+
+	components, err := newFromConfig(ctx, config.Config{
+		Backend: config.Backend{
+			MessageQueue: &config.MessageQueueConfig{
+				Type: "kafka",
+				KafkaConfig: &config.KafkaConfig{
+					BootstrapServers: []string{broker},
+					ProducerTopic:    "armo.kubescape.synchronizer.out",
+					ConsumerTopic:    "armo.kubescape.synchronizer.in",
+					GroupIDPrefix:    fmt.Sprintf("synchronizer-server-badcreds-%d", time.Now().UnixNano()),
+					SecurityProtocol: "SASL_PLAINTEXT",
+					SASLMechanism:    kafkaTestSASLMechanism,
+					SASLUsername:     kafkaTestSASLUser,
+					SASLPassword:     "wrong-" + kafkaTestSASLPassword,
+				},
+			},
+		},
+	})
+	require.Error(t, err)
+	assert.Nil(t, components)
+	assert.Contains(t, err.Error(), "failed to reach kafka brokers")
+}
+
+// credentials the broker accepts are not enough: a principal with no ACL on the topics
+// authenticates fine and then silently never syncs, so startup must reject it too
+func TestKafkaSecurity_UnauthorizedTopicFailsStartup(t *testing.T) {
+	requireIntegration(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	shortenKafkaPingBudget(t)
+	// authorization has to be enabled explicitly; SASL alone only authenticates, after
+	// which any authenticated principal may do anything
+	broker := startRedpandaSecure(t, ctx,
+		redpanda.WithEnableSASL(),
+		redpanda.WithBootstrapConfig("kafka_enable_authorization", true),
+		redpanda.WithNewServiceAccount(kafkaTestSASLUser, kafkaTestSASLPassword),
+		redpanda.WithNewServiceAccount("admin", "admin-secret"),
+		redpanda.WithSuperusers("admin"),
+	)
+
+	components, err := newFromConfig(ctx, config.Config{
+		Backend: config.Backend{
+			MessageQueue: &config.MessageQueueConfig{
+				Type: "kafka",
+				KafkaConfig: &config.KafkaConfig{
+					BootstrapServers: []string{broker},
+					ProducerTopic:    "armo.kubescape.synchronizer.out",
+					ConsumerTopic:    "armo.kubescape.synchronizer.in",
+					GroupIDPrefix:    fmt.Sprintf("synchronizer-server-noacl-%d", time.Now().UnixNano()),
+					SecurityProtocol: "SASL_PLAINTEXT",
+					SASLMechanism:    kafkaTestSASLMechanism,
+					SASLUsername:     kafkaTestSASLUser,
+					SASLPassword:     kafkaTestSASLPassword,
+				},
+			},
+		},
+	})
+	require.Error(t, err)
+	assert.Nil(t, components)
+	assert.Contains(t, err.Error(), "armo.kubescape.synchronizer.out")
+}
+
 func TestKafkaSecurity_TLSRoundTrip(t *testing.T) {
 	requireIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

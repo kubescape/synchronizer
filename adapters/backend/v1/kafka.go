@@ -2,18 +2,22 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/messaging"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -33,8 +37,18 @@ const (
 	kafkaMaxBrokerBytes     = 1 << 30
 )
 
+// startup connectivity budget: 20 total attempts at a 3s delay, mirroring the pulsar client.
+// kafkaPingBudget caps the total, since an address that black-holes rather than refuses burns
+// the full timeout every attempt. variables so tests can shrink them.
+var (
+	kafkaPingAttempts uint64 = 20
+	kafkaPingDelay           = 3 * time.Second
+	kafkaPingTimeout         = 10 * time.Second
+	kafkaPingBudget          = 90 * time.Second
+)
+
 // newKafkaFromConfig creates the Kafka producer and reader from configuration.
-func newKafkaFromConfig(cfg config.Config) (*messaging.Components, error) {
+func newKafkaFromConfig(ctx context.Context, cfg config.Config) (*messaging.Components, error) {
 	kafkaCfg := cfg.Backend.MessageQueue.KafkaConfig
 	if kafkaCfg == nil {
 		return nil, fmt.Errorf("messageQueue.type is kafka but kafkaConfig is missing")
@@ -48,6 +62,12 @@ func newKafkaFromConfig(cfg config.Config) (*messaging.Components, error) {
 	}
 	if kafkaCfg.ConsumerTopic == "" {
 		return nil, fmt.Errorf("kafkaConfig.consumerTopic is required")
+	}
+	// The split-topic design is what lets the reader skip Pulsar's self-loop filter. Pointing
+	// both directions at one topic silently removes that: the server would consume the
+	// messages it just produced and route them back to the clusters they came from.
+	if kafkaCfg.ProducerTopic == kafkaCfg.ConsumerTopic {
+		return nil, fmt.Errorf("kafkaConfig.producerTopic and kafkaConfig.consumerTopic must differ, both are %q", kafkaCfg.ProducerTopic)
 	}
 	// SASL/TLS settings are validated in kafkaSecurityOptions when the clients are built.
 
@@ -65,6 +85,29 @@ func newKafkaFromConfig(cfg config.Config) (*messaging.Components, error) {
 		return nil, fmt.Errorf("failed to create kafka reader: %w", err)
 	}
 
+	// franz-go connects lazily, so fail startup here instead of running healthy but never syncing
+	if err := pingKafkaBrokers(ctx, producer.client, reader.client); err != nil {
+		producer.Close()
+		reader.Close()
+		return nil, fmt.Errorf("failed to reach kafka brokers: %w", err)
+	}
+
+	// reaching the brokers only proves authentication, so check each topic is usable by the
+	// client that needs it before declaring the queue ready
+	for _, access := range []struct {
+		client *kgo.Client
+		topic  string
+	}{
+		{producer.client, kafkaCfg.ProducerTopic},
+		{reader.client, kafkaCfg.ConsumerTopic},
+	} {
+		if err := checkKafkaTopicAccess(ctx, access.client, access.topic); err != nil {
+			producer.Close()
+			reader.Close()
+			return nil, err
+		}
+	}
+
 	logger.L().Info("kafka message queue initialized",
 		helpers.String("producerTopic", kafkaCfg.ProducerTopic),
 		helpers.String("consumerTopic", kafkaCfg.ConsumerTopic))
@@ -77,6 +120,66 @@ func newKafkaFromConfig(cfg config.Config) (*messaging.Components, error) {
 			reader.Close()
 		},
 	}, nil
+}
+
+// pingKafkaBrokers checks every client can reach the cluster, retrying while a broker starts
+// up. Ping sends a metadata request, so it covers TCP, TLS and authentication.
+func pingKafkaBrokers(ctx context.Context, clients ...*kgo.Client) error {
+	ctx, cancel := context.WithTimeout(ctx, kafkaPingBudget)
+	defer cancel()
+
+	attempt := func() error {
+		for _, client := range clients {
+			pingCtx, cancelPing := context.WithTimeout(ctx, kafkaPingTimeout)
+			err := client.Ping(pingCtx)
+			cancelPing()
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// WithMaxRetries counts retries after the first attempt, so subtract one to land on
+	// kafkaPingAttempts in total
+	retries := kafkaPingAttempts
+	if retries > 0 {
+		retries--
+	}
+	policy := backoff.WithContext(backoff.WithMaxRetries(backoff.NewConstantBackOff(kafkaPingDelay), retries), ctx)
+	return backoff.RetryNotify(attempt, policy, func(err error, retryIn time.Duration) {
+		logger.L().Warning("failed to reach kafka brokers, retrying",
+			helpers.Error(err),
+			helpers.String("retryIn", retryIn.String()))
+	})
+}
+
+// checkKafkaTopicAccess verifies the configured topic is describable. Ping only proves
+// authentication, so without this a principal with no ACL on the topic starts cleanly and
+// never syncs. A topic that does not exist yet is not fatal: brokers may auto-create it.
+// A broker may also report an unauthorised topic as unknown rather than as an authorization
+// failure, to avoid disclosing that it exists; the two are indistinguishable here.
+func checkKafkaTopicAccess(ctx context.Context, client *kgo.Client, topic string) error {
+	ctx, cancel := context.WithTimeout(ctx, kafkaPingTimeout)
+	defer cancel()
+
+	topicDetails, err := kadm.NewClient(client).ListTopics(ctx, topic)
+	if err != nil {
+		return fmt.Errorf("failed to describe topic %q: %w", topic, err)
+	}
+
+	detail, ok := topicDetails[topic]
+	switch {
+	case !ok:
+		logger.L().Warning("kafka topic not reported by the broker", helpers.String("topic", topic))
+	case errors.Is(detail.Err, kerr.TopicAuthorizationFailed):
+		return fmt.Errorf("not authorized to access kafka topic %q", topic)
+	case errors.Is(detail.Err, kerr.UnknownTopicOrPartition):
+		logger.L().Warning("kafka topic does not exist yet", helpers.String("topic", topic))
+	case detail.Err != nil:
+		return fmt.Errorf("failed to describe kafka topic %q: %w", topic, detail.Err)
+	}
+	return nil
 }
 
 // kafkaCompressionCodec maps the configured compression name to a franz-go codec.
