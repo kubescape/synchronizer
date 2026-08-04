@@ -68,15 +68,23 @@ func main() {
 	// read before stopInit, which cancels initCtx itself and would make this always true
 	interrupted := initCtx.Err() != nil
 	stopInit()
-	if err != nil {
-		if interrupted {
+	// initCtx swallowed the signal and the shutdown goroutine below has not registered its
+	// handler yet, so nothing is left to catch it and the pod would serve on until SIGKILL.
+	// Leave whether or not initialization went on to succeed, closing the queue on the way.
+	if interrupted {
+		if err != nil {
 			logger.L().Info("shutting down before the message queue was initialized", helpers.Error(err))
-			return
+		} else {
+			logger.L().Info("shutting down before the server started serving")
 		}
+		mq.Shutdown()
+		return
+	}
+	if err != nil {
 		logger.L().Fatal("failed to initialize message queue", helpers.Error(err))
 	}
 	if mq != nil {
-		defer mq.Close()
+		defer mq.Shutdown()
 		adapter = backend.NewBackendAdapter(ctx, mq.Producer, cfg.Backend)
 		mq.Reader.Start(ctx, adapter)
 	} else {

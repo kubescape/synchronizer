@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/armosec/armoapi-go/armotypes"
@@ -13,6 +14,7 @@ import (
 	pulsarconfig "github.com/kubescape/messaging/pulsar/config"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/utils/ptr"
 )
 
@@ -191,4 +193,18 @@ func TestResource_String(t *testing.T) {
 			}
 		})
 	}
+}
+
+// a temp config rather than configuration/server-kafka, where this is false anyway: that
+// matches the zero value too, so a misspelled mapstructure tag would still pass
+func TestLoadConfig_KafkaRequireTopicsExist(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.json"),
+		[]byte(`{"backend":{"messageQueue":{"type":"kafka","kafkaConfig":{"requireTopicsExist":true}}}}`), 0o600))
+
+	config, err := LoadConfig(dir)
+	require.NoError(t, err)
+	require.NotNil(t, config.Backend.MessageQueue)
+	require.NotNil(t, config.Backend.MessageQueue.KafkaConfig)
+	assert.True(t, config.Backend.MessageQueue.KafkaConfig.RequireTopicsExist)
 }
