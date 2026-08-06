@@ -77,9 +77,10 @@ func withPinnedKafkaPort(hostPort int) testcontainers.ContainerCustomizer {
 // freeKafkaHostPort asks the kernel for an unused port and releases it, so the broker can be
 // rebuilt on the same address. Racy in principle, but against the whole machine rather than
 // against a hardcoded range that overlaps the pulsar tests'.
-func freeKafkaHostPort(t *testing.T) int {
+func freeKafkaHostPort(t *testing.T, ctx context.Context) int {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	port := listener.Addr().(*net.TCPAddr).Port
 	require.NoError(t, listener.Close())
@@ -134,12 +135,45 @@ func newKafkaTestConsumer(t *testing.T, broker, topic string) *kgo.Client {
 	return consumer
 }
 
+// newBackendTestProducer stands in for a real backend producer on the inbound topic. The
+// server's own producer stamps the self-produced header and the reader drops those, so it
+// can no longer be used to inject input on the topic under test.
+func newBackendTestProducer(t *testing.T, broker, topic string) *kgo.Client {
+	t.Helper()
+
+	producer, err := kgo.NewClient(
+		kgo.SeedBrokers(broker),
+		kgo.DefaultProduceTopic(topic),
+		kgo.ProducerBatchMaxBytes(kafkaTestMaxMessageBytes),
+		kgo.BrokerMaxWriteBytes(kafkaTestMaxMessageBytes),
+	)
+	require.NoError(t, err)
+	t.Cleanup(producer.Close)
+	return producer
+}
+
+// produceBackendMessage writes a backend -> cluster message the way it really arrives: the
+// same key and headers the server writes, without the self-produced source, which is what
+// NewProducerMessage does on the pulsar side. Returns the error so a caller can retry.
+func produceBackendMessage(ctx context.Context, producer *kgo.Client, id domain.ClientIdentifier, eventType string, payload []byte) error {
+	properties := messaging.BuildProducerProperties(id.Account, id.Cluster, eventType)
+	delete(properties, messaging.MsgPropProducerSource)
+
+	return producer.ProduceSync(ctx, &kgo.Record{
+		Key:     kafkaPartitionKey(id.Account, id.Cluster),
+		Value:   payload,
+		Headers: kafkaHeadersFromProperties(properties),
+	}).FirstErr()
+}
+
 func TestNewFromConfig_WithKafka(t *testing.T) {
 	requireIntegration(t)
 	ctx := context.Background()
 	broker := startRedpandaContainer(t, ctx)
 
 	cfg := kafkaTestConfig(broker, "armo.kubescape.synchronizer.out", "armo.kubescape.synchronizer.in")
+	// strict mode must still accept topics that do exist, and this test creates both
+	cfg.Backend.MessageQueue.KafkaConfig.RequireTopicsExist = true
 	createKafkaTopic(t, ctx, broker, cfg.Backend.MessageQueue.KafkaConfig.ProducerTopic, 1)
 	createKafkaTopic(t, ctx, broker, cfg.Backend.MessageQueue.KafkaConfig.ConsumerTopic, 1)
 
@@ -153,7 +187,8 @@ func TestNewFromConfig_WithKafka(t *testing.T) {
 }
 
 // the startup topic check must not turn "topic not created yet" into a startup failure:
-// brokers may auto-create on first produce, and the operator may create them out of band
+// brokers may auto-create on first produce, and the operator may create them out of band.
+// this pins the default, requireTopicsExist opts out of it, see below.
 func TestNewFromConfig_KafkaToleratesMissingTopics(t *testing.T) {
 	requireIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -175,6 +210,26 @@ func TestNewFromConfig_KafkaToleratesMissingTopics(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, topics, "not.created.yet.out")
 	assert.NotContains(t, topics, "not.created.yet.in")
+}
+
+// with auto-creation off, tolerating a missing topic hands back the failure this whole check
+// exists to prevent: the server comes up, answers /healthz, and never syncs
+func TestNewFromConfig_KafkaRequireTopicsExistFailsStartup(t *testing.T) {
+	requireIntegration(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	broker := startRedpandaContainer(t, ctx)
+
+	cfg := kafkaTestConfig(broker, "not.created.yet.out", "not.created.yet.in")
+	cfg.Backend.MessageQueue.KafkaConfig.RequireTopicsExist = true
+
+	components, err := messaging.NewFromConfig(ctx, cfg)
+	require.Error(t, err)
+	assert.Nil(t, components)
+	// the producer topic is checked first, so it is the one named
+	assert.Contains(t, err.Error(), "not.created.yet.out")
+	assert.Contains(t, err.Error(), "requireTopicsExist")
 }
 
 func TestKafkaMessageProducer_SetsHeadersAndPartitionKey(t *testing.T) {
@@ -304,8 +359,7 @@ func TestKafkaMessageReader_DispatchesToAdapter(t *testing.T) {
 	inTopic := "armo.kubescape.synchronizer.in"
 	createKafkaTopic(t, ctx, broker, inTopic, 1)
 
-	// producerTopic points at the .in topic so we can inject a backend->cluster command.
-	cfg := kafkaTestConfig(broker, inTopic, inTopic)
+	cfg := kafkaTestConfig(broker, "armo.kubescape.synchronizer.out", inTopic)
 	reader, err := NewKafkaMessageReader(cfg)
 	require.NoError(t, err)
 	t.Cleanup(reader.Close)
@@ -323,9 +377,7 @@ func TestKafkaMessageReader_DispatchesToAdapter(t *testing.T) {
 	defer readerCancel()
 	reader.Start(readerCtx, adapter)
 
-	producer, err := NewKafkaMessageProducer(cfg)
-	require.NoError(t, err)
-	t.Cleanup(producer.Close)
+	producer := newBackendTestProducer(t, broker, inTopic)
 
 	// The reader starts at latest, so wait for it to join its group before producing,
 	// otherwise the message lands before the offset settles and is missed.
@@ -333,7 +385,7 @@ func TestKafkaMessageReader_DispatchesToAdapter(t *testing.T) {
 
 	payload, err := json.Marshal(messaging.PutObjectMessage{Kind: "/v1/configmaps", Name: "reader-test", Depth: 1})
 	require.NoError(t, err)
-	require.NoError(t, producer.ProduceMessage(ctx, domain.ClientIdentifier{Account: "account", Cluster: "cluster"},
+	require.NoError(t, produceBackendMessage(ctx, producer, domain.ClientIdentifier{Account: "account", Cluster: "cluster"},
 		messaging.MsgPropEventValuePutObjectMessage, payload))
 
 	select {
@@ -341,6 +393,74 @@ func TestKafkaMessageReader_DispatchesToAdapter(t *testing.T) {
 		assert.Equal(t, "reader-test", id.Name)
 	case <-time.After(60 * time.Second):
 		t.Fatal("timed out waiting for reader to dispatch the message")
+	}
+}
+
+// the startup guard cannot see an alias feeding the server's own output back onto the topic
+// it consumes, which would send messages straight back to the clusters they came from
+func TestKafkaMessageReader_SkipsSelfProducedMessages(t *testing.T) {
+	requireIntegration(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	broker := startRedpandaContainer(t, ctx)
+	inTopic := "armo.kubescape.synchronizer.in"
+	outTopic := "armo.kubescape.synchronizer.out"
+	// one partition, so the two records below are strictly ordered
+	createKafkaTopic(t, ctx, broker, inTopic, 1)
+
+	cfg := kafkaTestConfig(broker, outTopic, inTopic)
+	// one partition only orders the fetch; a single worker carries that order through to
+	// the adapter, so the assertion below does not ride on defaultKafkaConsumerWorkers
+	cfg.Backend.ConsumerWorkers = 1
+	reader, err := NewKafkaMessageReader(cfg)
+	require.NoError(t, err)
+	t.Cleanup(reader.Close)
+
+	received := make(chan string, 4)
+	adapter := adapters.NewMockAdapter(false)
+	adapter.RegisterCallbacks(ctx, domain.Callbacks{
+		PutObject: func(_ context.Context, id domain.KindName, _ string, _ []byte) error {
+			received <- id.Name
+			return nil
+		},
+	})
+
+	readerCtx, readerCancel := context.WithCancel(ctx)
+	defer readerCancel()
+	reader.Start(readerCtx, adapter)
+	waitForGroupsStable(t, ctx, broker, reader.GroupID())
+
+	id := domain.ClientIdentifier{Account: "account", Cluster: "cluster"}
+	selfPayload, err := json.Marshal(messaging.PutObjectMessage{Kind: "/v1/configmaps", Name: "self-produced", Depth: 1})
+	require.NoError(t, err)
+	backendPayload, err := json.Marshal(messaging.PutObjectMessage{Kind: "/v1/configmaps", Name: "from-backend", Depth: 1})
+	require.NoError(t, err)
+
+	// the real producer, pointed at the consumed topic, so this asserts against the headers
+	// production actually writes and not a hand-built copy of them
+	selfProducer, err := NewKafkaMessageProducer(kafkaTestConfig(broker, inTopic, outTopic))
+	require.NoError(t, err)
+	t.Cleanup(selfProducer.Close)
+	require.NoError(t, selfProducer.ProduceMessage(ctx, id, messaging.MsgPropEventValuePutObjectMessage, selfPayload))
+	// ProduceMessage is fire-and-forget, and kafka only orders within a single client
+	require.NoError(t, selfProducer.client.Flush(ctx))
+
+	// same key and partition, produced second: it cannot arrive first unless the self-produced
+	// record was skipped, which beats a timeout that a reader stuck on nothing would also pass
+	require.NoError(t, produceBackendMessage(ctx, newBackendTestProducer(t, broker, inTopic), id,
+		messaging.MsgPropEventValuePutObjectMessage, backendPayload))
+
+	select {
+	case name := <-received:
+		assert.Equal(t, "from-backend", name, "a self-produced record must not reach the adapter")
+	case <-time.After(60 * time.Second):
+		t.Fatal("timed out waiting for the backend record")
+	}
+	select {
+	case name := <-received:
+		t.Fatalf("an extra message reached the adapter: %q", name)
+	case <-time.After(2 * time.Second):
 	}
 }
 
@@ -360,7 +480,7 @@ func TestKafkaMessageReader_FanOutAcrossGroups(t *testing.T) {
 	groupIDs := make([]string, 0, len(received))
 	for i := range received {
 		received[i] = make(chan domain.KindName, 1)
-		cfg := kafkaTestConfig(broker, inTopic, inTopic)
+		cfg := kafkaTestConfig(broker, "armo.kubescape.synchronizer.out", inTopic)
 		reader, err := NewKafkaMessageReader(cfg)
 		require.NoError(t, err)
 		t.Cleanup(reader.Close)
@@ -380,13 +500,11 @@ func TestKafkaMessageReader_FanOutAcrossGroups(t *testing.T) {
 	// Wait for both readers to join their (distinct) groups before producing.
 	waitForGroupsStable(t, ctx, broker, groupIDs...)
 
-	producer, err := NewKafkaMessageProducer(kafkaTestConfig(broker, inTopic, inTopic))
-	require.NoError(t, err)
-	t.Cleanup(producer.Close)
+	producer := newBackendTestProducer(t, broker, inTopic)
 
 	payload, err := json.Marshal(messaging.PutObjectMessage{Kind: "/v1/configmaps", Name: "fanout", Depth: 1})
 	require.NoError(t, err)
-	require.NoError(t, producer.ProduceMessage(ctx, domain.ClientIdentifier{Account: "account", Cluster: "cluster"},
+	require.NoError(t, produceBackendMessage(ctx, producer, domain.ClientIdentifier{Account: "account", Cluster: "cluster"},
 		messaging.MsgPropEventValuePutObjectMessage, payload))
 
 	for i := range received {
@@ -410,13 +528,13 @@ func TestKafkaMessageReader_SurvivesBrokerRestart(t *testing.T) {
 	defer cancel()
 
 	// pin the port up front: the broker must come back at the same address to reconnect to
-	hostPort := freeKafkaHostPort(t)
+	hostPort := freeKafkaHostPort(t, ctx)
 	broker, terminateBroker := runRedpandaContainer(t, ctx, withPinnedKafkaPort(hostPort))
 
 	inTopic := "armo.kubescape.synchronizer.in"
 	createKafkaTopic(t, ctx, broker, inTopic, 1)
 
-	cfg := kafkaTestConfig(broker, inTopic, inTopic)
+	cfg := kafkaTestConfig(broker, "armo.kubescape.synchronizer.out", inTopic)
 	reader, err := NewKafkaMessageReader(cfg)
 	require.NoError(t, err)
 	t.Cleanup(reader.Close)
@@ -436,9 +554,7 @@ func TestKafkaMessageReader_SurvivesBrokerRestart(t *testing.T) {
 	reader.Start(ctx, adapter)
 	waitForGroupsStable(t, ctx, broker, reader.GroupID())
 
-	producer, err := NewKafkaMessageProducer(cfg)
-	require.NoError(t, err)
-	t.Cleanup(producer.Close)
+	producer := newBackendTestProducer(t, broker, inTopic)
 
 	// prove the pipeline works before the outage
 	produceUntilReceived(t, ctx, producer, received, "before-restart")
@@ -457,7 +573,7 @@ func TestKafkaMessageReader_SurvivesBrokerRestart(t *testing.T) {
 
 // produceUntilReceived produces until the reader hands a message to its adapter. it retries
 // because the reader consumes from the end, so anything sent before it (re)joins is missed.
-func produceUntilReceived(t *testing.T, ctx context.Context, producer *KafkaMessageProducer, received <-chan string, name string) {
+func produceUntilReceived(t *testing.T, ctx context.Context, producer *kgo.Client, received <-chan string, name string) {
 	t.Helper()
 
 	payload, err := json.Marshal(messaging.PutObjectMessage{Kind: "/v1/configmaps", Name: name, Depth: 1})
@@ -465,8 +581,16 @@ func produceUntilReceived(t *testing.T, ctx context.Context, producer *KafkaMess
 
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
-		require.NoError(t, producer.ProduceMessage(ctx, domain.ClientIdentifier{Account: "account", Cluster: "cluster"},
-			messaging.MsgPropEventValuePutObjectMessage, payload))
+		// bound every attempt: ProduceSync blocks until the record is acked, so one call
+		// against a broker that is down would otherwise outlast the retry deadline itself
+		produceCtx, cancelProduce := context.WithTimeout(ctx, 10*time.Second)
+		err := produceBackendMessage(produceCtx, producer, domain.ClientIdentifier{Account: "account", Cluster: "cluster"},
+			messaging.MsgPropEventValuePutObjectMessage, payload)
+		cancelProduce()
+		if err != nil {
+			// the broker is replaced mid-test: the loop is the assertion, not one attempt
+			t.Logf("produce failed while waiting for %q, retrying: %v", name, err)
+		}
 		select {
 		case got := <-received:
 			if got == name {

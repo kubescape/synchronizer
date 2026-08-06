@@ -101,7 +101,7 @@ func newKafkaFromConfig(ctx context.Context, cfg config.Config) (*messaging.Comp
 		{producer.client, kafkaCfg.ProducerTopic},
 		{reader.client, kafkaCfg.ConsumerTopic},
 	} {
-		if err := checkKafkaTopicAccess(ctx, access.client, access.topic); err != nil {
+		if err := checkKafkaTopicAccess(ctx, access.client, access.topic, kafkaCfg.RequireTopicsExist); err != nil {
 			producer.Close()
 			reader.Close()
 			return nil, err
@@ -156,10 +156,10 @@ func pingKafkaBrokers(ctx context.Context, clients ...*kgo.Client) error {
 
 // checkKafkaTopicAccess verifies the configured topic is describable. Ping only proves
 // authentication, so without this a principal with no ACL on the topic starts cleanly and
-// never syncs. A topic that does not exist yet is not fatal: brokers may auto-create it.
+// never syncs. A missing topic is not fatal unless requireTopicsExist: brokers auto-create.
 // A broker may also report an unauthorised topic as unknown rather than as an authorization
 // failure, to avoid disclosing that it exists; the two are indistinguishable here.
-func checkKafkaTopicAccess(ctx context.Context, client *kgo.Client, topic string) error {
+func checkKafkaTopicAccess(ctx context.Context, client *kgo.Client, topic string, requireTopicsExist bool) error {
 	ctx, cancel := context.WithTimeout(ctx, kafkaPingTimeout)
 	defer cancel()
 
@@ -171,15 +171,29 @@ func checkKafkaTopicAccess(ctx context.Context, client *kgo.Client, topic string
 	detail, ok := topicDetails[topic]
 	switch {
 	case !ok:
+		if requireTopicsExist {
+			return errMissingKafkaTopic(topic)
+		}
 		logger.L().Warning("kafka topic not reported by the broker", helpers.String("topic", topic))
 	case errors.Is(detail.Err, kerr.TopicAuthorizationFailed):
 		return fmt.Errorf("not authorized to access kafka topic %q", topic)
 	case errors.Is(detail.Err, kerr.UnknownTopicOrPartition):
+		if requireTopicsExist {
+			return errMissingKafkaTopic(topic)
+		}
 		logger.L().Warning("kafka topic does not exist yet", helpers.String("topic", topic))
 	case detail.Err != nil:
 		return fmt.Errorf("failed to describe kafka topic %q: %w", topic, detail.Err)
 	}
 	return nil
+}
+
+// errMissingKafkaTopic is shared by both missing-topic branches: same problem, same fix.
+// It mentions visibility because a broker may hide an unauthorised topic instead of
+// reporting the authorization failure.
+func errMissingKafkaTopic(topic string) error {
+	return fmt.Errorf("kafka topic %q does not exist or is not visible to this client, "+
+		"and kafkaConfig.requireTopicsExist is set; create the topic or enable broker topic auto-creation", topic)
 }
 
 // kafkaCompressionCodec maps the configured compression name to a franz-go codec.
@@ -457,6 +471,14 @@ func (c *KafkaMessageReader) readerLoop(ctx context.Context) {
 		})
 
 		fetches.EachRecord(func(record *kgo.Record) {
+			// mirrors the pulsar reader. The startup guard rejects producerTopic ==
+			// consumerTopic, but it cannot see an alias feeding our own output back onto
+			// the topic we consume. return skips the record, continue would not compile
+			if isSelfProducedKafkaRecord(record) {
+				logger.L().Ctx(ctx).Debug("skipping self-produced kafka message",
+					helpers.String("msgId", kafkaMessageID(record)))
+				return
+			}
 			select {
 			case c.messageChannel <- record:
 				logger.L().Ctx(ctx).Debug("kafka message enqueued", helpers.String("msgId", kafkaMessageID(record)))
@@ -493,6 +515,13 @@ func (c *KafkaMessageReader) listenOnMessageChannel(ctx context.Context, adapter
 
 func kafkaMessageID(record *kgo.Record) string {
 	return fmt.Sprintf("%s/%d/%d", record.Topic, record.Partition, record.Offset)
+}
+
+// isSelfProducedKafkaRecord reports whether the record came from a synchronizer server.
+// Header only: record.Key holds the {account}/{cluster} partition key here, not the
+// producer identity pulsar puts there, so passing it would never match anyway.
+func isSelfProducedKafkaRecord(record *kgo.Record) bool {
+	return messaging.IsSelfProducedMessage(kafkaPropertiesFromHeaders(record.Headers), "")
 }
 
 func kafkaPropertiesFromHeaders(headers []kgo.RecordHeader) map[string]string {

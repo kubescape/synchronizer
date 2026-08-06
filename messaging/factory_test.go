@@ -34,3 +34,22 @@ func TestNewFromConfig_UsesRegisteredFactory(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, components)
 }
+
+// the server calls this on the (nil, nil) it gets when no queue is configured, and Close is
+// a plain field a backend could leave unset. either one panicking would crash the shutdown
+func TestComponents_Shutdown(t *testing.T) {
+	t.Run("nil components", func(t *testing.T) {
+		var components *Components
+		assert.NotPanics(t, components.Shutdown)
+	})
+
+	t.Run("nil close function", func(t *testing.T) {
+		assert.NotPanics(t, (&Components{}).Shutdown)
+	})
+
+	t.Run("calls close", func(t *testing.T) {
+		calls := 0
+		(&Components{Close: func() { calls++ }}).Shutdown()
+		assert.Equal(t, 1, calls)
+	})
+}

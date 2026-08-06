@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -104,17 +105,40 @@ func startKafkaTestPod(t *testing.T, ctx context.Context, broker, outTopic, inTo
 	server, err := core.NewSynchronizerServer(podCtx, []adapters.Adapter{backendAdapter}, serverConn)
 	require.NoError(t, err)
 
-	// surface an internal failure here instead of leaving it to show up as a bare timeout
+	// surface an internal failure instead of leaving it to show up as a bare timeout. Both
+	// goroutines outlive the test, the client retries a failed read forever, so neither may
+	// touch t: stash the failure and log it from a cleanup, before the test finishes
+	startFailures := make(chan string, 2)
+	report := func(role string, err error) {
+		select {
+		case startFailures <- fmt.Sprintf("synchronizer %s for %s stopped: %v", role, cluster, err):
+		default:
+		}
+	}
 	go func() {
 		if err := client.Start(podCtx); err != nil {
-			t.Logf("synchronizer client for %s stopped: %v", cluster, err)
+			report("client", err)
 		}
 	}()
 	go func() {
 		if err := server.Start(podCtx); err != nil {
-			t.Logf("synchronizer server for %s stopped: %v", cluster, err)
+			report("server", err)
 		}
 	}()
+	t.Cleanup(func() {
+		// fail the blocked reads so the server goroutine unwinds. nothing is waited on because
+		// the client never returns, so the drain is non-blocking and a late report goes unlogged
+		_ = clientConn.Close()
+		_ = serverConn.Close()
+		for {
+			select {
+			case failure := <-startFailures:
+				t.Log(failure)
+			default:
+				return
+			}
+		}
+	})
 
 	// a pod only routes to clusters it has registered, so wait until this one is
 	require.Eventually(t, func() bool {
@@ -156,9 +180,7 @@ func TestKafkaE2E_TwoPodsRouteToConnectedClients(t *testing.T) {
 	// backend -> cluster: one command per cluster. Addressing both is what makes this
 	// deterministic — under a shared consumer group whichever pod loses the assignment never
 	// delivers. Addressing one cluster would only fail when that pod happened to lose it.
-	backendProducer, err := NewKafkaMessageProducer(kafkaTestConfig(broker, inTopic, inTopic))
-	require.NoError(t, err)
-	t.Cleanup(backendProducer.Close)
+	backendProducer := newBackendTestProducer(t, broker, inTopic)
 
 	for _, pod := range []*kafkaTestPod{podA, podB} {
 		payload, err := json.Marshal(messaging.PutObjectMessage{
@@ -168,7 +190,7 @@ func TestKafkaE2E_TwoPodsRouteToConnectedClients(t *testing.T) {
 			Depth:  1,
 		})
 		require.NoError(t, err)
-		require.NoError(t, backendProducer.ProduceMessage(ctx, pod.id,
+		require.NoError(t, produceBackendMessage(ctx, backendProducer, pod.id,
 			messaging.MsgPropEventValuePutObjectMessage, payload))
 	}
 

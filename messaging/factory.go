@@ -12,6 +12,15 @@ type Components struct {
 	Close    func()
 }
 
+// Shutdown runs the backend cleanup, which flushes buffered producer records instead of
+// dropping them. Does nothing on a nil *Components (no queue configured) or a nil Close.
+func (c *Components) Shutdown() {
+	if c == nil || c.Close == nil {
+		return
+	}
+	c.Close()
+}
+
 type factoryFunc func(ctx context.Context, cfg config.Config) (*Components, error)
 
 var fromConfigFactory factoryFunc

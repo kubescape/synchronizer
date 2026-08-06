@@ -49,9 +49,12 @@ type KafkaConfig struct {
 	BootstrapServers []string `mapstructure:"bootstrapServers"`
 	ProducerTopic    string   `mapstructure:"producerTopic"` // server produces here; carries cluster -> backend traffic (.out), consumed by the event ingester
 	ConsumerTopic    string   `mapstructure:"consumerTopic"` // server consumes here; carries backend -> cluster traffic (.in), produced by backend services
-	GroupIDPrefix    string   `mapstructure:"groupIdPrefix"`
-	CompressionType  string   `mapstructure:"compressionType"` // default "zstd"
-	MaxMessageBytes  int      `mapstructure:"maxMessageBytes"` // default 67108864 (64 MB)
+	// false by default, since brokers usually auto-create on first produce. set it where
+	// auto-creation is off, so a missing topic fails startup instead of silently never syncing
+	RequireTopicsExist bool   `mapstructure:"requireTopicsExist"`
+	GroupIDPrefix      string `mapstructure:"groupIdPrefix"`
+	CompressionType    string `mapstructure:"compressionType"` // default "zstd"
+	MaxMessageBytes    int    `mapstructure:"maxMessageBytes"` // default 67108864 (64 MB)
 	// securityProtocol is the authoritative selector: the SASL_ prefix enables SASL,
 	// the _SSL suffix enables TLS, and an empty value is treated as PLAINTEXT.
 	SecurityProtocol string `mapstructure:"securityProtocol"` // PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL

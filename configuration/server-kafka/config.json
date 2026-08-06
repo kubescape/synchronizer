@@ -8,6 +8,7 @@
         ],
         "producerTopic": "armo.kubescape.synchronizer.out",
         "consumerTopic": "armo.kubescape.synchronizer.in",
+        "requireTopicsExist": false,
         "groupIdPrefix": "synchronizer-server",
         "compressionType": "zstd",
         "maxMessageBytes": 67108864,

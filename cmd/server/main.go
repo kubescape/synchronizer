@@ -33,6 +33,17 @@ const shutdownTimeout = 30 * time.Second
 // Kept small and header-only so it does not affect established websocket connections.
 const readHeaderTimeout = 10 * time.Second
 
+// notifyShutdownSignals registers the receiver for the signals that trigger graceful
+// shutdown. It is registered up front and only stopped when main returns, so no window is
+// left where a signal has no receiver and the default disposition kills the process before
+// the cleanup runs. signal.Notify delivers to every registered channel, so this coexists
+// with the initialization-scoped context below and outlives that context unregistering itself.
+func notifyShutdownSignals() (<-chan os.Signal, func()) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	return signals, func() { signal.Stop(signals) }
+}
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -59,6 +70,9 @@ func main() {
 	// up as a startup failure rather than as kubelet killing a pod with nothing on the port
 	utils.StartLivenessProbe()
 
+	signals, stopSignals := notifyShutdownSignals()
+	defer stopSignals()
+
 	// connecting retries for a while, so let a shutdown signal abort it. Scoped to
 	// initialization: the running server has its own shutdown path below.
 	initCtx, stopInit := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
@@ -68,15 +82,22 @@ func main() {
 	// read before stopInit, which cancels initCtx itself and would make this always true
 	interrupted := initCtx.Err() != nil
 	stopInit()
-	if err != nil {
-		if interrupted {
+	// Leave whether or not initialization went on to succeed, closing the queue on the way,
+	// rather than starting to serve only to shut back down on the buffered signal.
+	if interrupted {
+		if err != nil {
 			logger.L().Info("shutting down before the message queue was initialized", helpers.Error(err))
-			return
+		} else {
+			logger.L().Info("shutting down before the server started serving")
 		}
+		mq.Shutdown()
+		return
+	}
+	if err != nil {
 		logger.L().Fatal("failed to initialize message queue", helpers.Error(err))
 	}
 	if mq != nil {
-		defer mq.Close()
+		defer mq.Shutdown()
 		adapter = backend.NewBackendAdapter(ctx, mq.Producer, cfg.Backend)
 		mq.Reader.Start(ctx, adapter)
 	} else {
@@ -140,8 +161,8 @@ func main() {
 	shutdownDone := make(chan struct{})
 	go func() {
 		defer close(shutdownDone)
-		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+		// signals is buffered, so one that arrived while initialization was handing over
+		// is still waiting here rather than lost
 		sig := <-signals
 		logger.L().Info("shutting down synchronizer server", helpers.String("signal", sig.String()))
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
