@@ -409,7 +409,11 @@ func TestKafkaMessageReader_SkipsSelfProducedMessages(t *testing.T) {
 	// one partition, so the two records below are strictly ordered
 	createKafkaTopic(t, ctx, broker, inTopic, 1)
 
-	reader, err := NewKafkaMessageReader(kafkaTestConfig(broker, outTopic, inTopic))
+	cfg := kafkaTestConfig(broker, outTopic, inTopic)
+	// one partition only orders the fetch; a single worker carries that order through to
+	// the adapter, so the assertion below does not ride on defaultKafkaConsumerWorkers
+	cfg.Backend.ConsumerWorkers = 1
+	reader, err := NewKafkaMessageReader(cfg)
 	require.NoError(t, err)
 	t.Cleanup(reader.Close)
 
@@ -577,8 +581,13 @@ func produceUntilReceived(t *testing.T, ctx context.Context, producer *kgo.Clien
 
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
-		if err := produceBackendMessage(ctx, producer, domain.ClientIdentifier{Account: "account", Cluster: "cluster"},
-			messaging.MsgPropEventValuePutObjectMessage, payload); err != nil {
+		// bound every attempt: ProduceSync blocks until the record is acked, so one call
+		// against a broker that is down would otherwise outlast the retry deadline itself
+		produceCtx, cancelProduce := context.WithTimeout(ctx, 10*time.Second)
+		err := produceBackendMessage(produceCtx, producer, domain.ClientIdentifier{Account: "account", Cluster: "cluster"},
+			messaging.MsgPropEventValuePutObjectMessage, payload)
+		cancelProduce()
+		if err != nil {
 			// the broker is replaced mid-test: the loop is the assertion, not one attempt
 			t.Logf("produce failed while waiting for %q, retrying: %v", name, err)
 		}
