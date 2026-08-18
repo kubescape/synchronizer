@@ -32,6 +32,11 @@ type CooldownQueue struct {
 func NewCooldownQueue() *CooldownQueue {
 	events := make(chan watch.Event)
 	callback := func(key, value any) {
+		// The TTL cache's eviction goroutine keeps running until it is
+		// garbage-collected, independent of Stop(). An event enqueued
+		// shortly before Stop() closes innerChan can still be evicted
+		// afterwards, which would otherwise panic sending on a closed channel.
+		defer func() { _ = recover() }()
 		events <- value.(watch.Event)
 	}
 	c := cache.NewTTLWithCallback(defaultExpiration, evictionInterval, callback)
