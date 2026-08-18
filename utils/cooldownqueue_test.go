@@ -57,6 +57,20 @@ func TestCooldownQueue_Enqueue(t *testing.T) {
 	}
 }
 
+// Stopping the queue while an enqueued event's cooldown is still pending
+// used to panic: the TTL cache's eviction goroutine outlives Stop() and
+// tries to send the evicted event on the now-closed channel.
+func TestCooldownQueue_StopWhileCooldownPending(t *testing.T) {
+	q := NewCooldownQueue()
+	go func() {
+		for range q.ResultChan { //nolint:revive // drain, nothing to assert on
+		}
+	}()
+	q.Enqueue(podAdded)
+	q.Stop()
+	time.Sleep(defaultExpiration + evictionInterval + 2*time.Second)
+}
+
 // key is only based on the UID of the object
 func Test_makeEventKey(t *testing.T) {
 	tests := []struct {
