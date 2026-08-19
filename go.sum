@@ -595,12 +595,12 @@ github.com/kubescape/backend v0.0.40 h1:nwQ74sbtuvwkzewS3axf6pIA6C6v+X4e4AzLuvVv
 github.com/kubescape/backend v0.0.40/go.mod h1:cMEGP8cXUZgY89YU4GRBGIla9HZW7grZsUtlCwvZgAE=
 github.com/kubescape/go-logger v0.0.28 h1:xulKTp9kOg3rD98sopFELQ6yZCHQoQXMDzteoSHDFKI=
 github.com/kubescape/go-logger v0.0.28/go.mod h1:YZHFjwGCDar1hP9OyBLE46oR7a0Y/Z/0FperDo8+9D0=
-github.com/kubescape/k8s-interface v0.0.206 h1:qaYu4mlLmSBePanSGq+DBCssh4O785TAT0lQGNGWyGw=
-github.com/kubescape/k8s-interface v0.0.206/go.mod h1:WNYUG93aZ5kDmuaRKFLtVhp18Yc6EfaHdD1gLYtVTN4=
+github.com/kubescape/k8s-interface v0.0.214 h1:j7KP0/5VvYOoQdBGV2+gRM3qnR8PWLAGF8RM/k/DmJ0=
+github.com/kubescape/k8s-interface v0.0.214/go.mod h1:WNYUG93aZ5kDmuaRKFLtVhp18Yc6EfaHdD1gLYtVTN4=
 github.com/kubescape/messaging v0.0.101 h1:o5MkAMIE3kdmzmtTVyNlD7+Bho8VpYrPvixOeXL1YRo=
 github.com/kubescape/messaging v0.0.101/go.mod h1:VRh/d0n9MyQAirLapShN2oxA9jCf8I86v5jNm50kyac=
-github.com/kubescape/storage v0.0.267 h1:o2OYf2KcRhFUs/xHZDOb9TesYlVlVewm+6EC4ETfx8U=
-github.com/kubescape/storage v0.0.267/go.mod h1:hUpp5E/GHCNdMxhUDi0h4jPm6HEvyvEOlr4nd4G+Q5A=
+github.com/kubescape/storage v0.0.290 h1:oIXxz31vrbQiUjBE9I6t/sBmhrwlNTAN4Vs70FxFMA4=
+github.com/kubescape/storage v0.0.290/go.mod h1:ARiTDaeDWLqEcOIbH+zz4dwdMEVxubfu5X5ehdDOqPc=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ81pIr0yLvtUWk2if982qA3F3QD6H4=

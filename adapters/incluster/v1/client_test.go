@@ -180,43 +180,38 @@ func TestClient_filterAndMarshal(t *testing.T) {
 			want: utils.FileContent("../../../utils/testdata/sbomsyftCleaned.json"),
 		},
 		{
-			name: "filter networkNeighborhood",
+			name: "filter containerProfile",
 			fields: fields{
-				kind: domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/networkneighborhoods"),
+				kind: domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/containerprofiles"),
 			},
-			obj: &v1beta1.NetworkNeighborhood{
+			obj: &v1beta1.ContainerProfile{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
 					Namespace: "default",
 				},
-				Spec: v1beta1.NetworkNeighborhoodSpec{
+				Spec: v1beta1.ContainerProfileSpec{
 					LabelSelector: metav1.LabelSelector{
 						MatchLabels: map[string]string{"app": "test"},
 					},
-					Containers: []v1beta1.NetworkNeighborhoodContainer{
+					Egress: []v1beta1.NetworkNeighbor{
 						{
-							Name: "test",
-							Egress: []v1beta1.NetworkNeighbor{
-								{
-									Identifier: "e5e8ca3d76f701a19b7478fdc1c8c24ccc6cef9902b52c8c7e015439e2a1ddf3",
-									NamespaceSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{"kubernetes.io/metadata.name:": "kube-system"},
-									},
-									PodSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{"k8s-app:": "kube-dns"},
-									},
-									Ports: []v1beta1.NetworkPort{
-										{Name: "UDP-53", Protocol: "UDP", Port: ptr.To[int32](53)},
-										{Name: "TCP-53", Protocol: "TCP", Port: ptr.To[int32](53)},
-									},
-									Type: "internal",
-								},
+							Identifier: "e5e8ca3d76f701a19b7478fdc1c8c24ccc6cef9902b52c8c7e015439e2a1ddf3",
+							NamespaceSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"kubernetes.io/metadata.name:": "kube-system"},
 							},
+							PodSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"k8s-app:": "kube-dns"},
+							},
+							Ports: []v1beta1.NetworkPort{
+								{Name: "UDP-53", Protocol: "UDP", Port: ptr.To[int32](53)},
+								{Name: "TCP-53", Protocol: "TCP", Port: ptr.To[int32](53)},
+							},
+							Type: "internal",
 						},
 					},
 				},
 			},
-			want: utils.FileContent("testdata/networkNeighborhoodFiltered.json"),
+			want: utils.FileContent("testdata/containerProfileFiltered.json"),
 		},
 	}
 	for _, tt := range tests {
