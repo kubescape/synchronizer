@@ -31,14 +31,11 @@ func requireIntegration(t *testing.T) {
 func startPulsarContainer(t *testing.T, ctx context.Context) (testcontainers.Container, string, string) {
 	t.Helper()
 
-	brokerPort := fmt.Sprintf("%d", 20000+rand.Intn(10000))
-	adminPort := fmt.Sprintf("%d", 30000+rand.Intn(10000))
-
 	pulsarC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "apachepulsar/pulsar:3.0.3",
 			Cmd:          []string{"bin/pulsar", "standalone"},
-			ExposedPorts: []string{brokerPort + ":6650/tcp", adminPort + ":8080/tcp"},
+			ExposedPorts: []string{"6650/tcp", "8080/tcp"},
 			WaitingFor: wait.ForAll(
 				wait.ForExposedPort(),
 				wait.ForHTTP("/admin/v2/clusters").WithPort("8080/tcp").WithResponseMatcher(func(r io.Reader) bool {

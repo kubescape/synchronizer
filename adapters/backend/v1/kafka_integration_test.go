@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"net/netip"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
-	dockercontainer "github.com/docker/docker/api/types/container"
-	"github.com/docker/go-connections/nat"
+	dockercontainer "github.com/moby/moby/api/types/container"
+	dockernetwork "github.com/moby/moby/api/types/network"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
@@ -68,8 +69,8 @@ func runRedpandaContainer(t *testing.T, ctx context.Context, opts ...testcontain
 // must reuse that port.
 func withPinnedKafkaPort(hostPort int) testcontainers.ContainerCustomizer {
 	return testcontainers.WithHostConfigModifier(func(hostConfig *dockercontainer.HostConfig) {
-		hostConfig.PortBindings = nat.PortMap{
-			nat.Port("9092/tcp"): []nat.PortBinding{{HostIP: "127.0.0.1", HostPort: strconv.Itoa(hostPort)}},
+		hostConfig.PortBindings = dockernetwork.PortMap{
+			dockernetwork.MustParsePort("9092/tcp"): []dockernetwork.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: strconv.Itoa(hostPort)}},
 		}
 	})
 }
