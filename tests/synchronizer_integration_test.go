@@ -40,6 +40,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/k3s"
 	"github.com/testcontainers/testcontainers-go/wait"
+	dockercontainer "github.com/moby/moby/api/types/container"
+	dockernetwork "github.com/moby/moby/api/types/network"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -446,7 +448,13 @@ func createPulsar(t *testing.T, ctx context.Context, brokerPort, adminPort strin
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "apachepulsar/pulsar:3.0.3",
 			Cmd:          []string{"bin/pulsar", "standalone"},
-			ExposedPorts: []string{brokerPort + ":6650/tcp", adminPort + ":8080/tcp"},
+			ExposedPorts: []string{"6650/tcp", "8080/tcp"},
+			HostConfigModifier: func(hc *dockercontainer.HostConfig) {
+				hc.PortBindings = dockernetwork.PortMap{
+					dockernetwork.MustParsePort("6650/tcp"): []dockernetwork.PortBinding{{HostPort: brokerPort}},
+					dockernetwork.MustParsePort("8080/tcp"): []dockernetwork.PortBinding{{HostPort: adminPort}},
+				}
+			},
 			WaitingFor: wait.ForAll(
 				wait.ForExposedPort(),
 				wait.ForHTTP("/admin/v2/clusters").WithPort("8080/tcp").WithResponseMatcher(func(r io.Reader) bool {
@@ -477,7 +485,12 @@ func createPostgres(t *testing.T, ctx context.Context, port string) (testcontain
 				"POSTGRES_USER":     "admin",
 				"POSTGRES_PASSWORD": "admin",
 			},
-			ExposedPorts: []string{port + ":5432/tcp"},
+			ExposedPorts: []string{"5432/tcp"},
+			HostConfigModifier: func(hc *dockercontainer.HostConfig) {
+				hc.PortBindings = dockernetwork.PortMap{
+					dockernetwork.MustParsePort("5432/tcp"): []dockernetwork.PortBinding{{HostPort: port}},
+				}
+			},
 			WaitingFor:   wait.ForExposedPort(),
 		},
 		Started: true,
