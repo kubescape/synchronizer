@@ -48,6 +48,12 @@
         "version": "v1",
         "resource": "alerts",
         "strategy": "copy"
+      },
+      {
+        "group": "kubescape.io",
+        "version": "v1",
+        "resource": "aisandboxheartbeats",
+        "strategy": "copy"
       }
     ]
   }
