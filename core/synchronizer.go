@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -24,6 +25,7 @@ import (
 const maxMessageDepth = 8
 
 type Synchronizer struct {
+	connMu        sync.RWMutex
 	adapters      []adapters.Adapter
 	isClient      bool // which side of the connection is this?
 	Conn          *net.Conn
@@ -80,10 +82,11 @@ func newSynchronizer(mainCtx context.Context, adapter []adapters.Adapter, conn n
 
 func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
 	if err := backoff.RetryNotify(func() error {
-		err := s.writeDataFunc(*s.Conn, data)
+		conn := s.connection()
+		err := s.writeDataFunc(conn, data)
 		if err != nil {
 			// close connection
-			_ = (*s.Conn).Close()
+			_ = conn.Close()
 			if s.isClient {
 				// try to reconnect
 				conn, err := s.newConn()
@@ -91,8 +94,10 @@ func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
 					return fmt.Errorf("refreshing outgoing connection: %w", err)
 				}
 				logger.L().Ctx(ctx).Info("outgoing connection refreshed, synchronization will resume")
+				s.connMu.Lock()
 				s.Conn = &conn
-				return s.writeDataFunc(*s.Conn, data)
+				s.connMu.Unlock()
+				return s.writeDataFunc(conn, data)
 			} else {
 				return backoff.Permanent(fmt.Errorf("cannot send message: %w", err))
 			}
@@ -449,10 +454,11 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 	// process incoming messages
 	for {
 		if err := backoff.RetryNotify(func() error {
-			data, err := s.readDataFunc(*s.Conn)
+			conn := s.connection()
+			data, err := s.readDataFunc(conn)
 			if err != nil {
 				// close connection
-				_ = (*s.Conn).Close()
+				_ = conn.Close()
 				if s.isClient {
 					// let sendData() reconnect and return an error to retry
 					return fmt.Errorf("cannot read data: %w", err)
@@ -748,4 +754,11 @@ func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, ch
 		helpers.String("name", msg.Name),
 		helpers.Int("object size", len(msg.Object)))
 	return nil
+}
+
+// Snapshot the connection without holding a lock during blocking network I/O.
+func (s *Synchronizer) connection() net.Conn {
+	s.connMu.RLock()
+	defer s.connMu.RUnlock()
+	return *s.Conn
 }

@@ -2,6 +2,7 @@ package utils
 
 import (
 	"strings"
+	"sync"
 	"time"
 
 	"istio.io/pkg/cache"
@@ -20,7 +21,8 @@ const (
 // the event is forwarded to the consumer. If and event for the same key is put into the queue
 // again before the cooldown period is over, the event is overridden and the cooldown period is reset.
 type CooldownQueue struct {
-	closed     bool
+	state      *cooldownQueueState
+	stopOnce   sync.Once
 	seenEvents cache.ExpiringCache
 	// inner channel for producing events
 	innerChan chan watch.Event
@@ -28,23 +30,41 @@ type CooldownQueue struct {
 	ResultChan <-chan watch.Event
 }
 
+// cooldownQueueState is shared with the eviction callback. It must not reference
+// the queue or cache: the cache wrapper needs to become unreachable for Istio's
+// finalizer to stop the eviction goroutine.
+type cooldownQueueState struct {
+	mu   sync.RWMutex
+	done chan struct{}
+}
+
+func (s *cooldownQueueState) closed() bool {
+	select {
+	case <-s.done:
+		return true
+	default:
+		return false
+	}
+}
+
 // NewCooldownQueue returns a new Cooldown Queue
 func NewCooldownQueue() *CooldownQueue {
 	events := make(chan watch.Event)
+	state := &cooldownQueueState{done: make(chan struct{})}
+	q := &CooldownQueue{innerChan: events, ResultChan: events, state: state}
 	callback := func(key, value any) {
-		// The TTL cache's eviction goroutine keeps running until it is
-		// garbage-collected, independent of Stop(). An event enqueued
-		// shortly before Stop() closes innerChan can still be evicted
-		// afterwards, which would otherwise panic sending on a closed channel.
-		defer func() { _ = recover() }()
-		events <- value.(watch.Event)
+		state.mu.RLock()
+		defer state.mu.RUnlock()
+		if state.closed() {
+			return
+		}
+		select {
+		case <-state.done:
+		case events <- value.(watch.Event):
+		}
 	}
-	c := cache.NewTTLWithCallback(defaultExpiration, evictionInterval, callback)
-	return &CooldownQueue{
-		seenEvents: c,
-		innerChan:  events,
-		ResultChan: events,
-	}
+	q.seenEvents = cache.NewTTLWithCallback(defaultExpiration, evictionInterval, callback)
+	return q
 }
 
 // makeEventKey creates a unique key for an event from a watcher
@@ -55,12 +75,14 @@ func makeEventKey(e watch.Event) string {
 }
 
 func (q *CooldownQueue) Closed() bool {
-	return q.closed
+	return q.state.closed()
 }
 
 // Enqueue enqueues an event in the Cooldown Queue
 func (q *CooldownQueue) Enqueue(e watch.Event) {
-	if q.closed {
+	q.state.mu.RLock()
+	defer q.state.mu.RUnlock()
+	if q.Closed() {
 		return
 	}
 	eventKey := makeEventKey(e)
@@ -68,6 +90,11 @@ func (q *CooldownQueue) Enqueue(e watch.Event) {
 }
 
 func (q *CooldownQueue) Stop() {
-	q.closed = true
-	close(q.innerChan)
+	q.stopOnce.Do(func() {
+		// Unblock an eviction waiting for a consumer before waiting for its read lock.
+		close(q.state.done)
+		q.state.mu.Lock()
+		defer q.state.mu.Unlock()
+		close(q.innerChan)
+	})
 }

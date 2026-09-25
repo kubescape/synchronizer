@@ -207,3 +207,25 @@ func TestLoadConfig_KafkaRequireTopicsExist(t *testing.T) {
 	require.NotNil(t, config.Backend.MessageQueue.KafkaConfig)
 	assert.True(t, config.Backend.MessageQueue.KafkaConfig.RequireTopicsExist)
 }
+
+func TestLoadConfig_NamespaceFilter(t *testing.T) {
+	for _, name := range []string{"", "namespace-filters"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			data, err := json.Marshal(map[string]any{"inCluster": map[string]any{"namespace": "kubescape", "namespaceFilterConfigMapName": name}})
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "config.json"), data, 0600))
+			t.Setenv("CONFIG", dir)
+			cfg, err := LoadConfig(dir)
+			require.NoError(t, err)
+			require.Equal(t, name, cfg.InCluster.NamespaceFilterConfigMapName)
+		})
+	}
+	cfg := InCluster{NamespaceFilterConfigMapName: "filters", AccessKey: "key", Account: "account", ClusterName: "cluster", ServerUrl: "url", Resources: []Resource{{Resource: "pods"}}}
+	require.ErrorContains(t, cfg.ValidateConfig(), "namespace is required")
+	cfg.Namespace = "kubescape"
+	require.NoError(t, cfg.ValidateConfig())
+	cfg.Namespace = ""
+	cfg.NamespaceFilterConfigMapName = ""
+	require.NoError(t, cfg.ValidateConfig())
+}

@@ -12,38 +12,33 @@ func TestSynchronizer_ObjectAddedOnServer(t *testing.T) {
 	// add object
 	err := serverAdapter.TestCallVerifyObject(ctx, kindKnownServers, object)
 	assert.NoError(t, err)
-	time.Sleep(1 * time.Second)
 	// check object added
-	clientObj, ok := clientAdapter.Resources[kindKnownServers.String()]
-	assert.True(t, ok)
-	assert.Equal(t, object, clientObj)
+	assertResourceEventually(t, clientAdapter, kindKnownServers.String(), object)
 }
 
 func TestSynchronizer_ObjectDeletedOnServer(t *testing.T) {
 	ctx, clientAdapter, serverAdapter := initTest(t)
 	// pre: add object
-	clientAdapter.Resources[kindKnownServers.String()] = object
-	serverAdapter.Resources[kindKnownServers.String()] = object
+	clientAdapter.StoreResource(kindKnownServers.String(), object)
+	serverAdapter.StoreResource(kindKnownServers.String(), object)
 	// delete object
 	err := serverAdapter.TestCallDeleteObject(ctx, kindKnownServers)
 	assert.NoError(t, err)
-	time.Sleep(1 * time.Second)
 	// check object deleted
-	_, ok := clientAdapter.Resources[kindKnownServers.String()]
-	assert.False(t, ok)
+	assert.Eventually(t, func() bool {
+		_, ok := clientAdapter.LoadResource(kindKnownServers.String())
+		return !ok
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 func TestSynchronizer_ObjectModifiedOnServer(t *testing.T) {
 	ctx, clientAdapter, serverAdapter := initTest(t)
 	// pre: add object
-	clientAdapter.Resources[kindKnownServers.String()] = object
-	serverAdapter.Resources[kindKnownServers.String()] = object
+	clientAdapter.StoreResource(kindKnownServers.String(), object)
+	serverAdapter.StoreResource(kindKnownServers.String(), object)
 	// modify object
 	err := serverAdapter.TestCallPutOrPatch(ctx, kindKnownServers, nil, objectServerV2)
 	assert.NoError(t, err)
-	time.Sleep(1 * time.Second)
 	// check object modified
-	clientObj, ok := clientAdapter.Resources[kindKnownServers.String()]
-	assert.True(t, ok)
-	assert.Equal(t, objectServerV2, clientObj)
+	assertResourceEventually(t, clientAdapter, kindKnownServers.String(), objectServerV2)
 }

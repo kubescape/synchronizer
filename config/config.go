@@ -65,14 +65,15 @@ type KafkaConfig struct {
 }
 
 type InCluster struct {
-	ServerUrl         string     `mapstructure:"serverUrl"`
-	Namespace         string     `mapstructure:"namespace"`
-	ClusterName       string     `mapstructure:"clusterName"`
-	ExcludeNamespaces []string   `mapstructure:"excludeNamespaces"`
-	IncludeNamespaces []string   `mapstructure:"includeNamespaces"`
-	Account           string     `mapstructure:"account"`
-	AccessKey         string     `mapstructure:"accessKey"`
-	Resources         []Resource `mapstructure:"resources"`
+	NamespaceFilterConfigMapName string     `mapstructure:"namespaceFilterConfigMapName"`
+	ServerUrl                    string     `mapstructure:"serverUrl"`
+	Namespace                    string     `mapstructure:"namespace"`
+	ClusterName                  string     `mapstructure:"clusterName"`
+	ExcludeNamespaces            []string   `mapstructure:"excludeNamespaces"`
+	IncludeNamespaces            []string   `mapstructure:"includeNamespaces"`
+	Account                      string     `mapstructure:"account"`
+	AccessKey                    string     `mapstructure:"accessKey"`
+	Resources                    []Resource `mapstructure:"resources"`
 }
 
 type HTTPEndpoint struct {
@@ -164,6 +165,9 @@ func LoadServiceURLs(apiURL string) (schema.IBackendServices, error) {
 }
 
 func (c *InCluster) ValidateConfig() error {
+	if c.NamespaceFilterConfigMapName != "" && strings.TrimSpace(c.Namespace) == "" {
+		return fmt.Errorf("namespace is required for namespaceFilterConfigMapName")
+	}
 	if c.AccessKey == "" {
 		return fmt.Errorf("access key is missing")
 	}

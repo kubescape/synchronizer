@@ -3,6 +3,8 @@ package incluster
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -17,20 +19,28 @@ import (
 )
 
 type Adapter struct {
-	callbacks     domain.Callbacks
-	cfg           config.InCluster
-	clients       map[string]adapters.Client
-	dynamicClient dynamic.Interface
-	storageClient spdxv1beta1.SpdxV1beta1Interface
+	namespaceFilters *namespaceFilters
+	filterMu         sync.Mutex
+	filterCancel     context.CancelFunc
+	filterDone       chan struct{}
+	callbacks        domain.Callbacks
+	cfg              config.InCluster
+	clients          map[string]adapters.Client
+	dynamicClient    dynamic.Interface
+	storageClient    spdxv1beta1.SpdxV1beta1Interface
 }
 
 func NewInClusterAdapter(cfg config.InCluster, dynamicClient dynamic.Interface, storageClient spdxv1beta1.SpdxV1beta1Interface) *Adapter {
-	return &Adapter{
+	a := &Adapter{
 		cfg:           cfg,
 		clients:       map[string]adapters.Client{},
 		dynamicClient: dynamicClient,
 		storageClient: storageClient,
 	}
+	if cfg.NamespaceFilterConfigMapName != "" {
+		a.namespaceFilters = &namespaceFilters{}
+	}
+	return a
 }
 
 var _ adapters.Adapter = (*Adapter)(nil)
@@ -48,7 +58,7 @@ func (a *Adapter) GetClientByKind(kind domain.Kind) adapters.Client {
 	if !ok {
 		logger.L().Error("client not found", helpers.String("kind", kind.String()))
 		// if client is not found, create an empty one to discard the messages from the server in callbacks if the kind is not in the list
-		client = NewClient(&NoOpDynamicClient{}, nil, a.cfg, config.Resource{
+		client = a.newClient(&NoOpDynamicClient{}, nil, config.Resource{
 			Group:    kind.Group,
 			Version:  kind.Version,
 			Resource: kind.Resource,
@@ -112,8 +122,35 @@ func (a *Adapter) Callbacks(_ context.Context) (domain.Callbacks, error) {
 }
 
 func (a *Adapter) Start(ctx context.Context) error {
+	if a.namespaceFilters != nil {
+		if strings.TrimSpace(a.cfg.Namespace) == "" {
+			return fmt.Errorf("namespace is required for namespaceFilterConfigMapName")
+		}
+		watcher, err := newNamespaceFilterWatcher(a.dynamicClient, a.cfg.Namespace, a.cfg.NamespaceFilterConfigMapName, a.namespaceFilters)
+		if err != nil {
+			return fmt.Errorf("initialize namespace filter watcher: %w", err)
+		}
+		filterCtx, cancel := context.WithCancel(ctx)
+		done := make(chan struct{})
+		a.filterMu.Lock()
+		if a.filterCancel != nil {
+			a.filterMu.Unlock()
+			cancel()
+			return fmt.Errorf("namespace filter watcher already started")
+		}
+		a.filterCancel = cancel
+		a.filterDone = done
+		a.filterMu.Unlock()
+		go func() { defer close(done); watcher.run(filterCtx) }()
+		if err := watcher.waitForReady(filterCtx); err != nil {
+			cancel()
+			<-done
+			return err
+		}
+	}
+
 	for _, r := range a.cfg.Resources {
-		client := NewClient(a.dynamicClient, a.storageClient, a.cfg, r)
+		client := a.newClient(a.dynamicClient, a.storageClient, r)
 		client.RegisterCallbacks(ctx, a.callbacks)
 		a.clients[r.String()] = client
 
@@ -134,9 +171,23 @@ func (a *Adapter) Start(ctx context.Context) error {
 }
 
 func (a *Adapter) Stop(_ context.Context) error {
+	a.filterMu.Lock()
+	cancel, done := a.filterCancel, a.filterDone
+	a.filterMu.Unlock()
+	if cancel != nil {
+		cancel()
+		<-done
+	}
 	return nil
 }
 
 func (a *Adapter) IsRelated(_ context.Context, id domain.ClientIdentifier) bool {
 	return a.cfg.Account == id.Account && a.cfg.ClusterName == id.Cluster
+}
+
+// Every resource client, including the no-op fallback, observes the same snapshot.
+func (a *Adapter) newClient(dynamicClient dynamic.Interface, storageClient spdxv1beta1.SpdxV1beta1Interface, resource config.Resource) *Client {
+	client := NewClient(dynamicClient, storageClient, a.cfg, resource)
+	client.namespaceFilters = a.namespaceFilters
+	return client
 }

@@ -57,6 +57,11 @@ func NewBackendAdapter(mainContext context.Context, messageProducer messaging.Me
 		featuresProvider: featuresProvider,
 	}
 
+	// SafeMap's zero-value read checks its backing map before acquiring a lock.
+	// Allocate both maps before publishing the adapter to concurrent callers.
+	adapter.clientsMap.Copy(maps.Cast(map[string]*Client{}))
+	adapter.callbacksMap.Copy(maps.Cast(map[string]domain.Callbacks{}))
+
 	adapter.startReconciliationPeriodicTask(mainContext, cfg.ReconciliationTask)
 	adapter.startKeepalivePeriodicTask(mainContext, cfg.KeepAliveTask)
 	return adapter

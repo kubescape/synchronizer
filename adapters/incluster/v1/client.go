@@ -65,6 +65,7 @@ type resourceVersionGetter interface {
 }
 
 type Client struct {
+	namespaceFilters    *namespaceFilters
 	dynamicClient       dynamic.Interface
 	storageClient       spdxv1beta1.SpdxV1beta1Interface
 	account             string
@@ -136,8 +137,11 @@ func (c *Client) Start(ctx context.Context) error {
 	// begin watch
 	eventQueue := utils.NewCooldownQueue()
 	go c.watchRetry(ctx, watchOpts, eventQueue)
-	// process events
-	for event := range eventQueue.ResultChan {
+	return c.processEvents(ctx, eventQueue.ResultChan)
+}
+
+func (c *Client) processEvents(ctx context.Context, events <-chan watch.Event) error {
+	for event := range events {
 		// skip non-objects
 		d, ok := event.Object.(metav1.Object)
 		if !ok {
@@ -163,13 +167,13 @@ func (c *Client) Start(ctx context.Context) error {
 				logger.L().Ctx(ctx).Error("cannot get checksum", helpers.Error(err), helpers.String("id", id.String()))
 				continue
 			}
-			err = c.callbacks.VerifyObject(ctx, id, checksum)
+			err = c.sendVerifyObject(ctx, id, checksum)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
 		case event.Type == watch.Deleted:
 			logger.L().Debug("deleted resource", helpers.String("id", id.String()))
-			err := c.callbacks.DeleteObject(ctx, id)
+			err := c.sendDeleteObject(ctx, id)
 			if err != nil {
 				logger.L().Ctx(ctx).Error("cannot handle deleted resource", helpers.Error(err), helpers.String("id", id.String()))
 			}
@@ -300,6 +304,9 @@ func hasParent(workload metav1.Object) bool {
 }
 
 func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, checksum string, baseObject []byte, newObject []byte) error {
+	if c.liveNamespaceExcluded(id.Namespace) {
+		return nil
+	}
 	if c.Strategy == domain.PatchStrategy {
 		if len(baseObject) > 0 {
 			// update reference object
@@ -325,20 +332,26 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, checksu
 			if err != nil {
 				return fmt.Errorf("calculate checksum: %w", err)
 			}
-			err = c.callbacks.PatchObject(ctx, id, checksum, patch)
+			sent, err := c.dispatchPatchObject(ctx, id, checksum, patch)
 			if err != nil {
 				return fmt.Errorf("send patch object: %w", err)
 			}
+			if !sent {
+				return nil
+			}
 		} else {
-			err := c.callbacks.PutObject(ctx, id, checksum, newObject)
+			sent, err := c.dispatchPutObject(ctx, id, checksum, newObject)
 			if err != nil {
 				return fmt.Errorf("send put object: %w", err)
+			}
+			if !sent {
+				return nil
 			}
 		}
 		// add/update known resources
 		c.ShadowObjects[id.String()] = newObject
 	} else {
-		err := c.callbacks.PutObject(ctx, id, checksum, newObject)
+		err := c.sendPutObject(ctx, id, checksum, newObject)
 		if err != nil {
 			return fmt.Errorf("send put object: %w", err)
 		}
@@ -352,7 +365,7 @@ func (c *Client) callVerifyObject(ctx context.Context, id domain.KindName, objec
 	if err != nil {
 		return fmt.Errorf("calculate checksum: %w", err)
 	}
-	err = c.callbacks.VerifyObject(ctx, id, checksum)
+	err = c.sendVerifyObject(ctx, id, checksum)
 	if err != nil {
 		return fmt.Errorf("send checksum: %w", err)
 	}
@@ -386,6 +399,9 @@ func (c *Client) DeleteObject(_ context.Context, id domain.KindName) error {
 }
 
 func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
+	if c.liveNamespaceExcluded(id.Namespace) {
+		return nil
+	}
 	obj, err := c.getResource(id.Namespace, id.Name)
 	if err != nil {
 		return fmt.Errorf("get resource: %w", err)
@@ -405,7 +421,7 @@ func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum s
 	baseObject, err := c.patchObject(ctx, id, checksum, patch)
 	if err != nil {
 		logger.L().Ctx(ctx).Warning("patch object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
-		return c.callbacks.GetObject(ctx, id, baseObject)
+		return c.sendGetObject(ctx, id, baseObject)
 	}
 	return nil
 }
@@ -510,7 +526,7 @@ func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, newChecks
 	baseObject, err := c.verifyObject(id, newChecksum)
 	if err != nil {
 		logger.L().Ctx(ctx).Warning("verify object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
-		return c.callbacks.GetObject(ctx, id, baseObject)
+		return c.sendGetObject(ctx, id, baseObject)
 	}
 	return nil
 }
@@ -551,7 +567,10 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 	}).EachListItem(context.Background(), metav1.ListOptions{}, func(run runtime.Object) error {
 		d := run.(metav1.Object)
 		resourceVersion = d.GetResourceVersion()
-		// no need for skip ns since these are our CRDs
+		// Static mode preserves the historical storage bootstrap behavior.
+		if c.liveNamespaceExcluded(d.GetNamespace()) {
+			return nil
+		}
 		id := domain.KindName{
 			Kind:            c.kind,
 			Name:            d.GetName(),
@@ -564,7 +583,7 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 			logger.L().Ctx(ctx).Error("cannot get checksums", helpers.Error(err), helpers.String("id", id.String()))
 			return nil
 		}
-		err = c.callbacks.VerifyObject(ctx, id, checksum)
+		err = c.sendVerifyObject(ctx, id, checksum)
 		if err != nil {
 			logger.L().Ctx(ctx).Error("cannot handle added resource", helpers.Error(err), helpers.String("id", id.String()))
 		}
@@ -659,13 +678,16 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 			helpers.String("resource", item.Kind.String()),
 			helpers.String("name", item.Name),
 			helpers.String("namespace", item.Namespace))
-		err = multierr.Append(err, c.callbacks.DeleteObject(ctx, id))
+		err = multierr.Append(err, c.sendDeleteObject(ctx, id))
 	}
 
 	// resources in common, check resource version
 	for _, k := range serverItemsSet.Intersect(clientItemsSet).ToSlice() {
 		item := serverItems[k]
 		resource := clientItems[k]
+		if c.liveNamespaceExcluded(resource.GetNamespace()) {
+			continue
+		}
 		currentVersion := domain.ToResourceVersion(resource.GetResourceVersion())
 		if currentVersion == item.ResourceVersion {
 			// resource has same version, skipping
@@ -700,7 +722,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 			err = multierr.Append(err, fmt.Errorf("get checksum: %w", errChecksum))
 			continue
 		}
-		err = multierr.Append(err, c.callbacks.PutObject(ctx, id, checksum, newObject))
+		err = multierr.Append(err, c.sendPutObject(ctx, id, checksum, newObject))
 	}
 
 	// resources missing in server, send verify checksum
@@ -851,6 +873,9 @@ func (c *Client) getResource(namespace string, name string) (metav1.Object, erro
 }
 
 func (c *Client) skipNamespace(ns string) bool {
+	if c.namespaceFilters != nil {
+		return c.namespaceFilters.skip(ns)
+	}
 	if includeNamespaces := c.includeNamespaces; len(includeNamespaces) > 0 {
 		if !slices.Contains(includeNamespaces, ns) {
 			// skip ns not in IncludeNamespaces

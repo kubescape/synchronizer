@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/armosec/utils-k8s-go/armometadata"
 	jsonpatch "github.com/evanphx/json-patch"
@@ -15,11 +16,14 @@ import (
 )
 
 type MockAdapter struct {
+	resourcesMu          sync.RWMutex
+	shadowMu             sync.RWMutex
 	callbacks            domain.Callbacks
 	checkResourceVersion bool // false for client, true for server
 	patchStrategy        bool // true for client, false for server
-	Resources            map[string][]byte
-	shadowObjects        map[string][]byte
+	// Use LoadResource and StoreResource once callbacks can run concurrently.
+	Resources     map[string][]byte
+	shadowObjects map[string][]byte
 }
 
 func NewMockAdapter(isClient bool) *MockAdapter {
@@ -96,21 +100,21 @@ func (m *MockAdapter) Stop(_ context.Context) error {
 }
 
 func (m *MockAdapter) DeleteObject(_ context.Context, id domain.KindName) error {
-	delete(m.Resources, id.String())
+	m.deleteResource(id.String())
 	return nil
 }
 
 func (m *MockAdapter) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
-	object, ok := m.Resources[id.String()]
+	object, ok := m.LoadResource(id.String())
 	if !ok {
 		return fmt.Errorf("object not found")
 	}
 	if m.patchStrategy {
 		if len(baseObject) > 0 {
 			// update reference object
-			m.shadowObjects[id.String()] = baseObject
+			m.storeShadow(id.String(), baseObject)
 		}
-		if oldObject, ok := m.shadowObjects[id.String()]; ok {
+		if oldObject, ok := m.loadShadow(id.String()); ok {
 			// calculate patch
 			patch, err := jsonpatch.CreateMergePatch(oldObject, object)
 			if err != nil {
@@ -145,7 +149,7 @@ func (m *MockAdapter) PatchObject(ctx context.Context, id domain.KindName, check
 }
 
 func (m *MockAdapter) patchObject(id domain.KindName, checksum string, patch []byte) ([]byte, error) {
-	object, ok := m.Resources[id.String()]
+	object, ok := m.LoadResource(id.String())
 	if !ok {
 		return nil, fmt.Errorf("object not found")
 	}
@@ -161,7 +165,7 @@ func (m *MockAdapter) patchObject(id domain.KindName, checksum string, patch []b
 		return object, fmt.Errorf("checksum mismatch: %s != %s", newChecksum, checksum)
 	}
 	m.saveIfNewer(id, modified)
-	m.shadowObjects[id.String()] = modified
+	m.storeShadow(id.String(), modified)
 	return nil, nil
 }
 
@@ -173,6 +177,8 @@ func (m *MockAdapter) PutObject(ctx context.Context, id domain.KindName, checksu
 // saveIfNewer saves the object only if it is newer than the existing one
 // this reference implementation should be implemented in the ingester on the backend side
 func (m *MockAdapter) saveIfNewer(id domain.KindName, newObject []byte) {
+	m.resourcesMu.Lock()
+	defer m.resourcesMu.Unlock()
 	if m.checkResourceVersion {
 		new, err := armometadata.ExtractMetadataFromJsonBytes(newObject)
 		if err == nil {
@@ -211,7 +217,7 @@ func (m *MockAdapter) VerifyObject(ctx context.Context, id domain.KindName, newC
 }
 
 func (m *MockAdapter) verifyObject(id domain.KindName, newChecksum string) ([]byte, error) {
-	object, ok := m.Resources[id.String()]
+	object, ok := m.LoadResource(id.String())
 	if !ok {
 		return nil, fmt.Errorf("object not found")
 	}
@@ -229,7 +235,7 @@ func (m *MockAdapter) verifyObject(id domain.KindName, newChecksum string) ([]by
 func (m *MockAdapter) TestCallDeleteObject(ctx context.Context, id domain.KindName) error {
 	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
 	// delete local object - this is only for testing purposes
-	delete(m.Resources, id.String())
+	m.deleteResource(id.String())
 	// send delete
 	err := m.callbacks.DeleteObject(ctx, id)
 	if err != nil {
@@ -237,7 +243,9 @@ func (m *MockAdapter) TestCallDeleteObject(ctx context.Context, id domain.KindNa
 	}
 	if m.patchStrategy {
 		// remove from known resources
+		m.shadowMu.Lock()
 		delete(m.shadowObjects, id.String())
+		m.shadowMu.Unlock()
 	}
 	return nil
 }
@@ -246,14 +254,14 @@ func (m *MockAdapter) TestCallDeleteObject(ctx context.Context, id domain.KindNa
 func (m *MockAdapter) TestCallPutOrPatch(ctx context.Context, id domain.KindName, baseObject []byte, newObject []byte) error {
 	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
 	// store object locally - this is only for testing purposes
-	m.Resources[id.String()] = newObject
+	m.StoreResource(id.String(), newObject)
 	// send put/patch
 	if m.patchStrategy {
 		if len(baseObject) > 0 {
 			// update reference object
-			m.shadowObjects[id.String()] = baseObject
+			m.storeShadow(id.String(), baseObject)
 		}
-		if oldObject, ok := m.shadowObjects[id.String()]; ok {
+		if oldObject, ok := m.loadShadow(id.String()); ok {
 			// calculate patch
 			patch, err := jsonpatch.CreateMergePatch(oldObject, newObject)
 			if err != nil {
@@ -280,7 +288,7 @@ func (m *MockAdapter) TestCallPutOrPatch(ctx context.Context, id domain.KindName
 			}
 		}
 		// add/update known resources
-		m.shadowObjects[id.String()] = newObject
+		m.storeShadow(id.String(), newObject)
 	} else {
 		err := m.callbacks.PutObject(ctx, id, "", newObject)
 		if err != nil {
@@ -294,7 +302,7 @@ func (m *MockAdapter) TestCallPutOrPatch(ctx context.Context, id domain.KindName
 func (m *MockAdapter) TestCallVerifyObject(ctx context.Context, id domain.KindName, object []byte) error {
 	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
 	// store object locally - this is only for testing purposes
-	m.Resources[id.String()] = object
+	m.StoreResource(id.String(), object)
 	// calculate checksum
 	checksum, err := storageutils.CanonicalHash(object)
 	if err != nil {
@@ -306,4 +314,37 @@ func (m *MockAdapter) TestCallVerifyObject(ctx context.Context, id domain.KindNa
 		return fmt.Errorf("send checksum: %w", err)
 	}
 	return nil
+}
+
+// LoadResource and StoreResource synchronize test assertions and setup with callbacks.
+func (m *MockAdapter) LoadResource(key string) ([]byte, bool) {
+	m.resourcesMu.RLock()
+	defer m.resourcesMu.RUnlock()
+	value, ok := m.Resources[key]
+	return value, ok
+}
+
+func (m *MockAdapter) StoreResource(key string, value []byte) {
+	m.resourcesMu.Lock()
+	defer m.resourcesMu.Unlock()
+	m.Resources[key] = value
+}
+
+func (m *MockAdapter) deleteResource(key string) {
+	m.resourcesMu.Lock()
+	defer m.resourcesMu.Unlock()
+	delete(m.Resources, key)
+}
+
+func (m *MockAdapter) loadShadow(key string) ([]byte, bool) {
+	m.shadowMu.RLock()
+	defer m.shadowMu.RUnlock()
+	value, ok := m.shadowObjects[key]
+	return value, ok
+}
+
+func (m *MockAdapter) storeShadow(key string, value []byte) {
+	m.shadowMu.Lock()
+	defer m.shadowMu.Unlock()
+	m.shadowObjects[key] = value
 }

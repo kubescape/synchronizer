@@ -12,38 +12,33 @@ func TestSynchronizer_ObjectAdded(t *testing.T) {
 	// add object
 	err := clientAdapter.TestCallVerifyObject(ctx, kindDeployment, object)
 	assert.NoError(t, err)
-	time.Sleep(1 * time.Second)
 	// check object added
-	serverObj, ok := serverAdapter.Resources[kindDeployment.String()]
-	assert.True(t, ok)
-	assert.Equal(t, object, serverObj)
+	assertResourceEventually(t, serverAdapter, kindDeployment.String(), object)
 }
 
 func TestSynchronizer_ObjectDeleted(t *testing.T) {
 	ctx, clientAdapter, serverAdapter := initTest(t)
 	// pre: add object
-	clientAdapter.Resources[kindDeployment.String()] = object
-	serverAdapter.Resources[kindDeployment.String()] = object
+	clientAdapter.StoreResource(kindDeployment.String(), object)
+	serverAdapter.StoreResource(kindDeployment.String(), object)
 	// delete object
 	err := clientAdapter.TestCallDeleteObject(ctx, kindDeployment)
 	assert.NoError(t, err)
-	time.Sleep(1 * time.Second)
 	// check object deleted
-	_, ok := serverAdapter.Resources[kindDeployment.String()]
-	assert.False(t, ok)
+	assert.Eventually(t, func() bool {
+		_, ok := serverAdapter.LoadResource(kindDeployment.String())
+		return !ok
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 func TestSynchronizer_ObjectModified(t *testing.T) {
 	ctx, clientAdapter, serverAdapter := initTest(t)
 	// pre: add object
-	clientAdapter.Resources[kindDeployment.String()] = object
-	serverAdapter.Resources[kindDeployment.String()] = object
+	clientAdapter.StoreResource(kindDeployment.String(), object)
+	serverAdapter.StoreResource(kindDeployment.String(), object)
 	// modify object
 	err := clientAdapter.TestCallPutOrPatch(ctx, kindDeployment, object, objectClientV2)
 	assert.NoError(t, err)
-	time.Sleep(1 * time.Second)
 	// check object modified
-	serverObj, ok := serverAdapter.Resources[kindDeployment.String()]
-	assert.True(t, ok)
-	assert.Equal(t, objectClientV2, serverObj)
+	assertResourceEventually(t, serverAdapter, kindDeployment.String(), objectClientV2)
 }

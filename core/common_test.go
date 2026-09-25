@@ -1,13 +1,12 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"testing"
 	"time"
 
-	"github.com/kubescape/go-logger"
-	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/stretchr/testify/assert"
@@ -34,8 +33,6 @@ func initTest(t *testing.T) (context.Context, *adapters.MockAdapter, *adapters.M
 		Account: "11111111-2222-3333-4444-555555555555",
 		Cluster: "cluster",
 	})
-	err := logger.L().SetLevel(helpers.DebugLevel.String())
-	assert.NoError(t, err)
 	clientAdapter := adapters.NewMockAdapter(true)
 	serverAdapter := adapters.NewMockAdapter(false)
 	clientConn, serverConn := net.Pipe()
@@ -58,10 +55,10 @@ func initTest(t *testing.T) (context.Context, *adapters.MockAdapter, *adapters.M
 func TestSynchronizer_ObjectModifiedOnBothSides(t *testing.T) {
 	ctx, clientAdapter, serverAdapter := initTest(t)
 	// pre: add object
-	clientAdapter.Resources[kindKnownServers.String()] = object
-	serverAdapter.Resources[kindKnownServers.String()] = object
+	clientAdapter.StoreResource(kindKnownServers.String(), object)
+	serverAdapter.StoreResource(kindKnownServers.String(), object)
 	// manually modify object on server (PutObject message will be sent later)
-	serverAdapter.Resources[kindKnownServers.String()] = objectServerV2
+	serverAdapter.StoreResource(kindKnownServers.String(), objectServerV2)
 	// we create a race condition here
 	// object is modified on client, but we don't know about server modification
 	err := clientAdapter.TestCallPutOrPatch(ctx, kindKnownServers, object, objectClientV2)
@@ -69,12 +66,15 @@ func TestSynchronizer_ObjectModifiedOnBothSides(t *testing.T) {
 	// server message arrives just now on client
 	err = clientAdapter.PutObject(ctx, kindKnownServers, "", objectServerV2)
 	assert.NoError(t, err)
-	time.Sleep(1 * time.Second)
 	// check both sides have the one from the server
-	clientObj, ok := clientAdapter.Resources[kindKnownServers.String()]
-	assert.True(t, ok)
-	assert.Equal(t, objectServerV2, clientObj)
-	serverObj, ok := clientAdapter.Resources[kindKnownServers.String()]
-	assert.True(t, ok)
-	assert.Equal(t, objectServerV2, serverObj)
+	assertResourceEventually(t, clientAdapter, kindKnownServers.String(), objectServerV2)
+	assertResourceEventually(t, serverAdapter, kindKnownServers.String(), objectServerV2)
+}
+
+func assertResourceEventually(t *testing.T, adapter *adapters.MockAdapter, key string, expected []byte) {
+	t.Helper()
+	assert.Eventually(t, func() bool {
+		actual, ok := adapter.LoadResource(key)
+		return ok && bytes.Equal(expected, actual)
+	}, 5*time.Second, 10*time.Millisecond)
 }
