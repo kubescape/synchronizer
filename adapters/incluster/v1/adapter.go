@@ -64,6 +64,7 @@ func (a *Adapter) GetClientByKind(kind domain.Kind) adapters.Client {
 			Resource: kind.Resource,
 			Strategy: "copy",
 		})
+		client.RegisterCallbacks(context.Background(), a.callbacks)
 		a.clients[kind.String()] = client
 	}
 	return client

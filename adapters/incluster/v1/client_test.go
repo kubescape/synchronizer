@@ -427,3 +427,45 @@ func TestReconcileBatchProcessingFunc_NilKind(t *testing.T) {
 	assert.Equal(t, c.kind.String(), putIDs[0].Kind.String())
 }
 
+func TestAdapter_GetClientByKind_UnconfiguredKind_NoOp(t *testing.T) {
+	ctx := context.Background()
+	a := NewInClusterAdapter(config.InCluster{Namespace: "kubescape"}, nil, nil)
+
+	var calls int
+	a.RegisterCallbacks(ctx, domain.Callbacks{
+		DeleteObject: func(ctx context.Context, id domain.KindName) error { calls++; return nil },
+		GetObject:    func(ctx context.Context, id domain.KindName, _ []byte) error { calls++; return nil },
+		PutObject:    func(ctx context.Context, id domain.KindName, _ string, _ []byte) error { calls++; return nil },
+		PatchObject:  func(ctx context.Context, id domain.KindName, _ string, _ []byte) error { calls++; return nil },
+		VerifyObject: func(ctx context.Context, id domain.KindName, _ string) error { calls++; return nil },
+	})
+
+	kind := domain.Kind{Group: "spdx.softwarecomposition.kubescape.io", Version: "v1beta1", Resource: "applicationprofiles"}
+	client := a.GetClientByKind(kind)
+	require.NotNil(t, client)
+
+	id := domain.KindName{Kind: &kind, Namespace: "default", Name: "app-1", ResourceVersion: 1}
+
+	// Batch message for unconfigured resource should be silently discarded and not trigger reconciliation or callbacks
+	items := domain.BatchItems{
+		NewChecksum: []domain.NewChecksum{
+			{
+				Namespace:       "default",
+				Name:            "app-1",
+				ResourceVersion: 1,
+				Checksum:        "abc",
+			},
+		},
+	}
+	require.NoError(t, client.Batch(ctx, kind, domain.ReconciliationBatch, items))
+	require.NoError(t, client.Batch(ctx, kind, domain.DefaultBatch, items))
+	require.NoError(t, client.DeleteObject(ctx, id))
+	require.NoError(t, client.PutObject(ctx, id, "abc", []byte(`{}`)))
+	require.NoError(t, client.VerifyObject(ctx, id, "abc"))
+	require.NoError(t, client.GetObject(ctx, id, nil))
+	require.NoError(t, client.PatchObject(ctx, id, "abc", []byte(`{}`)))
+	require.NoError(t, client.Start(ctx))
+	require.Equal(t, 0, calls)
+}
+
+
