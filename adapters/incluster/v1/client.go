@@ -115,7 +115,18 @@ func NewClient(dynamicClient dynamic.Interface, storageClient spdxv1beta1.SpdxV1
 
 var _ adapters.Client = (*Client)(nil)
 
+func (c *Client) isNoOp() bool {
+	if c.dynamicClient == nil {
+		return false
+	}
+	_, ok := c.dynamicClient.(*NoOpDynamicClient)
+	return ok
+}
+
 func (c *Client) Start(ctx context.Context) error {
+	if c.isNoOp() {
+		return nil
+	}
 	logger.L().Info("starting incluster client", helpers.String("resource", c.res.Resource))
 	watchOpts := metav1.ListOptions{}
 	// for our storage, we need to list all resources and get them one by one
@@ -390,6 +401,9 @@ func (c *Client) getChecksum(d metav1.Object) (string, error) {
 }
 
 func (c *Client) DeleteObject(_ context.Context, id domain.KindName) error {
+	if c.isNoOp() {
+		return nil
+	}
 	if c.Strategy == domain.PatchStrategy {
 		// remove from known resources
 		delete(c.ShadowObjects, id.String())
@@ -399,6 +413,9 @@ func (c *Client) DeleteObject(_ context.Context, id domain.KindName) error {
 }
 
 func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
+	if c.isNoOp() {
+		return nil
+	}
 	if c.liveNamespaceExcluded(id.Namespace) {
 		return nil
 	}
@@ -418,6 +435,9 @@ func (c *Client) GetObject(ctx context.Context, id domain.KindName, baseObject [
 }
 
 func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
+	if c.isNoOp() {
+		return nil
+	}
 	baseObject, err := c.patchObject(ctx, id, checksum, patch)
 	if err != nil {
 		logger.L().Ctx(ctx).Warning("patch object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
@@ -458,6 +478,9 @@ func (c *Client) patchObject(ctx context.Context, id domain.KindName, checksum s
 }
 
 func (c *Client) PutObject(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
+	if c.isNoOp() {
+		return nil
+	}
 	var obj unstructured.Unstructured
 	err := obj.UnmarshalJSON(object)
 	if err != nil {
@@ -523,6 +546,9 @@ func (c *Client) Callbacks(_ context.Context) (domain.Callbacks, error) {
 }
 
 func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, newChecksum string) error {
+	if c.isNoOp() {
+		return nil
+	}
 	baseObject, err := c.verifyObject(id, newChecksum)
 	if err != nil {
 		logger.L().Ctx(ctx).Warning("verify object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
@@ -532,6 +558,9 @@ func (c *Client) VerifyObject(ctx context.Context, id domain.KindName, newChecks
 }
 
 func (c *Client) Batch(ctx context.Context, _ domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+	if c.isNoOp() {
+		return nil
+	}
 	if f, ok := c.batchProcessingFunc[batchType]; ok {
 		logger.L().Debug("batch processing", helpers.String("batch type", string(batchType)))
 		return f(ctx, c, items)
