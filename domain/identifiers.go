@@ -18,13 +18,7 @@ type KindName struct {
 }
 
 func (c KindName) String() string {
-	var kind string
-	if c.Kind == nil {
-		kind = ""
-	} else {
-		kind = c.Kind.String()
-	}
-	return strings.Join([]string{kind, c.Namespace, c.Name}, "/")
+	return strings.Join([]string{c.Kind.String(), c.Namespace, c.Name}, "/")
 }
 
 func FromUnstructured(u *unstructured.Unstructured) KindName {

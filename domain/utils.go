@@ -9,7 +9,10 @@ import (
 )
 
 // Kind returns group/version/resource as a string.
-func (k Kind) String() string {
+func (k *Kind) String() string {
+	if k == nil {
+		return ""
+	}
 	return strings.Join([]string{k.Group, k.Version, k.Resource}, "/")
 }
 

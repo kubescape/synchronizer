@@ -25,4 +25,9 @@ func TestKind_RoundTrip(t *testing.T) {
 			assert.Equal(t, tt.name, got)
 		})
 	}
+
+	t.Run("nil kind returns empty string", func(t *testing.T) {
+		var k *Kind
+		assert.Equal(t, "", k.String())
+	})
 }
