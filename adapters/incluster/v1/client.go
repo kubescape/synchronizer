@@ -675,7 +675,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 		}
 
 		logger.L().Debug("reconciliation: resource should not be in server, sending delete message",
-			helpers.String("resource", item.Kind.String()),
+			helpers.String("resource", c.kind.String()),
 			helpers.String("name", item.Name),
 			helpers.String("namespace", item.Namespace))
 		err = multierr.Append(err, c.sendDeleteObject(ctx, id))
@@ -692,7 +692,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 		if currentVersion == item.ResourceVersion {
 			// resource has same version, skipping
 			logger.L().Debug("reconciliation: resource has same version, skipping",
-				helpers.String("resource", item.Kind.String()),
+				helpers.String("resource", c.kind.String()),
 				helpers.String("name", item.Name),
 				helpers.String("namespace", item.Namespace),
 				helpers.Int("resource version", currentVersion))
@@ -701,7 +701,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 
 		// resource has changed, sending a put message
 		logger.L().Debug("reconciliation: resource has changed, sending put message",
-			helpers.String("resource", item.Kind.String()),
+			helpers.String("resource", c.kind.String()),
 			helpers.String("name", item.Name),
 			helpers.String("namespace", item.Namespace),
 			helpers.Int("batch resource version", item.ResourceVersion),

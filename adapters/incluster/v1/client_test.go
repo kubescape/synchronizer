@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
+	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
 	"github.com/stretchr/testify/assert"
@@ -20,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
@@ -338,3 +340,90 @@ func Test_mergeMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileBatchProcessingFunc_NilKind(t *testing.T) {
+	ctx := context.Background()
+	resource := config.Resource{Group: "apps", Version: "v1", Resource: "deployments", Strategy: domain.CopyStrategy}
+
+	existingObj := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]any{
+				"name":            "existing-sample",
+				"namespace":       "default",
+				"resourceVersion": "1",
+			},
+		},
+	}
+	existingMatchingObj := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]any{
+				"name":            "existing-matching",
+				"namespace":       "default",
+				"resourceVersion": "3",
+			},
+		},
+	}
+
+	dynamicClient := fake.NewSimpleDynamicClient(runtime.NewScheme(), existingObj, existingMatchingObj)
+	c := NewClient(dynamicClient, nil, config.InCluster{Namespace: "kubescape"}, resource)
+
+	var deletedIDs []domain.KindName
+	var putIDs []domain.KindName
+	c.RegisterCallbacks(ctx, domain.Callbacks{
+		DeleteObject: func(ctx context.Context, id domain.KindName) error {
+			deletedIDs = append(deletedIDs, id)
+			return nil
+		},
+		PutObject: func(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
+			putIDs = append(putIDs, id)
+			return nil
+		},
+	})
+
+	// When receiving a reconciliation batch from the server, individual items
+	// have Kind set to nil. This tests non-existing resources (delete), existing resources with
+	// matching version (skip), and existing resources with changed version (put).
+	items := domain.BatchItems{
+		NewChecksum: []domain.NewChecksum{
+			{
+				Kind:            nil,
+				Namespace:       "default",
+				Name:            "non-existing",
+				ResourceVersion: 1,
+				Checksum:        "abc",
+			},
+			{
+				Kind:            nil,
+				Namespace:       "default",
+				Name:            "existing-sample",
+				ResourceVersion: 2, // version mismatch (2 != 1) -> should trigger put
+				Checksum:        "def",
+			},
+			{
+				Kind:            nil,
+				Namespace:       "default",
+				Name:            "existing-matching",
+				ResourceVersion: 3, // version match (3 == 3) -> should skip
+				Checksum:        "ghi",
+			},
+		},
+	}
+
+	err := c.Batch(ctx, *c.kind, domain.ReconciliationBatch, items)
+	require.NoError(t, err)
+
+	require.Len(t, deletedIDs, 1)
+	assert.Equal(t, "non-existing", deletedIDs[0].Name)
+	assert.Equal(t, "default", deletedIDs[0].Namespace)
+	assert.Equal(t, c.kind.String(), deletedIDs[0].Kind.String())
+
+	require.Len(t, putIDs, 1)
+	assert.Equal(t, "existing-sample", putIDs[0].Name)
+	assert.Equal(t, "default", putIDs[0].Namespace)
+	assert.Equal(t, c.kind.String(), putIDs[0].Kind.String())
+}
+
