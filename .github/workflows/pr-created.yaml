@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   pr-created:
-    uses: kubescape/workflows/.github/workflows/incluster-comp-pr-created.yaml@main
+    uses: kubescape/workflows/.github/workflows/incluster-comp-pr-created.yaml@547a98f361e0713832308e3f34165bb89fd9b08c # main
     with:
       GO_VERSION: "1.27"
       CGO_ENABLED: 0
@@ -51,12 +51,12 @@ jobs:
         ]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Go
         env:
           CGO_ENABLED: 0
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: 'go.mod'
 
