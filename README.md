@@ -160,3 +160,22 @@ synchronization; it does not itself stop scans in other components.
 
 A live cluster/backend is required for this smoke test; fake-client tests alone
 are not evidence that the Helm integration is complete.
+
+## HTTP ingestion backpressure
+
+The HTTP endpoint returns `429 Too Many Requests` with `Retry-After: 60` when
+its backend connection is known to be disconnected or reconnecting, or when
+admission capacity is exhausted. Route and method validation runs first;
+rejected requests are not read or parsed. Clients should respect `Retry-After`.
+
+At most ten HTTP requests may read, parse, or wait for outbound dispatch at once.
+Non-alert resources (including network streams and node profiles) may occupy at
+most eight slots, reserving two slots for `runtimealerts`. Alerts share the same
+single WebSocket writer; the reservation provides admission capacity, not
+preemption or a delivery guarantee. Each request body is limited to 4 MiB;
+larger bodies receive `413 Request Entity Too Large`.
+
+Waiting for the writer ends when the request is cancelled or the synchronizer
+stops. WebSocket writes have a 30-second deadline so stalled writes eventually
+trigger reconnection. `202 Accepted` means a message reached the outbound worker;
+backend delivery can still be retried after the HTTP response.

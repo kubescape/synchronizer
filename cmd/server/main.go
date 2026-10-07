@@ -120,40 +120,7 @@ func main() {
 		Addr:              addr,
 		ReadHeaderTimeout: readHeaderTimeout,
 		Handler: authentication.AuthenticationServerMiddleware(cfg.Backend.AuthenticationServer,
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				conn, _, _, err := ws.UpgradeHTTP(r, w)
-				if err != nil {
-					logger.L().Error("unable to upgrade connection", helpers.Error(err))
-					return
-				}
-
-				go func() {
-					defer conn.Close()
-					id := utils.ClientIdentifierFromContext(r.Context())
-					synchronizer, err := core.NewSynchronizerServer(r.Context(), []adapters.Adapter{adapter}, conn)
-					if err != nil {
-						logger.L().Error("error during creating synchronizer server instance",
-							helpers.String("account", id.Account),
-							helpers.String("cluster", id.Cluster),
-							helpers.String("connectionId", id.ConnectionId),
-							helpers.Error(err))
-						return
-					}
-					err = synchronizer.Start(r.Context())
-					if err != nil {
-						logger.L().Error("error during sync, closing listener",
-							helpers.String("account", id.Account),
-							helpers.String("cluster", id.Cluster),
-							helpers.String("connectionId", id.ConnectionId),
-							helpers.Error(err))
-						err := synchronizer.Stop(r.Context())
-						if err != nil {
-							logger.L().Error("error during sync stop", helpers.Error(err))
-						}
-						return
-					}
-				}()
-			})),
+			synchronizationHandler(adapter)),
 	}
 
 	// Shut down on SIGTERM/SIGINT so the deferred cleanup runs, in particular closing
@@ -178,4 +145,41 @@ func main() {
 	}
 
 	<-shutdownDone
+}
+
+// Keep the upgrade handler alive for the connection lifetime: its context owns
+// the synchronizer's writer and must not be cancelled immediately after upgrade.
+func synchronizationHandler(adapter adapters.Adapter) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _, _, err := ws.UpgradeHTTP(r, w)
+		if err != nil {
+			logger.L().Error("unable to upgrade connection", helpers.Error(err))
+			return
+		}
+
+		defer conn.Close()
+		id := utils.ClientIdentifierFromContext(r.Context())
+		synchronizer, err := core.NewSynchronizerServer(r.Context(), []adapters.Adapter{adapter}, conn)
+		if err != nil {
+			logger.L().Error("error during creating synchronizer server instance",
+				helpers.String("account", id.Account),
+				helpers.String("cluster", id.Cluster),
+				helpers.String("connectionId", id.ConnectionId),
+				helpers.Error(err))
+			return
+		}
+		err = synchronizer.Start(r.Context())
+		if err != nil {
+			logger.L().Error("error during sync, closing listener",
+				helpers.String("account", id.Account),
+				helpers.String("cluster", id.Cluster),
+				helpers.String("connectionId", id.ConnectionId),
+				helpers.Error(err))
+			err := synchronizer.Stop(r.Context())
+			if err != nil {
+				logger.L().Error("error during sync stop", helpers.Error(err))
+			}
+			return
+		}
+	})
 }

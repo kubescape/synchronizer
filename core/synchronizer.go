@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -30,7 +31,10 @@ type Synchronizer struct {
 	isClient      bool // which side of the connection is this?
 	Conn          *net.Conn
 	newConn       func() (net.Conn, error)
-	outPool       *ants.PoolWithFunc
+	outgoing      chan []byte
+	workerCtx     context.Context
+	disconnected  atomic.Bool
+	cancel        context.CancelFunc
 	inPool        *ants.PoolWithFunc
 	readDataFunc  func(rw io.ReadWriter) ([]byte, error)
 	writeDataFunc func(w io.Writer, p []byte) error
@@ -57,22 +61,29 @@ func newSynchronizer(mainCtx context.Context, adapter []adapters.Adapter, conn n
 		readDataFunc:  readDataFunc,
 		writeDataFunc: writeDataFunc,
 	}
-	// outgoing message pool
-	var err error
-	s.outPool, err = ants.NewPoolWithFunc(1, func(i any) {
-		data := i.([]byte)
-		s.sendData(mainCtx, data)
-	})
-	if err != nil {
-		return nil, fmt.Errorf("unable to create outgoing message pool: %w", err)
-	}
+	workerCtx, cancel := context.WithCancel(mainCtx)
+	s.cancel = cancel
+	s.workerCtx = workerCtx
+	// Keep one writer, but allow callers to cancel while waiting for it.
+	s.outgoing = make(chan []byte)
+	go func() {
+		for {
+			select {
+			case <-workerCtx.Done():
+				return
+			case data := <-s.outgoing:
+				s.sendData(workerCtx, data)
+			}
+		}
+	}()
 	callbacks := domain.Callbacks{
-		DeleteObject: s.DeleteObjectCallback,
-		GetObject:    s.GetObjectCallback,
-		PatchObject:  s.PatchObjectCallback,
-		PutObject:    s.PutObjectCallback,
-		VerifyObject: s.VerifyObjectCallback,
-		Batch:        s.BatchCallback,
+		BackendAvailable: func() bool { return workerCtx.Err() == nil && !s.disconnected.Load() },
+		DeleteObject:     s.DeleteObjectCallback,
+		GetObject:        s.GetObjectCallback,
+		PatchObject:      s.PatchObjectCallback,
+		PutObject:        s.PutObjectCallback,
+		VerifyObject:     s.VerifyObjectCallback,
+		Batch:            s.BatchCallback,
 	}
 	for _, adapter := range s.adapters {
 		adapter.RegisterCallbacks(mainCtx, callbacks)
@@ -82,28 +93,44 @@ func newSynchronizer(mainCtx context.Context, adapter []adapters.Adapter, conn n
 
 func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
 	if err := backoff.RetryNotify(func() error {
+		if err := ctx.Err(); err != nil {
+			return backoff.Permanent(err)
+		}
 		conn := s.connection()
-		err := s.writeDataFunc(conn, data)
+		err := s.writeData(conn, data)
 		if err != nil {
 			// close connection
+			s.markDisconnected(conn)
 			_ = conn.Close()
 			if s.isClient {
+				if err := ctx.Err(); err != nil {
+					return backoff.Permanent(err)
+				}
 				// try to reconnect
 				conn, err := s.newConn()
 				if err != nil {
 					return fmt.Errorf("refreshing outgoing connection: %w", err)
 				}
+				if err := ctx.Err(); err != nil {
+					_ = conn.Close()
+					return backoff.Permanent(err)
+				}
 				logger.L().Ctx(ctx).Info("outgoing connection refreshed, synchronization will resume")
 				s.connMu.Lock()
 				s.Conn = &conn
+				s.disconnected.Store(false)
 				s.connMu.Unlock()
-				return s.writeDataFunc(conn, data)
+				err = s.writeData(conn, data)
+				if err != nil {
+					s.markDisconnected(conn)
+				}
+				return err
 			} else {
 				return backoff.Permanent(fmt.Errorf("cannot send message: %w", err))
 			}
 		}
 		return nil
-	}, utils.NewBackOff(true), func(err error, d time.Duration) {
+	}, backoff.WithContext(utils.NewBackOff(true), ctx), func(err error, d time.Duration) {
 		logger.L().Ctx(ctx).Warning("send data", helpers.Error(err),
 			helpers.String("retry in", d.String()))
 	}); err != nil {
@@ -203,13 +230,8 @@ func (s *Synchronizer) Stop(ctx context.Context) error {
 		helpers.String("cluster", identifier.Cluster),
 		helpers.String("connId", identifier.ConnectionId),
 		helpers.String("host", hostname))
-	if s.outPool != nil {
-		logger.L().Info("releasing out pool",
-			helpers.String("account", identifier.Account),
-			helpers.String("cluster", identifier.Cluster),
-			helpers.String("connId", identifier.ConnectionId),
-			helpers.String("host", hostname))
-		s.outPool.Release()
+	if s.cancel != nil {
+		s.cancel()
 	}
 	if s.inPool != nil {
 		logger.L().Info("releasing in pool",
@@ -458,6 +480,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			data, err := s.readDataFunc(conn)
 			if err != nil {
 				// close connection
+				s.markDisconnected(conn)
 				_ = conn.Close()
 				if s.isClient {
 					// let sendData() reconnect and return an error to retry
@@ -555,9 +578,9 @@ func (s *Synchronizer) sendGetObject(ctx context.Context, id domain.KindName, ba
 	if err != nil {
 		return fmt.Errorf("marshal get object message: %w", err)
 	}
-	err = s.outPool.Invoke(data)
+	err = s.dispatch(ctx, data)
 	if err != nil {
-		return fmt.Errorf("invoke outPool on get object message: %w", err)
+		return fmt.Errorf("dispatch get object message: %w", err)
 	}
 	clientId := utils.ClientIdentifierFromContext(ctx)
 	logger.L().Debug("sent get object message",
@@ -587,9 +610,9 @@ func (s *Synchronizer) sendNewChecksum(ctx context.Context, id domain.KindName, 
 	if err != nil {
 		return fmt.Errorf("marshal checksum message: %w", err)
 	}
-	err = s.outPool.Invoke(data)
+	err = s.dispatch(ctx, data)
 	if err != nil {
-		return fmt.Errorf("invoke outPool on checksum message: %w", err)
+		return fmt.Errorf("dispatch checksum message: %w", err)
 	}
 	if msg.Kind == nil {
 		return fmt.Errorf("invalid resource kind. name: %s", msg.Name)
@@ -621,9 +644,9 @@ func (s *Synchronizer) sendObjectDeleted(ctx context.Context, id domain.KindName
 	if err != nil {
 		return fmt.Errorf("marshal delete message: %w", err)
 	}
-	err = s.outPool.Invoke(data)
+	err = s.dispatch(ctx, data)
 	if err != nil {
-		return fmt.Errorf("invoke outPool on delete message: %w", err)
+		return fmt.Errorf("dispatch delete message: %w", err)
 	}
 	clientId := utils.ClientIdentifierFromContext(ctx)
 	logger.L().Debug("sent object deleted message",
@@ -654,9 +677,9 @@ func (s *Synchronizer) sendPatchObject(ctx context.Context, id domain.KindName, 
 	if err != nil {
 		return fmt.Errorf("marshal patch message: %w", err)
 	}
-	err = s.outPool.Invoke(data)
+	err = s.dispatch(ctx, data)
 	if err != nil {
-		return fmt.Errorf("invoke outPool on patch message: %w", err)
+		return fmt.Errorf("dispatch patch message: %w", err)
 	}
 
 	clientId := utils.ClientIdentifierFromContext(ctx)
@@ -684,11 +707,17 @@ func (s *Synchronizer) sendPing(ctx context.Context) {
 		if err != nil {
 			logger.L().Fatal("marshal ping message", helpers.Error(err))
 		}
-		err = s.outPool.Invoke(data)
+		err = s.dispatch(ctx, data)
 		if err != nil {
-			logger.L().Ctx(ctx).Error("invoke outPool on ping message", helpers.Error(err))
+			logger.L().Ctx(ctx).Error("dispatch ping message", helpers.Error(err))
 		}
-		time.Sleep(50 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.workerCtx.Done():
+			return
+		case <-time.After(50 * time.Second):
+		}
 	}
 }
 
@@ -707,9 +736,9 @@ func (s *Synchronizer) sendBatch(ctx context.Context, kind domain.Kind, batchTyp
 	if err != nil {
 		return fmt.Errorf("marshal batch message: %w", err)
 	}
-	err = s.outPool.Invoke(data)
+	err = s.dispatch(ctx, data)
 	if err != nil {
-		return fmt.Errorf("invoke outPool on batch message: %w", err)
+		return fmt.Errorf("dispatch batch message: %w", err)
 	}
 	clientId := utils.ClientIdentifierFromContext(ctx)
 	logger.L().Debug("sent batch message",
@@ -739,9 +768,9 @@ func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, ch
 	if err != nil {
 		return fmt.Errorf("marshal put object message: %w", err)
 	}
-	err = s.outPool.Invoke(data)
+	err = s.dispatch(ctx, data)
 	if err != nil {
-		return fmt.Errorf("invoke outPool on put object message: %w", err)
+		return fmt.Errorf("dispatch put object message: %w", err)
 	}
 
 	clientId := utils.ClientIdentifierFromContext(ctx)
@@ -761,4 +790,44 @@ func (s *Synchronizer) connection() net.Conn {
 	s.connMu.RLock()
 	defer s.connMu.RUnlock()
 	return *s.Conn
+}
+
+// dispatch hands messages to the single writer without uncancellable pool waiters.
+func (s *Synchronizer) dispatch(ctx context.Context, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := s.workerCtx.Err(); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.workerCtx.Done():
+		return s.workerCtx.Err()
+	case s.outgoing <- data:
+		return nil
+	}
+}
+
+func (s *Synchronizer) markDisconnected(conn net.Conn) {
+	s.connMu.RLock()
+	defer s.connMu.RUnlock()
+	if *s.Conn == conn {
+		s.disconnected.Store(true)
+	}
+}
+
+func (s *Synchronizer) writeData(conn net.Conn, data []byte) (err error) {
+	if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		return err
+	}
+	// Readers also write WebSocket control replies. Do not leave an expired
+	// deadline on the connection after this data write finishes.
+	defer func() {
+		if resetErr := conn.SetWriteDeadline(time.Time{}); resetErr != nil && err == nil {
+			err = fmt.Errorf("reset write deadline: %w", resetErr)
+		}
+	}()
+	return s.writeDataFunc(conn, data)
 }
