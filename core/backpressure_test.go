@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -260,5 +261,65 @@ func TestStopClosesConnectionAndUnblocksWriter(t *testing.T) {
 				t.Fatalf("active connection was not closed: %v", err)
 			}
 		})
+	}
+}
+
+func TestReplacementWriteTimeoutReconnectsAndRestoresAvailability(t *testing.T) {
+	ctx := context.WithValue(context.Background(), domain.ContextKeyClientIdentifier, domain.ClientIdentifier{})
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	original, originalPeer := net.Pipe()
+	defer original.Close()
+	defer originalPeer.Close()
+	failed, failedPeer := net.Pipe()
+	defer failed.Close()
+	defer failedPeer.Close()
+	recovered, recoveredPeer := net.Pipe()
+	defer recovered.Close()
+	defer recoveredPeer.Close()
+	a := adapters.NewMockAdapter(true)
+	failedWrites := 0
+	s, err := newSynchronizer(ctx, []adapters.Adapter{a}, original, true, nil, func(w io.Writer, _ []byte) error {
+		switch w {
+		case original:
+			return io.ErrClosedPipe
+		case failed:
+			failedWrites++
+			if failedWrites == 1 {
+				return os.ErrDeadlineExceeded
+			}
+			return nil // A timed-out connection can otherwise succeed on its next write.
+		case recovered:
+			return nil
+		default:
+			t.Error("unexpected connection")
+			return io.ErrClosedPipe
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Stop(ctx)
+	callbacks, _ := a.Callbacks(ctx)
+	reconnects := 0
+	s.newConn = func() (net.Conn, error) {
+		reconnects++
+		if callbacks.BackendAvailable() {
+			t.Error("failed connection is available")
+		}
+		if reconnects == 1 {
+			return failed, nil
+		}
+		return recovered, nil
+	}
+	s.sendData(s.workerCtx, []byte("message"))
+	if reconnects != 2 || s.connection() != recovered {
+		t.Fatalf("reconnects = %d, replacement recovery missing", reconnects)
+	}
+	if !callbacks.BackendAvailable() {
+		t.Fatal("recovered backend remains unavailable")
+	}
+	if err := failed.SetWriteDeadline(time.Now()); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("failed replacement was not closed: %v", err)
 	}
 }

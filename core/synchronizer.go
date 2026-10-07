@@ -124,6 +124,7 @@ func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
 				err = s.writeData(conn, data)
 				if err != nil {
 					s.markDisconnected(conn)
+					_ = conn.Close()
 				}
 				return err
 			} else {
