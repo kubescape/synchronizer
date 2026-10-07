@@ -3,6 +3,7 @@ package httpendpoint
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -231,5 +232,50 @@ func TestBackpressureFlushesWithoutDrainingBody(t *testing.T) {
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusTooManyRequests || !response.Close || response.Header.Get("Retry-After") != "60" {
 		t.Fatalf("response: %d close=%v headers=%v", response.StatusCode, response.Close, response.Header)
+	}
+}
+
+func TestOversizedChunkedBodyRejectsBeforeDrain(t *testing.T) {
+	a := testAdapter(true)
+	returned := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(returned)
+		a.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+	conn, err := net.Dial("tcp", strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	// Leave the chunk unfinished after crossing the limit. The handler must not
+	// drain the rest before releasing admission and returning the 413 response.
+	headers := fmt.Sprintf("POST /apis/v1/kubescape.io/v1/networkstreams HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n%x\r\n", maxRequestBodyBytes+2)
+	if _, err := io.WriteString(conn, headers); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(conn, strings.Repeat("x", maxRequestBodyBytes+1)); err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatalf("oversized request waited for body drain: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("handler retained admission while draining")
+	}
+	a.admissionMu.Lock()
+	defer a.admissionMu.Unlock()
+	if a.admitted != 0 || a.telemetry != 0 {
+		t.Fatal("oversized body retained admission")
 	}
 }

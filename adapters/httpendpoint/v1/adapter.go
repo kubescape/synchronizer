@@ -186,7 +186,8 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.L().Ctx(r.Context()).Warning("httpendpoint request body is empty")
 		return
 	}
-	defer r.Body.Close()
+	// net/http owns body closure after the handler returns; closing here can
+	// drain an unfinished oversized body before admission is released.
 	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBodyBytes))
 	if err != nil {
 		var tooLarge *http.MaxBytesError

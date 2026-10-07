@@ -200,3 +200,65 @@ func TestStopDuringReconnectClosesLateConnection(t *testing.T) {
 		t.Fatal("stopped synchronizer became available")
 	}
 }
+
+func TestStopClosesConnectionAndUnblocksWriter(t *testing.T) {
+	for _, reconnect := range []bool{false, true} {
+		name := "original connection"
+		if reconnect {
+			name = "published replacement"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.WithValue(context.Background(), domain.ContextKeyClientIdentifier, domain.ClientIdentifier{})
+			conn, peer := net.Pipe()
+			defer conn.Close()
+			defer peer.Close()
+			active, activePeer := conn, peer
+			if reconnect {
+				active, activePeer = net.Pipe()
+				defer active.Close()
+				defer activePeer.Close()
+			}
+			entered := make(chan struct{})
+			s, err := newSynchronizer(ctx, nil, conn, true, nil, func(w io.Writer, data []byte) error {
+				if w != active {
+					return io.ErrClosedPipe
+				}
+				close(entered)
+				_, err := w.Write(data)
+				return err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Stop(ctx)
+			s.newConn = func() (net.Conn, error) { return active, nil }
+			done := make(chan struct{})
+			go func() {
+				s.sendData(s.workerCtx, []byte("message"))
+				close(done)
+			}()
+			select {
+			case <-entered:
+			case <-time.After(time.Second):
+				t.Fatal("writer did not reach active connection")
+			}
+			if s.connection() != active {
+				t.Fatal("writer is not using the published connection")
+			}
+			if err := activePeer.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Stop(ctx); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("Stop did not unblock the active writer")
+			}
+			if _, err := activePeer.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+				t.Fatalf("active connection was not closed: %v", err)
+			}
+		})
+	}
+}

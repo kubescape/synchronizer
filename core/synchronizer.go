@@ -111,15 +111,16 @@ func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
 				if err != nil {
 					return fmt.Errorf("refreshing outgoing connection: %w", err)
 				}
+				s.connMu.Lock()
 				if err := ctx.Err(); err != nil {
+					s.connMu.Unlock()
 					_ = conn.Close()
 					return backoff.Permanent(err)
 				}
-				logger.L().Ctx(ctx).Info("outgoing connection refreshed, synchronization will resume")
-				s.connMu.Lock()
 				s.Conn = &conn
 				s.disconnected.Store(false)
 				s.connMu.Unlock()
+				logger.L().Ctx(ctx).Info("outgoing connection refreshed, synchronization will resume")
 				err = s.writeData(conn, data)
 				if err != nil {
 					s.markDisconnected(conn)
@@ -230,8 +231,19 @@ func (s *Synchronizer) Stop(ctx context.Context) error {
 		helpers.String("cluster", identifier.Cluster),
 		helpers.String("connId", identifier.ConnectionId),
 		helpers.String("host", hostname))
+	// Serialize cancellation with reconnect publication so shutdown closes any
+	// replacement published before it, and rejects replacements arriving later.
+	s.connMu.Lock()
 	if s.cancel != nil {
 		s.cancel()
+	}
+	var conn net.Conn
+	if s.Conn != nil {
+		conn = *s.Conn
+	}
+	s.connMu.Unlock()
+	if conn != nil {
+		_ = conn.Close()
 	}
 	if s.inPool != nil {
 		logger.L().Info("releasing in pool",
