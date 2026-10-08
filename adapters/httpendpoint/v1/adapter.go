@@ -3,11 +3,13 @@ package httpendpoint
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kubescape/go-logger"
@@ -19,6 +21,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
+const maxRequestBodyBytes = 4 << 20 // Bound per-request heap amplification as well as concurrency.
+
 type Adapter struct {
 	callbacks      domain.Callbacks
 	cfg            config.Config
@@ -27,6 +31,9 @@ type Adapter struct {
 	httpServer     *http.Server
 	supportedPaths map[domain.Strategy]map[string]map[string]map[string]bool
 	isStarted      bool
+	admissionMu    sync.Mutex
+	admitted       int
+	telemetry      int
 }
 
 func NewHTTPEndpointAdapter(cfg config.Config) *Adapter {
@@ -162,16 +169,33 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reserve before reading: at most eight ordinary requests and two slots
+	// reserved for security alerts can retain parsed bodies while the writer stalls.
+	if !a.admit(pathSlices[2]) {
+		// Prevent net/http from draining an unread HTTP/1 body before flushing 429.
+		w.Header().Set("Connection", "close")
+		w.Header().Set("Retry-After", "60")
+		w.WriteHeader(http.StatusTooManyRequests)
+		return
+	}
+	defer a.release(pathSlices[2])
+
 	// read the request body
 	if r.Body == nil {
 		w.WriteHeader(http.StatusBadRequest)
 		logger.L().Ctx(r.Context()).Warning("httpendpoint request body is empty")
 		return
 	}
-	defer r.Body.Close()
-	bodyBytes, err := io.ReadAll(r.Body)
+	// net/http owns body closure after the handler returns; closing here can
+	// drain an unfinished oversized body before admission is released.
+	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBodyBytes))
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
 		logger.L().Ctx(r.Context()).Warning("httpendpoint request body read error", helpers.Error(err))
 		return
 	}
@@ -255,4 +279,30 @@ func (a *Adapter) Stop(ctx context.Context) error {
 
 func (a *Adapter) IsRelated(ctx context.Context, id domain.ClientIdentifier) bool {
 	return a.cfg.InCluster.Account == id.Account && a.cfg.InCluster.ClusterName == id.Cluster
+}
+
+func (a *Adapter) admit(resource string) bool {
+	a.admissionMu.Lock()
+	defer a.admissionMu.Unlock()
+	if a.callbacks.BackendAvailable == nil || !a.callbacks.BackendAvailable() {
+		return false
+	}
+	alert := resource == "runtimealerts"
+	if a.admitted >= 10 || (!alert && a.telemetry >= 8) {
+		return false
+	}
+	a.admitted++
+	if !alert {
+		a.telemetry++
+	}
+	return true
+}
+
+func (a *Adapter) release(resource string) {
+	a.admissionMu.Lock()
+	defer a.admissionMu.Unlock()
+	a.admitted--
+	if resource != "runtimealerts" {
+		a.telemetry--
+	}
 }
