@@ -18,7 +18,7 @@ import (
 // Kubernetes kinds, event properties and connection count.
 func operation(s string) string {
 	switch s {
-	case "connect", "receive", "send", "dispatch", "batch", "get", "verify", "delete", "patch", "put", "mq_produce", "mq_receive":
+	case "http_ingest", "connect", "receive", "send", "dispatch", "batch", "get", "verify", "delete", "patch", "put", "mq_produce", "mq_receive":
 		return s
 	default:
 		return "other"

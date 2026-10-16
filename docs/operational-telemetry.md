@@ -82,7 +82,7 @@ All instruments use scope `github.com/kubescape/synchronizer/telemetry`.
 | `synchronizer.logs.suppressed` | Observable counter: duplicate diagnostics; no attributes |
 | `synchronizer.telemetry.errors` | Observable counter: SDK error-handler invocations; no attributes; not a count of every dropped SDK record |
 
-Operation vocabulary: `connect,receive,send,dispatch,batch,get,verify,delete,patch,
+Operation vocabulary: `http_ingest,connect,receive,send,dispatch,batch,get,verify,delete,patch,
 put,mq_produce,mq_receive,other`. All caller strings normalize to this vocabulary.
 `receive` measures delivery to the incoming worker pool after the socket read,
 excluding idle read time. Adapter handlers measure application processing.
@@ -91,9 +91,9 @@ failures; broker consumption measures handling, including reconciliation waits.
 
 Histogram boundaries: **0.001, 0.01, 0.1, 1, 5, 30 seconds** (seven buckets including
 +Inf). These cover small patches through network stalls without copying node-agent
-rule evaluation buckets. The theoretical inventory bound is 101 OTLP data
-points per resource/export if every allowed attribute combination occurs; 13
-are histograms. Classic Prometheus histogram expansion would make that 205
+rule evaluation buckets. The theoretical inventory bound is 108 OTLP data
+points per resource/export if every allowed attribute combination occurs; 14
+are histograms. Classic Prometheus histogram expansion would make that 220
 series, excluding resource labels, exemplars, and other instrumentation. Actual
 combinations are a subset. Resource cardinality still grows with replicas and
 rollouts; bounded dimensions do not bound fleet size.
