@@ -18,6 +18,8 @@ import (
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
+	"github.com/kubescape/synchronizer/telemetry"
+	"go.opentelemetry.io/otel/propagation"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -104,6 +106,48 @@ func (a *Adapter) Callbacks(_ context.Context) (domain.Callbacks, error) {
 }
 
 func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
+		a.serveHTTP(w, r)
+		return
+	}
+	ctx := propagation.TraceContext{}.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	finish := telemetry.Default().Begin(ctx, "http_ingest")
+	status := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+	defer func() {
+		var err error
+		if status.status >= 400 {
+			err = errors.New("HTTP request rejected")
+		}
+		if status.status == 400 || status.status == 404 || status.status == 405 || status.status == 413 {
+			telemetry.Default().Drop(ctx, "invalid_message")
+		}
+		finish(err, 0)
+	}()
+	a.serveHTTP(status, r.WithContext(ctx))
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status      int
+	wroteHeader bool
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	if !w.wroteHeader {
+		w.status = status
+		w.wroteHeader = true
+		w.ResponseWriter.WriteHeader(status)
+	}
+}
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+func (w *statusWriter) Write(body []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+func (a *Adapter) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/healthz" {
 		w.WriteHeader(http.StatusOK)
 		return
@@ -117,7 +161,6 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logger.L().Ctx(r.Context()).Info("httpendpoint request", helpers.String("path", r.URL.Path), helpers.String("method", r.Method))
-	// TODO: add tracing span
 	// validate the request verb + path
 	if a.supportedPaths == nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -188,7 +231,13 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// net/http owns body closure after the handler returns; closing here can
 	// drain an unfinished oversized body before admission is released.
-	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBodyBytes))
+	// MaxBytesReader needs net/http's concrete response writer to mark oversized
+	// requests for connection closure rather than draining their unread bodies.
+	limitWriter := w
+	if status, ok := w.(*statusWriter); ok {
+		limitWriter = status.ResponseWriter
+	}
+	bodyBytes, err := io.ReadAll(http.MaxBytesReader(limitWriter, r.Body, maxRequestBodyBytes))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {

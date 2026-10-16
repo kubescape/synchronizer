@@ -179,3 +179,6 @@ Waiting for the writer ends when the request is cancelled or the synchronizer
 stops. WebSocket writes have a 30-second deadline so stalled writes eventually
 trigger reconnection. `202 Accepted` means a message reached the outbound worker;
 backend delivery can still be retried after the HTTP response.
+
+Operational metrics, tracing, logging, configuration and validation are documented in
+[Operational telemetry](docs/operational-telemetry.md).

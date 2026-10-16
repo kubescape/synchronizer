@@ -19,6 +19,7 @@ import (
 	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/domain"
+	"github.com/kubescape/synchronizer/telemetry"
 	"github.com/kubescape/synchronizer/utils"
 	"github.com/panjf2000/ants/v2"
 )
@@ -35,7 +36,7 @@ type Synchronizer struct {
 	workerCtx     context.Context
 	disconnected  atomic.Bool
 	cancel        context.CancelFunc
-	inPool        *ants.PoolWithFunc
+	inPool        *ants.PoolWithFunc // publication and shutdown snapshot guarded by connMu
 	readDataFunc  func(rw io.ReadWriter) ([]byte, error)
 	writeDataFunc func(w io.Writer, p []byte) error
 }
@@ -92,6 +93,9 @@ func newSynchronizer(mainCtx context.Context, adapter []adapters.Adapter, conn n
 }
 
 func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
+	var sendErr error
+	finish := telemetry.Default().Begin(ctx, "send")
+	defer func() { finish(sendErr, len(data)) }()
 	if err := backoff.RetryNotify(func() error {
 		if err := ctx.Err(); err != nil {
 			return backoff.Permanent(err)
@@ -136,6 +140,8 @@ func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
 		logger.L().Ctx(ctx).Warning("send data", helpers.Error(err),
 			helpers.String("retry in", d.String()))
 	}); err != nil {
+		sendErr = err
+		telemetry.Default().Drop(ctx, "send_failed")
 		logger.L().Ctx(ctx).Error("giving up send data", helpers.Error(err))
 		if err := s.Stop(ctx); err != nil {
 			logger.L().Ctx(ctx).Error("error stopping synchronizer", helpers.Error(err))
@@ -195,6 +201,8 @@ func (s *Synchronizer) VerifyObjectCallback(ctx context.Context, id domain.KindN
 }
 
 func (s *Synchronizer) Start(ctx context.Context) error {
+	telemetry.Default().Connection(ctx, 1)
+	defer telemetry.Default().Connection(ctx, -1)
 	hostname, _ := os.Hostname()
 
 	identifiers := utils.ClientIdentifierFromContext(ctx)
@@ -242,17 +250,18 @@ func (s *Synchronizer) Stop(ctx context.Context) error {
 	if s.Conn != nil {
 		conn = *s.Conn
 	}
+	pool := s.inPool
 	s.connMu.Unlock()
 	if conn != nil {
 		_ = conn.Close()
 	}
-	if s.inPool != nil {
+	if pool != nil {
 		logger.L().Info("releasing in pool",
 			helpers.String("account", identifier.Account),
 			helpers.String("cluster", identifier.Cluster),
 			helpers.String("connId", identifier.ConnectionId),
 			helpers.String("host", hostname))
-		s.inPool.Release()
+		pool.Release()
 	}
 
 	return s.stopAdapters(ctx)
@@ -269,10 +278,10 @@ func (s *Synchronizer) stopAdapters(ctx context.Context) error {
 }
 
 func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
-	var err error
 	clientId := utils.ClientIdentifierFromContext(ctx)
 	// incoming message pool
-	s.inPool, err = ants.NewPoolWithFunc(1, func(i any) {
+	pool, err := ants.NewPoolWithFunc(1, func(i any) {
+		ctx := ctx // message context must not mutate the reader goroutine context
 		data, ok := i.([]byte)
 		if !ok {
 			logger.L().Ctx(ctx).Error("failed to convert message to bytes", helpers.Interface("message", i))
@@ -288,8 +297,12 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 		var generic domain.Generic
 		err := json.Unmarshal(data, &generic)
 		if err != nil {
-			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err), helpers.String("target", "domain.Generic"),
-				helpers.String("data", string(data)))
+			telemetry.Default().Drop(ctx, "invalid_message")
+			logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err), helpers.String("target", "domain.Generic"))
+			return
+		}
+		if generic.Event == nil || generic.Event.Value() == nil || (*generic.Event != domain.EventPing && generic.Kind == nil) {
+			telemetry.Default().Drop(ctx, "invalid_message")
 			return
 		}
 		var kind string
@@ -305,6 +318,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			helpers.Int("depth", generic.Depth))
 		// check message depth and ID
 		if generic.Depth > maxMessageDepth {
+			telemetry.Default().Drop(ctx, "depth")
 			logger.L().Ctx(ctx).Error("message depth too high",
 				helpers.String("account", clientId.Account),
 				helpers.String("cluster", clientId.Cluster),
@@ -323,6 +337,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			var msg domain.Batch
 			err = json.Unmarshal(data, &msg)
 			if err != nil {
+				telemetry.Default().Drop(ctx, "invalid_message")
 				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
 					helpers.String("account", clientId.Account),
 					helpers.String("cluster", clientId.Cluster),
@@ -345,6 +360,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			var msg domain.GetObject
 			err = json.Unmarshal(data, &msg)
 			if err != nil {
+				telemetry.Default().Drop(ctx, "invalid_message")
 				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
 					helpers.String("account", clientId.Account),
 					helpers.String("cluster", clientId.Cluster),
@@ -373,6 +389,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			var msg domain.NewChecksum
 			err = json.Unmarshal(data, &msg)
 			if err != nil {
+				telemetry.Default().Drop(ctx, "invalid_message")
 				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
 					helpers.String("account", clientId.Account),
 					helpers.String("cluster", clientId.Cluster),
@@ -401,6 +418,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			var msg domain.ObjectDeleted
 			err = json.Unmarshal(data, &msg)
 			if err != nil {
+				telemetry.Default().Drop(ctx, "invalid_message")
 				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
 					helpers.String("account", clientId.Account),
 					helpers.String("cluster", clientId.Cluster),
@@ -429,6 +447,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			var msg domain.PatchObject
 			err = json.Unmarshal(data, &msg)
 			if err != nil {
+				telemetry.Default().Drop(ctx, "invalid_message")
 				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
 					helpers.String("account", clientId.Account),
 					helpers.String("cluster", clientId.Cluster),
@@ -457,6 +476,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			var msg domain.PutObject
 			err = json.Unmarshal(data, &msg)
 			if err != nil {
+				telemetry.Default().Drop(ctx, "invalid_message")
 				logger.L().Ctx(ctx).Error("cannot unmarshal message", helpers.Error(err),
 					helpers.String("account", clientId.Account),
 					helpers.String("cluster", clientId.Cluster),
@@ -486,11 +506,26 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to create incoming message pool: %w", err)
 	}
+	// Publish under the same lock that cancels and snapshots the pool in Stop.
+	// If shutdown won before creation completed, release the unpublished pool.
+	s.connMu.Lock()
+	if err := s.workerCtx.Err(); err != nil {
+		s.connMu.Unlock()
+		pool.Release()
+		return err
+	}
+	s.inPool = pool
+	s.connMu.Unlock()
 	// process incoming messages
 	for {
 		if err := backoff.RetryNotify(func() error {
+			if err := s.workerCtx.Err(); err != nil {
+				return backoff.Permanent(err)
+			}
 			conn := s.connection()
 			data, err := s.readDataFunc(conn)
+			finish := telemetry.Default().Begin(ctx, "receive")
+			defer func() { finish(err, len(data)) }()
 			if err != nil {
 				// close connection
 				s.markDisconnected(conn)
@@ -502,12 +537,12 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 					return backoff.Permanent(fmt.Errorf("cannot read data: %w", err))
 				}
 			}
-			err = s.inPool.Invoke(data)
+			err = pool.Invoke(data)
 			if err != nil {
 				return fmt.Errorf("invoke inPool: %w", err)
 			}
 			return nil
-		}, utils.NewBackOff(true), func(err error, d time.Duration) {
+		}, backoff.WithContext(utils.NewBackOff(true), s.workerCtx), func(err error, d time.Duration) {
 			logger.L().Ctx(ctx).Warning("process incoming messages", helpers.Error(err), helpers.String("retry in", d.String()))
 		}); err != nil {
 			return fmt.Errorf("giving up process incoming messages: %w", err)
@@ -515,7 +550,9 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 	}
 }
 
-func (s *Synchronizer) handleSyncBatch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) error {
+func (s *Synchronizer) handleSyncBatch(ctx context.Context, kind domain.Kind, batchType domain.BatchType, items domain.BatchItems) (err error) {
+	finish := telemetry.Default().Begin(ctx, "batch")
+	defer func() { finish(err, 0) }()
 	for _, adapter := range s.adapters {
 		err := adapter.Batch(ctx, kind, batchType, items)
 		if err != nil {
@@ -525,7 +562,9 @@ func (s *Synchronizer) handleSyncBatch(ctx context.Context, kind domain.Kind, ba
 	return nil
 }
 
-func (s *Synchronizer) handleSyncGetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
+func (s *Synchronizer) handleSyncGetObject(ctx context.Context, id domain.KindName, baseObject []byte) (err error) {
+	finish := telemetry.Default().Begin(ctx, "get")
+	defer func() { finish(err, 0) }()
 	for _, adapter := range s.adapters {
 		err := adapter.GetObject(ctx, id, baseObject)
 		if err != nil {
@@ -535,7 +574,9 @@ func (s *Synchronizer) handleSyncGetObject(ctx context.Context, id domain.KindNa
 	return nil
 }
 
-func (s *Synchronizer) handleSyncNewChecksum(ctx context.Context, id domain.KindName, newChecksum string) error {
+func (s *Synchronizer) handleSyncNewChecksum(ctx context.Context, id domain.KindName, newChecksum string) (err error) {
+	finish := telemetry.Default().Begin(ctx, "verify")
+	defer func() { finish(err, 0) }()
 	for _, adapter := range s.adapters {
 		err := adapter.VerifyObject(ctx, id, newChecksum)
 		if err != nil {
@@ -545,7 +586,9 @@ func (s *Synchronizer) handleSyncNewChecksum(ctx context.Context, id domain.Kind
 	return nil
 }
 
-func (s *Synchronizer) handleSyncObjectDeleted(ctx context.Context, id domain.KindName) error {
+func (s *Synchronizer) handleSyncObjectDeleted(ctx context.Context, id domain.KindName) (err error) {
+	finish := telemetry.Default().Begin(ctx, "delete")
+	defer func() { finish(err, 0) }()
 	for _, adapter := range s.adapters {
 		err := adapter.DeleteObject(ctx, id)
 		if err != nil {
@@ -555,7 +598,9 @@ func (s *Synchronizer) handleSyncObjectDeleted(ctx context.Context, id domain.Ki
 	return nil
 }
 
-func (s *Synchronizer) handleSyncPatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) error {
+func (s *Synchronizer) handleSyncPatchObject(ctx context.Context, id domain.KindName, checksum string, patch []byte) (err error) {
+	finish := telemetry.Default().Begin(ctx, "patch")
+	defer func() { finish(err, 0) }()
 	for _, adapter := range s.adapters {
 		err := adapter.PatchObject(ctx, id, checksum, patch)
 		if err != nil {
@@ -565,7 +610,9 @@ func (s *Synchronizer) handleSyncPatchObject(ctx context.Context, id domain.Kind
 	return nil
 }
 
-func (s *Synchronizer) handleSyncPutObject(ctx context.Context, id domain.KindName, checksum string, object []byte) error {
+func (s *Synchronizer) handleSyncPutObject(ctx context.Context, id domain.KindName, checksum string, object []byte) (err error) {
+	finish := telemetry.Default().Begin(ctx, "put")
+	defer func() { finish(err, 0) }()
 	for _, adapter := range s.adapters {
 		err := adapter.PutObject(ctx, id, checksum, object)
 		if err != nil {
@@ -806,7 +853,14 @@ func (s *Synchronizer) connection() net.Conn {
 }
 
 // dispatch hands messages to the single writer without uncancellable pool waiters.
-func (s *Synchronizer) dispatch(ctx context.Context, data []byte) error {
+func (s *Synchronizer) dispatch(ctx context.Context, data []byte) (err error) {
+	finish := telemetry.Default().Begin(ctx, "dispatch")
+	defer func() {
+		finish(err, 0)
+		if err != nil {
+			telemetry.Default().Drop(ctx, "canceled")
+		}
+	}()
 	if err := ctx.Err(); err != nil {
 		return err
 	}

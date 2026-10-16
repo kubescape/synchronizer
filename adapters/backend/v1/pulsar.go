@@ -3,6 +3,8 @@ package backend
 import (
 	"context"
 	"fmt"
+	"github.com/kubescape/synchronizer/telemetry"
+	"go.opentelemetry.io/otel/propagation"
 	"os"
 	"strings"
 	"sync"
@@ -186,14 +188,25 @@ func NewPulsarMessageProducer(cfg config.Config, pulsarClient pulsarconnector.Cl
 }
 
 func (p *PulsarMessageProducer) ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte, optionalProperties ...map[string]string) error {
+	finish := telemetry.Default().Begin(ctx, "mq_produce")
+
 	producerMessage := NewProducerMessage(messaging.SynchronizerServerProducerKey, id.Account, id.Cluster, eventType, payload, optionalProperties...)
-	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
+	propagation.TraceContext{}.Inject(ctx, propagation.MapCarrier(producerMessage.Properties))
+	p.producer.SendAsync(ctx, producerMessage, func(id pulsar.MessageID, msg *pulsar.ProducerMessage, err error) {
+		finish(err, len(payload))
+		logPulsarSyncAsyncErrors(id, msg, err)
+	})
 	return nil
 }
 
 func (p *PulsarMessageProducer) ProduceMessageWithoutIdentifier(ctx context.Context, eventType string, payload []byte) error {
+	finish := telemetry.Default().Begin(ctx, "mq_produce")
 	producerMessage := NewProducerMessage(messaging.SynchronizerServerProducerKey, "", "", eventType, payload)
-	p.producer.SendAsync(ctx, producerMessage, logPulsarSyncAsyncErrors)
+	propagation.TraceContext{}.Inject(ctx, propagation.MapCarrier(producerMessage.Properties))
+	p.producer.SendAsync(ctx, producerMessage, func(id pulsar.MessageID, msg *pulsar.ProducerMessage, err error) {
+		finish(err, len(payload))
+		logPulsarSyncAsyncErrors(id, msg, err)
+	})
 	return nil
 }
 
@@ -233,6 +246,7 @@ func logPulsarSyncAsyncErrors(msgID pulsar.MessageID, message *pulsar.ProducerMe
 // consumers of adapters/backend/v1 depend on.
 func NewProducerMessage(producerMessageKey, account, cluster, eventType string, payload []byte, optionalProperties ...map[string]string) *pulsar.ProducerMessage {
 	properties := messaging.BuildProducerProperties(account, cluster, eventType, optionalProperties...)
+
 	// BuildProducerProperties always stamps the self-produced source header, which
 	// the server's read loop uses to skip its own messages (IsSelfProducedMessage).
 	// Only the synchronizer server (identified by its producer key) may claim that
