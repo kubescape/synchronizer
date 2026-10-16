@@ -36,7 +36,7 @@ type Synchronizer struct {
 	workerCtx     context.Context
 	disconnected  atomic.Bool
 	cancel        context.CancelFunc
-	inPool        *ants.PoolWithFunc
+	inPool        *ants.PoolWithFunc // publication and shutdown snapshot guarded by connMu
 	readDataFunc  func(rw io.ReadWriter) ([]byte, error)
 	writeDataFunc func(w io.Writer, p []byte) error
 }
@@ -250,17 +250,18 @@ func (s *Synchronizer) Stop(ctx context.Context) error {
 	if s.Conn != nil {
 		conn = *s.Conn
 	}
+	pool := s.inPool
 	s.connMu.Unlock()
 	if conn != nil {
 		_ = conn.Close()
 	}
-	if s.inPool != nil {
+	if pool != nil {
 		logger.L().Info("releasing in pool",
 			helpers.String("account", identifier.Account),
 			helpers.String("cluster", identifier.Cluster),
 			helpers.String("connId", identifier.ConnectionId),
 			helpers.String("host", hostname))
-		s.inPool.Release()
+		pool.Release()
 	}
 
 	return s.stopAdapters(ctx)
@@ -277,10 +278,9 @@ func (s *Synchronizer) stopAdapters(ctx context.Context) error {
 }
 
 func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
-	var err error
 	clientId := utils.ClientIdentifierFromContext(ctx)
 	// incoming message pool
-	s.inPool, err = ants.NewPoolWithFunc(1, func(i any) {
+	pool, err := ants.NewPoolWithFunc(1, func(i any) {
 		ctx := ctx // message context must not mutate the reader goroutine context
 		data, ok := i.([]byte)
 		if !ok {
@@ -506,6 +506,16 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to create incoming message pool: %w", err)
 	}
+	// Publish under the same lock that cancels and snapshots the pool in Stop.
+	// If shutdown won before creation completed, release the unpublished pool.
+	s.connMu.Lock()
+	if err := s.workerCtx.Err(); err != nil {
+		s.connMu.Unlock()
+		pool.Release()
+		return err
+	}
+	s.inPool = pool
+	s.connMu.Unlock()
 	// process incoming messages
 	for {
 		if err := backoff.RetryNotify(func() error {
@@ -527,7 +537,7 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 					return backoff.Permanent(fmt.Errorf("cannot read data: %w", err))
 				}
 			}
-			err = s.inPool.Invoke(data)
+			err = pool.Invoke(data)
 			if err != nil {
 				return fmt.Errorf("invoke inPool: %w", err)
 			}

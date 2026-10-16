@@ -234,3 +234,18 @@ isolated ten-second-cap suppression, statistical root-sampling ratio, complete
 downstream trace continuity, peak/attributed
 resource overhead, and live hourly/fleet byte budgets. Shared-provider option APIs and
 collector admission controls remain cross-repository follow-ups, not changes in this run.
+
+
+## Subsequent review corrections
+
+The live artifact remains the commit/digest listed above. Subsequent Copilot review
+found a race between incoming-pool initialization and shutdown. Pool publication and
+shutdown cancellation now share the existing connection-state lock; startup releases
+an unpublished pool when shutdown wins. Deterministic early-stop and repeated concurrent
+Start/Stop race regressions reproduce the original failures and pass with the fix.
+This follow-up was verified locally, not redeployed in the recorded experiment.
+
+The separate integration-test module also now declares the existing gRPC exporter
+versions and missing content checksums. Its readonly telemetry tests pass. Full local
+integration compilation remains blocked by the pinned private ingester module exceeding
+Go's 500 MiB source-archive limit; no cross-repository dependency change was made.
