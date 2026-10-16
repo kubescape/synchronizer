@@ -94,7 +94,8 @@ Histogram boundaries: **0.001, 0.01, 0.1, 1, 5, 30 seconds** (seven buckets incl
 rule evaluation buckets. The theoretical inventory bound is 108 OTLP data
 points per resource/export if every allowed attribute combination occurs; 14
 are histograms. Classic Prometheus histogram expansion would make that 220
-series, excluding resource labels, exemplars, and other instrumentation. Actual
+series; the observed SigNoz min/max expansion would instead make the theoretical
+limit 248. Both exclude resource labels, exemplars, and other instrumentation. Actual
 combinations are a subset. Resource cardinality still grows with replicas and
 rollouts; bounded dimensions do not bound fleet size.
 
@@ -123,6 +124,13 @@ replay would bypass these gates. The shared bounded 7,500-record ring still
 retains accepted, sanitized records; there is no component flush endpoint.
 SDK errors print fixed text to stderr at most once/minute and increment the
 error counter, without logging endpoints or credentials.
+
+## Live staging verification
+
+The cluster client was temporarily deployed and restored on October 16, 2026.
+[Live stage validation](telemetry-stage-validation.md) records same-cluster SigNoz
+ingestion, default cadence, controlled failures, cardinality and shutdown evidence.
+Those live observations are separate from the local synthetic byte measurements below.
 
 ## Deployment evidence and limitations
 
@@ -157,8 +165,9 @@ review existing Prometheus cardinality; deploy and verify collector admission
 limits/quotas. Authentication, retention and container memory limits do not
 protect ingest volume.
 
-Live deployment environment, credentials, collector policies and production
-sampling/bytes were **not** verified. Broker queue depths, Kubernetes watch queue
+The linked live report verifies the staging client deployment and collector path.
+Production deployment, the backend-server identity, root-sampling statistics and
+hourly/fleet bytes remain unverified. Broker queue depths, Kubernetes watch queue
 loss, reconciliation scheduling delays and process CPU/memory are not covered by
 this inventory. Backend outages lose telemetry when bounded SDK queues fill;
 core processing does not wait for exporter RPCs. A stalled operation is visible
