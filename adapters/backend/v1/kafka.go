@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/kubescape/synchronizer/telemetry"
+	"go.opentelemetry.io/otel/propagation"
 	"os"
 	"strings"
 	"sync"
@@ -273,23 +275,28 @@ func NewKafkaMessageProducer(cfg config.Config) (*KafkaMessageProducer, error) {
 }
 
 func (p *KafkaMessageProducer) ProduceMessage(ctx context.Context, id domain.ClientIdentifier, eventType string, payload []byte, optionalProperties ...map[string]string) error {
+	finish := telemetry.Default().Begin(ctx, "mq_produce")
+
 	properties := messaging.BuildProducerProperties(id.Account, id.Cluster, eventType, optionalProperties...)
+	propagation.TraceContext{}.Inject(ctx, propagation.MapCarrier(properties))
 	record := &kgo.Record{
 		Key:     kafkaPartitionKey(id.Account, id.Cluster),
 		Value:   payload,
 		Headers: kafkaHeadersFromProperties(properties),
 	}
-	p.client.Produce(ctx, record, logKafkaProduceResult)
+	p.client.Produce(ctx, record, func(record *kgo.Record, err error) { finish(err, len(payload)); logKafkaProduceResult(record, err) })
 	return nil
 }
 
 func (p *KafkaMessageProducer) ProduceMessageWithoutIdentifier(ctx context.Context, eventType string, payload []byte) error {
+	finish := telemetry.Default().Begin(ctx, "mq_produce")
 	properties := messaging.BuildProducerProperties("", "", eventType)
+	propagation.TraceContext{}.Inject(ctx, propagation.MapCarrier(properties))
 	record := &kgo.Record{
 		Value:   payload,
 		Headers: kafkaHeadersFromProperties(properties),
 	}
-	p.client.Produce(ctx, record, logKafkaProduceResult)
+	p.client.Produce(ctx, record, func(record *kgo.Record, err error) { finish(err, len(payload)); logKafkaProduceResult(record, err) })
 	return nil
 }
 

@@ -10,7 +10,9 @@ import (
 	"github.com/kubescape/go-logger/helpers"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/domain"
+	"github.com/kubescape/synchronizer/telemetry"
 	"github.com/kubescape/synchronizer/utils"
+	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/multierr"
 )
 
@@ -28,7 +30,10 @@ func kindFromPayload(ctx context.Context, kindStr, messageType string) (*domain.
 	return kind, nil
 }
 
-func (h *MessageHandler) Handle(ctx context.Context, adapter adapters.Adapter, msg IncomingMessage) error {
+func (h *MessageHandler) Handle(ctx context.Context, adapter adapters.Adapter, msg IncomingMessage) (result error) {
+	ctx = propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier(msg.Properties))
+	finish := telemetry.Default().Begin(ctx, "mq_receive")
+	defer func() { finish(result, len(msg.Payload)) }()
 	msgProperties := msg.Properties
 	clientIdentifier := domain.ClientIdentifier{
 		Account: msgProperties[MsgPropAccount],

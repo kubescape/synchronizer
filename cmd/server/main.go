@@ -14,11 +14,15 @@ import (
 	"github.com/kubescape/synchronizer/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	backendUtils "github.com/kubescape/backend/pkg/utils"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
+	"github.com/kubescape/go-logger/otelsetup"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/adapters/backend/v1"
 	"github.com/kubescape/synchronizer/cmd/server/authentication"
+	"github.com/kubescape/synchronizer/telemetry"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/core"
@@ -45,14 +49,38 @@ func notifyShutdownSignals() (<-chan os.Signal, func()) {
 }
 
 func main() {
+	if err := run(); err != nil {
+		logger.L().Fatal("synchronizer server stopped", helpers.Error(err))
+	}
+}
+
+func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// load config
 	cfg, err := config.LoadConfig("/etc/config")
 	if err != nil {
-		logger.L().Fatal("unable to load configuration", helpers.Error(err))
+		return fmt.Errorf("load configuration: %w", err)
 	}
+
+	// The multi-tenant server has no customer identity of its own. Only use a
+	// dedicated mounted telemetry credential, never an incoming request's key.
+	providerConfig := otelsetup.ProviderConfig{ServiceName: "synchronizer-server", ServiceVersion: os.Getenv("RELEASE"),
+		NodeName: os.Getenv("NODE_NAME"), PodName: os.Getenv("POD_NAME"), Namespace: os.Getenv("POD_NAMESPACE")}
+	if credentials, err := backendUtils.LoadCredentialsFromFile("/etc/credentials"); err == nil {
+		providerConfig.AccountID = credentials.Account
+		providerConfig.AccessKey = credentials.AccessKey
+	}
+	// Unlike the cluster client, discover only when an API URL was supplied for
+	// this backend deployment; the public default is not an internal identity.
+	apiURL := os.Getenv("API_URL")
+	if apiURL == "" {
+		if _, present := os.LookupEnv(telemetry.EndpointEnv); !present && os.Getenv("OTEL_COLLECTOR_SVC") == "" {
+			_ = os.Setenv(telemetry.EndpointEnv, "")
+		}
+	}
+	defer telemetry.Init(ctx, providerConfig, apiURL)()
 
 	// enable prometheus metrics
 	if cfg.Backend.Prometheus != nil && cfg.Backend.Prometheus.Enabled {
@@ -91,10 +119,10 @@ func main() {
 			logger.L().Info("shutting down before the server started serving")
 		}
 		mq.Shutdown()
-		return
+		return nil
 	}
 	if err != nil {
-		logger.L().Fatal("failed to initialize message queue", helpers.Error(err))
+		return fmt.Errorf("initialize message queue: %w", err)
 	}
 	if mq != nil {
 		defer mq.Shutdown()
@@ -141,17 +169,23 @@ func main() {
 
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.L().Error("websocket server stopped unexpectedly", helpers.Error(err))
-		return
+		return nil
 	}
 
 	<-shutdownDone
+	return nil
 }
 
 // Keep the upgrade handler alive for the connection lifetime: its context owns
 // the synchronizer's writer and must not be cancelled immediately after upgrade.
 func synchronizationHandler(adapter adapters.Adapter) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := propagation.TraceContext{}.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		controlCtx, finish := telemetry.Default().Control(ctx, "connect")
 		conn, _, _, err := ws.UpgradeHTTP(r, w)
+		finish(err)
+		// Keep the propagated context, but do not retain a connection-lifetime span.
+		r = r.WithContext(controlCtx)
 		if err != nil {
 			logger.L().Error("unable to upgrade connection", helpers.Error(err))
 			return
