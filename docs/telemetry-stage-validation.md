@@ -246,6 +246,19 @@ Start/Stop race regressions reproduce the original failures and pass with the fi
 This follow-up was verified locally, not redeployed in the recorded experiment.
 
 The separate integration-test module also now declares the existing gRPC exporter
-versions and missing content checksums. Its readonly telemetry tests pass. Full local
-integration compilation remains blocked by the pinned private ingester module exceeding
-Go's 500 MiB source-archive limit; no cross-repository dependency change was made.
+versions and missing content checksums. Its readonly telemetry tests pass. An initial compilation attempt hit Go's
+500 MiB source-archive limit for the pinned private ingester. Retrying with the CI
+setting `GIT_LFS_SKIP_SMUDGE=1` passed readonly integration-test compilation:
+`go test -mod=readonly -tags=integration -run '^$' ./...` from `tests/`. This compiles
+the test package without running its broker/Kubernetes scenarios. No dependency
+version or cross-repository change was needed.
+
+
+A second review found that the existing HTTP proxy dialer discarded cancellation,
+which could prevent the new client SIGTERM path from returning during a silent CONNECT
+handshake. Direct/proxy TCP establishment now uses context-aware dialers; cancellation
+closes in-progress CONNECT I/O. A successful tunnel detaches the cancellation callback
+and clears the handshake deadline so its lifetime is not limited by the dial context.
+Silent-proxy, canceled TCP-forward, and post-deadline tunnel regressions passed 20
+repeated race-detector runs. This transport correction was locally verified after the
+recorded staging deployment; it was not part of that tested image.
