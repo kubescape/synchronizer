@@ -138,40 +138,7 @@ func run() error {
 
 	// websocket client
 	newConn := func() (net.Conn, error) {
-		var conn net.Conn
-		if err := backoff.RetryNotify(func() error {
-			attemptCtx, finish := telemetry.Default().Control(ctx, "connect")
-			attemptDialer := dialer
-			headers := http.Header{}
-			propagation.TraceContext{}.Inject(attemptCtx, propagation.HeaderCarrier(headers))
-			attemptDialer.Header = ws.HandshakeHeaderFunc(func(w io.Writer) (int64, error) {
-				n, err := dialer.Header.WriteTo(w)
-				if err != nil {
-					return n, err
-				}
-				var b bytes.Buffer
-				_ = headers.Write(&b)
-				m, err := w.Write(b.Bytes())
-				return n + int64(m), err
-			})
-			conn, _, _, err = attemptDialer.Dial(attemptCtx, cfg.InCluster.ServerUrl)
-			finish(err)
-			var status ws.StatusError
-			if errors.As(err, &status) && status == http.StatusFailedDependency {
-				return backoff.Permanent(fmt.Errorf("server rejected our client version <%s>, please update", version))
-			}
-			if errors.As(err, &status) && status == http.StatusUnauthorized {
-				logger.L().Info("authentication failed", helpers.Error(err), helpers.String("url", cfg.InCluster.ServerUrl))
-				return backoff.Permanent(fmt.Errorf("server rejected our credentials"))
-			}
-			return err
-		}, backoff.WithContext(utils.NewBackOff(false), ctx), func(err error, d time.Duration) {
-			logger.L().Ctx(ctx).Warning("connection error", helpers.Error(err),
-				helpers.String("retry in", d.String()))
-		}); err != nil {
-			return nil, fmt.Errorf("unable to create websocket connection: %w", err)
-		}
-		return conn, nil
+		return connectWebsocket(ctx, dialer, cfg.InCluster.ServerUrl, version)
 	}
 
 	conn, err := newConn()
@@ -196,4 +163,43 @@ func run() error {
 		return fmt.Errorf("synchronize: %w", err)
 	}
 	return nil
+}
+
+// connectWebsocket owns each attempt error independently of the caller lifecycle.
+func connectWebsocket(ctx context.Context, dialer ws.Dialer, serverURL, version string) (net.Conn, error) {
+	var conn net.Conn
+	if err := backoff.RetryNotify(func() error {
+		attemptCtx, finish := telemetry.Default().Control(ctx, "connect")
+		attemptDialer := dialer
+		headers := http.Header{}
+		propagation.TraceContext{}.Inject(attemptCtx, propagation.HeaderCarrier(headers))
+		attemptDialer.Header = ws.HandshakeHeaderFunc(func(w io.Writer) (int64, error) {
+			n, err := dialer.Header.WriteTo(w)
+			if err != nil {
+				return n, err
+			}
+			var b bytes.Buffer
+			_ = headers.Write(&b)
+			m, err := w.Write(b.Bytes())
+			return n + int64(m), err
+		})
+		var err error
+		conn, _, _, err = attemptDialer.Dial(attemptCtx, serverURL)
+		finish(err)
+		var status ws.StatusError
+		if errors.As(err, &status) && status == http.StatusFailedDependency {
+			return backoff.Permanent(fmt.Errorf("server rejected our client version <%s>, please update", version))
+		}
+		if errors.As(err, &status) && status == http.StatusUnauthorized {
+			logger.L().Info("authentication failed", helpers.Error(err), helpers.String("url", serverURL))
+			return backoff.Permanent(fmt.Errorf("server rejected our credentials"))
+		}
+		return err
+	}, backoff.WithContext(utils.NewBackOff(false), ctx), func(err error, d time.Duration) {
+		logger.L().Ctx(ctx).Warning("connection error", helpers.Error(err),
+			helpers.String("retry in", d.String()))
+	}); err != nil {
+		return nil, fmt.Errorf("unable to create websocket connection: %w", err)
+	}
+	return conn, nil
 }

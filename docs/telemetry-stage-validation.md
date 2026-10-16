@@ -262,3 +262,10 @@ and clears the handshake deadline so its lifetime is not limited by the dial con
 Silent-proxy, canceled TCP-forward, and post-deadline tunnel regressions passed 20
 repeated race-detector runs. This transport correction was locally verified after the
 recorded staging deployment; it was not part of that tested image.
+
+Copilot review `5547794310` also identified the reconnect callback capturing
+`run`'s lifecycle error. Connection retries now execute in `connectWebsocket`,
+with an error local to each dial attempt, so the writer cannot overwrite the
+error returned by `Start`. A cancellation-during-reconnect regression runs 100
+iterations per test; 20 race-detector repetitions pass. Root short tests, vet and
+command builds pass. This follow-up was locally verified, not deployed live.
