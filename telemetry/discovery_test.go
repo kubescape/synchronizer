@@ -130,3 +130,41 @@ func TestDefaultsRespectOverrides(t *testing.T) {
 	require.Equal(t, "parentbased_traceidratio", os.Getenv("OTEL_TRACES_SAMPLER"))
 	require.Equal(t, "gzip", os.Getenv("OTEL_EXPORTER_OTLP_COMPRESSION"))
 }
+
+func TestNoDiscoveryWithoutAPIURL(t *testing.T) {
+	for _, tc := range []struct {
+		name, base, legacy, want string
+		present                  bool
+	}{
+		{name: "OSS"},
+		{name: "explicit", base: "http://collector:4317", present: true, want: "http://collector:4317"},
+		{name: "legacy", legacy: "collector:4317", want: "collector:4317"},
+		{name: "empty-over-legacy", present: true, legacy: "collector:4317"},
+		{name: "disable", base: "disable", present: true, legacy: "collector:4317"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			unset(t, EndpointEnv)
+			unset(t, "OTEL_COLLECTOR_SVC")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://metrics:4317")
+			t.Setenv("OTEL_EVENTS_EXPORTER_ENDPOINT", "http://events:4317")
+			if tc.present {
+				t.Setenv(EndpointEnv, tc.base)
+			}
+			if tc.legacy != "" {
+				t.Setenv("OTEL_COLLECTOR_SVC", tc.legacy)
+			}
+			require.NoError(t, ConfigureEndpoint(context.Background(), "", func(context.Context, string) (schema.IBackendServices, error) {
+				t.Fatal("absent API URL must never invoke discovery")
+				return nil, nil
+			}))
+			require.Equal(t, tc.want, os.Getenv(EndpointEnv))
+			require.Equal(t, "http://events:4317", os.Getenv("OTEL_EVENTS_EXPORTER_ENDPOINT"))
+			if tc.name != "disable" {
+				require.Equal(t, "http://metrics:4317", os.Getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"))
+			}
+		})
+	}
+	// Defense in depth: the URL/parser dependency must never supply a cloud default.
+	_, err := LoadServices(context.Background(), "")
+	require.EqualError(t, err, "discovery API URL is not configured")
+}

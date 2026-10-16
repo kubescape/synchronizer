@@ -269,3 +269,14 @@ with an error local to each dial attempt, so the writer cannot overwrite the
 error returned by `Start`. A cancellation-during-reconnect regression runs 100
 iterations per test; 20 race-detector repetitions pass. Root short tests, vet and
 command builds pass. This follow-up was locally verified, not deployed live.
+
+OSS activation follow-up: client and server now require an explicit nonempty
+`API_URL` for discovery. Removed the implicit cloud fallback in telemetry and
+client service lookup; an absent API URL keeps the configured synchronizer
+server URL. Unconfigured signals stay no-op, and optional missing mounted
+credentials emit no warning. Explicit base/legacy/per-signal collectors retain
+precedence and can operate without authentication. Fresh-process tests verify
+no discovery, concrete no-op providers, console output, opt-out/empty behavior,
+single-signal activation, and actual local OTLP receipt of all three signals
+without credential headers. These checks use local services only; this change
+was not redeployed and does not expand the live evidence above.

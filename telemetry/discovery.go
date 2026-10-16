@@ -19,6 +19,9 @@ const EndpointEnv = "OTEL_EXPORTER_OTLP_ENDPOINT"
 // LoadServices reuses the v3 client URL/parser with a bounded transport. The
 // shared client's Get uses http.Get without a deadline or response-body close.
 func LoadServices(ctx context.Context, base string) (schema.IBackendServices, error) {
+	if base == "" {
+		return nil, errors.New("discovery API URL is not configured")
+	}
 	client, err := v3.NewServiceDiscoveryClientV3(base)
 	if err != nil {
 		return nil, err
@@ -64,6 +67,11 @@ func ConfigureEndpoint(ctx context.Context, base string, get func(context.Contex
 	}
 	if legacy, present := os.LookupEnv("OTEL_COLLECTOR_SVC"); present && legacy != "" {
 		return os.Setenv(EndpointEnv, legacy)
+	}
+	// An absent backend URL is an OSS deployment, not implicit cloud opt-in.
+	// Explicit and legacy endpoints above remain usable without discovery.
+	if base == "" {
+		return nil
 	}
 	services, err := get(ctx, base)
 	if err != nil {

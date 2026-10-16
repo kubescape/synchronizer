@@ -56,9 +56,7 @@ func run() error {
 	}
 
 	// load credentials (access key & account)
-	if credentials, err := backendUtils.LoadCredentialsFromFile("/etc/credentials"); err != nil {
-		fmt.Fprintln(os.Stderr, "failed to load credentials")
-	} else {
+	if credentials, err := backendUtils.LoadCredentialsFromFile("/etc/credentials"); err == nil {
 		cfg.InCluster.AccessKey = credentials.AccessKey
 		cfg.InCluster.Account = credentials.Account
 	}
@@ -75,13 +73,12 @@ func run() error {
 	}, os.Getenv("API_URL"))()
 
 	apiURL := os.Getenv("API_URL")
-	if apiURL == "" {
-		apiURL = "api.armosec.io"
-	}
-	if services, err := telemetry.LoadServices(ctx, apiURL); err != nil {
-		logger.L().Warning("failed discovering synchronizer URL")
-	} else if serverURL := services.GetSynchronizerUrl(); serverURL != "" {
-		cfg.InCluster.ServerUrl = serverURL
+	if apiURL != "" {
+		if services, err := telemetry.LoadServices(ctx, apiURL); err != nil {
+			logger.L().Warning("failed discovering synchronizer URL")
+		} else if serverURL := services.GetSynchronizerUrl(); serverURL != "" {
+			cfg.InCluster.ServerUrl = serverURL
+		}
 	}
 
 	// init adapters

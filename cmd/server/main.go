@@ -72,15 +72,7 @@ func run() error {
 		providerConfig.AccountID = credentials.Account
 		providerConfig.AccessKey = credentials.AccessKey
 	}
-	// Unlike the cluster client, discover only when an API URL was supplied for
-	// this backend deployment; the public default is not an internal identity.
-	apiURL := os.Getenv("API_URL")
-	if apiURL == "" {
-		if _, present := os.LookupEnv(telemetry.EndpointEnv); !present && os.Getenv("OTEL_COLLECTOR_SVC") == "" {
-			_ = os.Setenv(telemetry.EndpointEnv, "")
-		}
-	}
-	defer telemetry.Init(ctx, providerConfig, apiURL)()
+	defer telemetry.Init(ctx, providerConfig, os.Getenv("API_URL"))()
 
 	// enable prometheus metrics
 	if cfg.Backend.Prometheus != nil && cfg.Backend.Prometheus.Enabled {

@@ -31,6 +31,7 @@ type exportCounts struct {
 	wire, protobuf      map[string]int
 	series, spans, logs int
 	authenticated       bool
+	authPresent         bool
 	correlated          bool
 }
 
@@ -43,6 +44,7 @@ func (c *exportCounts) add(ctx context.Context, signal string, m proto.Message) 
 		c.leaked = true
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
+	c.authPresent = c.authPresent || len(md.Get("x-api-key")) > 0 || len(md.Get("x-api-account")) > 0
 	if len(md.Get("x-api-key")) != 1 || md.Get("x-api-key")[0] != "test-key" || len(md.Get("x-api-account")) != 1 || md.Get("x-api-account")[0] != "test-account" {
 		c.authenticated = false
 	}

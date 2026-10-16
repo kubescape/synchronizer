@@ -35,11 +35,11 @@ client `logger.InitOtel`/Uptrace initialization has been removed.
 
 | Setting | Effective component default / precedence |
 | --- | --- |
-| Discovery source | Existing backend v3 client URL/parser; `metrics` field. Client: `API_URL`, default `api.armosec.io`. Server: discovery only with explicit nonempty `API_URL`. |
-| Endpoint precedence | Base `disable` (case insensitive, surrounding whitespace accepted) disables all operational signals and skips telemetry discovery. Otherwise an explicitly present base wins, **including empty**. If base unset, nonempty legacy `OTEL_COLLECTOR_SVC` wins; otherwise discover. Per-signal OTLP endpoints override an ordinary base. |
+| Discovery source | Existing backend v3 client URL/parser; `metrics` field. Client and server: discovery only with explicit nonempty `API_URL`; no cloud fallback. |
+| Endpoint precedence | Base `disable` (case insensitive, surrounding whitespace accepted) disables all operational signals and skips telemetry discovery. Otherwise an explicitly present base wins, **including empty**. If base unset, nonempty legacy `OTEL_COLLECTOR_SVC` wins; otherwise discover only with `API_URL`. Per-signal OTLP endpoints override an ordinary base. |
 | Discovered URL | Scheme-less values get `https://`; explicit schemes remain unchanged, as in the reference normalization contract. Shared setup exports OTLP/gRPC; configure HTTP(S) gRPC collector URLs. |
 | Service identity | `synchronizer-client` or `synchronizer-server`; version `RELEASE` from image build. Client cluster/namespace from existing config, overridden by cluster data and `CLUSTER_NAME`; node/pod from `NODE_NAME`/`POD_NAME`. Server namespace from `POD_NAMESPACE`. |
-| Authentication | Existing account/access key passed through `ProviderConfig`; shared setup attaches `X-API-ACCOUNT` and `X-API-KEY` to each signal's RPC. Never instrument incoming server request credentials. |
+| Authentication | Existing account/access key passed through `ProviderConfig`; when the access key is nonempty, shared setup attaches `X-API-ACCOUNT` and `X-API-KEY` to each signal's RPC. Missing credentials are nonfatal; an explicit collector works unauthenticated. Never instrument incoming server request credentials. |
 | Metric interval | `OTEL_METRIC_EXPORT_INTERVAL=60000` ms; 60 s gives operational capacity/troubleshooting visibility without event-rate export. No runtime instrumentation is started implicitly. |
 | Trace sampler | `OTEL_TRACES_SAMPLER=parentbased_traceidratio`, `OTEL_TRACES_SAMPLER_ARG=0.1`. Sampled remote parents are honored; local creation gates still apply. |
 | Exported log level | Fixed warn-and-above **plus** component scope/body allowlist. Existing local logger name/level still follow `KS_LOGGER_NAME` / `KS_LOGGER_LEVEL`; default remains pretty/info. Selecting debug does not export existing debug/info records. |
@@ -61,8 +61,17 @@ request grouping; it is not an ingest quota.
 `disable` clears per-signal operational endpoints and the legacy alias as well
 as the base. Explicit empty base suppresses discovery/legacy fallback but still
 allows explicitly configured per-signal endpoints. Telemetry opt-out does not
-skip the client's separate synchronizer-server URL lookup. The independent
+skip the client's separate synchronizer-server URL lookup when `API_URL` is supplied. The independent
 `OTEL_EVENTS_EXPORTER_ENDPOINT` is never read or changed here.
+
+With no `API_URL` and no base, legacy or per-signal OTLP endpoint, all three
+signals remain no-op: no discovery or telemetry exports, and no missing
+telemetry-credential warning. Console logging stays enabled. The client retains
+its configured synchronizer WebSocket URL when `API_URL` is absent. OSS users
+can set `OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317` without credentials,
+or configure only a per-signal endpoint; other signals remain no-op. Explicit
+empty base still suppresses discovery and the legacy alias while allowing
+per-signal overrides. These activation rules apply to both client and server.
 
 ## Instrumentation inventory
 

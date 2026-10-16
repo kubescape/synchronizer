@@ -29,9 +29,6 @@ var suppressedLogs atomic.Int64
 // are nonfatal; errors are deliberately fixed text to avoid leaking endpoints.
 func Init(ctx context.Context, cfg otelsetup.ProviderConfig, apiURL string) func() {
 	once.Do(func() {
-		if apiURL == "" {
-			apiURL = "api.armosec.io"
-		}
 		if err := ConfigureEndpoint(ctx, apiURL, LoadServices); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 		}
