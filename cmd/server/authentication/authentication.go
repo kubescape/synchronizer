@@ -2,6 +2,7 @@ package authentication
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"sync"
@@ -51,6 +52,21 @@ func unconfiguredCredentialsReason(account, accessKey string) string {
 		return "accessKey length is not 36 (not a valid ARMO access key) — customer likely did not substitute Helm values"
 	}
 	return ""
+}
+
+// maxDrainBytes bounds how much of an authentication response we are willing to
+// read just to let the connection be reused. The body itself is never used.
+const maxDrainBytes = 4 << 10
+
+// discardBody drains (up to maxDrainBytes) and closes an HTTP response body.
+// Without this, every authenticated connection leaks one connection to the
+// authentication server: the body is never closed, so the transport can neither
+// reuse it nor release it. Draining first matters too, since a body that is
+// closed before EOF makes the transport drop the connection instead of
+// returning it to the idle pool.
+func discardBody(body io.ReadCloser) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, maxDrainBytes))
+	_ = body.Close()
 }
 
 func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next http.Handler) http.Handler {
@@ -126,6 +142,12 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 				helpers.String("url", u.String()))
 
 			response, err := client.Do(authenticationRequest)
+			if err == nil {
+				// Only the status code is used. Release the body now rather than
+				// with a defer: this handler stays on the stack for the whole life
+				// of the (long-lived) sync connection via next.ServeHTTP below.
+				discardBody(response.Body)
+			}
 			if err != nil {
 				logger.L().Error("authentication request failed", helpers.Error(err),
 					helpers.String("account", account),
