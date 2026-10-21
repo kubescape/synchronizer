@@ -58,13 +58,23 @@ func unconfiguredCredentialsReason(account, accessKey string) string {
 // read just to let the connection be reused. The body itself is never used.
 const maxDrainBytes = 4 << 10
 
-// discardBody drains (up to maxDrainBytes) and closes an HTTP response body.
-// Without this, every authenticated connection leaks one connection to the
-// authentication server: the body is never closed, so the transport can neither
-// reuse it nor release it. Draining first matters too, since a body that is
-// closed before EOF makes the transport drop the connection instead of
-// returning it to the idle pool.
+// drainTimeout bounds how long discardBody may spend on an authentication
+// response. The byte limit alone is not enough: a server that sends its headers
+// and then stalls would keep a connection that is waiting to be admitted or
+// rejected blocked for as long as it likes. The incoming request's context is not
+// used for this, since it has to stay in charge of the websocket itself.
+var drainTimeout = 2 * time.Second
+
+// discardBody drains (up to maxDrainBytes, for at most drainTimeout) and closes
+// an HTTP response body. Without this, every authenticated connection leaks one
+// connection to the authentication server: the body is never closed, so the
+// transport can neither reuse it nor release it. Draining first matters too,
+// since a body that is closed before EOF makes the transport drop the connection
+// instead of returning it to the idle pool.
 func discardBody(body io.ReadCloser) {
+	// Closing the body is what interrupts a Read that is blocked on a stalled server.
+	timer := time.AfterFunc(drainTimeout, func() { _ = body.Close() })
+	defer timer.Stop()
 	_, _ = io.Copy(io.Discard, io.LimitReader(body, maxDrainBytes))
 	_ = body.Close()
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/core"
@@ -250,6 +251,127 @@ func TestUnconfiguredCredentialsReason(t *testing.T) {
 			}
 			if strings.Contains(got, tc.key) && tc.key != "" {
 				t.Error("reason must never contain the raw access key")
+			}
+		})
+	}
+}
+
+// stalledBody never produces data: Read blocks until the body is closed.
+type stalledBody struct {
+	once   sync.Once
+	closed chan struct{}
+}
+
+func newStalledBody() *stalledBody { return &stalledBody{closed: make(chan struct{})} }
+
+func (b *stalledBody) Read([]byte) (int, error) {
+	<-b.closed
+	return 0, http.ErrBodyReadAfterClose
+}
+
+func (b *stalledBody) Close() error {
+	b.once.Do(func() { close(b.closed) })
+	return nil
+}
+
+func shortDrainTimeout(t *testing.T) {
+	t.Helper()
+	orig := drainTimeout
+	drainTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { drainTimeout = orig })
+}
+
+func TestDiscardBody_GivesUpOnAStalledBody(t *testing.T) {
+	shortDrainTimeout(t)
+	body := newStalledBody()
+
+	returned := make(chan struct{})
+	go func() {
+		discardBody(body)
+		close(returned)
+	}()
+
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("discardBody is still blocked on a body that stalled")
+	}
+	select {
+	case <-body.closed:
+	default:
+		t.Error("the stalled body was not closed")
+	}
+}
+
+// An authentication server can send its status and headers and then stall before
+// the end of the body. That must not hold up admitting or rejecting the connection,
+// and the connection to the authentication server must be released afterwards.
+func TestMiddleware_StalledAuthResponseBodyDoesNotBlockAuthentication(t *testing.T) {
+	tests := []struct {
+		status   int
+		wantNext bool
+	}{
+		{http.StatusOK, true},
+		{http.StatusUnauthorized, false},
+	}
+	for _, tc := range tests {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			shortDrainTimeout(t)
+			released := make(chan struct{}, 1)
+			authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Length", "1000") // promise a body...
+				w.WriteHeader(tc.status)
+				w.(http.Flusher).Flush() // ...send the headers...
+				<-r.Context().Done()     // ...then stall until the client goes away
+				released <- struct{}{}
+			}))
+			t.Cleanup(func() {
+				authServer.CloseClientConnections()
+				authServer.Close()
+			})
+
+			// Use the real client: let the middleware build it.
+			once = sync.Once{}
+			client = nil
+			t.Cleanup(func() {
+				once = sync.Once{}
+				client = nil
+			})
+			nextCalled := false
+			h := AuthenticationServerMiddleware(
+				&config.AuthenticationServerConfig{Url: authServer.URL},
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					nextCalled = true
+					w.WriteHeader(http.StatusOK)
+				}))
+
+			rec := httptest.NewRecorder()
+			finished := make(chan struct{})
+			go func() {
+				h.ServeHTTP(rec, validRequest())
+				close(finished)
+			}()
+			select {
+			case <-finished:
+			case <-time.After(3 * time.Second):
+				t.Fatal("authentication did not complete while the auth server stalled its response body")
+			}
+
+			wantStatus := http.StatusOK
+			if !tc.wantNext {
+				wantStatus = http.StatusUnauthorized
+			}
+			if rec.Code != wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, wantStatus)
+			}
+			if nextCalled != tc.wantNext {
+				t.Errorf("next called = %v, want %v", nextCalled, tc.wantNext)
+			}
+
+			select {
+			case <-released:
+			case <-time.After(3 * time.Second):
+				t.Error("the connection to the auth server was not released")
 			}
 		})
 	}
