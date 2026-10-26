@@ -14,6 +14,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 
+	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -42,7 +43,7 @@ type Synchronizer struct {
 }
 
 func NewSynchronizerClient(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn, newConn func() (net.Conn, error)) (*Synchronizer, error) {
-	s, err := newSynchronizer(mainCtx, adapter, conn, true, wsutil.ReadServerBinary, wsutil.WriteClientBinary)
+	s, err := newSynchronizer(mainCtx, adapter, conn, true, readBinary(ws.StateClientSide, maxMessageBytes), wsutil.WriteClientBinary)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +52,47 @@ func NewSynchronizerClient(mainCtx context.Context, adapter []adapters.Adapter, 
 }
 
 func NewSynchronizerServer(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn) (*Synchronizer, error) {
-	return newSynchronizer(mainCtx, adapter, conn, false, wsutil.ReadClientBinary, wsutil.WriteServerBinary)
+	return newSynchronizer(mainCtx, adapter, conn, false, readBinary(ws.StateServerSide, maxMessageBytes), wsutil.WriteServerBinary)
+}
+
+// maxMessageBytes bounds one websocket message, on both sides: the backend carries at most
+// its Kafka producer's 64 MiB default (defaultKafkaMaxMessageBytes), so a header announcing
+// more comes from a peer that must not be allowed to make this side allocate it.
+const maxMessageBytes = 64 << 20
+
+// readBinary reads the next binary message from rw, as wsutil.ReadClientBinary and
+// ReadServerBinary do, but refuses a frame larger than maxFrameSize before reading its
+// payload, so a peer cannot make this side allocate whatever length it claims.
+func readBinary(state ws.State, maxFrameSize int64) func(rw io.ReadWriter) ([]byte, error) {
+	return func(rw io.ReadWriter) ([]byte, error) {
+		controlHandler := wsutil.ControlFrameHandler(rw, state)
+		rd := wsutil.Reader{
+			Source:         rw,
+			State:          state,
+			CheckUTF8:      true,
+			MaxFrameSize:   maxFrameSize,
+			OnIntermediate: controlHandler,
+		}
+		for {
+			hdr, err := rd.NextFrame()
+			if err != nil {
+				return nil, err
+			}
+			if hdr.OpCode.IsControl() {
+				if err := controlHandler(hdr, &rd); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			if hdr.OpCode&ws.OpBinary == 0 {
+				if err := rd.Discard(); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			return io.ReadAll(&rd)
+		}
+	}
 }
 
 func newSynchronizer(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn, isClient bool, readDataFunc func(rw io.ReadWriter) ([]byte, error), writeDataFunc func(w io.Writer, p []byte) error) (*Synchronizer, error) {
