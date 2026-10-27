@@ -35,6 +35,23 @@ type Backend struct {
 	SkipAlertsFrom       []string                    `mapstructure:"skipAlertsFrom"`
 	FeaturesProvider     *FeaturesProviderConfig     `mapstructure:"featuresProvider"`
 	MessageQueue         *MessageQueueConfig         `mapstructure:"messageQueue"`
+	// MaxMessageBytes bounds one websocket message the server reads from a cluster, over
+	// all its frames. Unset, it follows the Kafka producer's maxMessageBytes, and without
+	// that the core default of 64 MiB.
+	MaxMessageBytes int `mapstructure:"maxMessageBytes"`
+}
+
+// WebSocketMaxMessageBytes is the largest websocket message the server reads: the
+// configured value, else the Kafka producer's limit when one is set, else zero, which
+// leaves the core default in place.
+func (b Backend) WebSocketMaxMessageBytes() int {
+	if b.MaxMessageBytes > 0 {
+		return b.MaxMessageBytes
+	}
+	if b.MessageQueue != nil && b.MessageQueue.KafkaConfig != nil && b.MessageQueue.KafkaConfig.MaxMessageBytes > 0 {
+		return b.MessageQueue.KafkaConfig.MaxMessageBytes
+	}
+	return 0
 }
 
 // MessageQueueConfig selects the message queue backend. When Type is set it
@@ -74,6 +91,10 @@ type InCluster struct {
 	Account                      string     `mapstructure:"account"`
 	AccessKey                    string     `mapstructure:"accessKey"`
 	Resources                    []Resource `mapstructure:"resources"`
+	// MaxMessageBytes bounds one websocket message the client reads from the server, over
+	// all its frames; unset, the core default of 64 MiB applies. Raise it with the
+	// backend's maxMessageBytes when that one is raised.
+	MaxMessageBytes int `mapstructure:"maxMessageBytes"`
 }
 
 type HTTPEndpoint struct {

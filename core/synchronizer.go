@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 
+	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/kubescape/go-logger"
 	"github.com/kubescape/go-logger/helpers"
@@ -41,8 +43,42 @@ type Synchronizer struct {
 	writeDataFunc func(w io.Writer, p []byte) error
 }
 
-func NewSynchronizerClient(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn, newConn func() (net.Conn, error)) (*Synchronizer, error) {
-	s, err := newSynchronizer(mainCtx, adapter, conn, true, wsutil.ReadServerBinary, wsutil.WriteClientBinary)
+// DefaultMaxMessageBytes bounds one websocket message when no limit is configured: the
+// backend's Kafka producer carries 64 MiB by default, and a deployment that raises that
+// limit raises this one through WithMaxMessageBytes on both ends.
+const DefaultMaxMessageBytes = 64 << 20
+
+// errMessageTooLarge ends a read whose message, over all its frames, exceeds the bound.
+var errMessageTooLarge = errors.New("websocket message exceeds the configured limit")
+
+// Option configures a synchronizer.
+type Option func(*options)
+
+type options struct {
+	maxMessageBytes int64
+}
+
+// WithMaxMessageBytes bounds one websocket message this side reads, over all its frames;
+// zero or less keeps DefaultMaxMessageBytes.
+func WithMaxMessageBytes(n int64) Option {
+	return func(o *options) {
+		if n > 0 {
+			o.maxMessageBytes = n
+		}
+	}
+}
+
+func applyOptions(opts []Option) options {
+	o := options{maxMessageBytes: DefaultMaxMessageBytes}
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return o
+}
+
+func NewSynchronizerClient(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn, newConn func() (net.Conn, error), opts ...Option) (*Synchronizer, error) {
+	o := applyOptions(opts)
+	s, err := newSynchronizer(mainCtx, adapter, conn, true, readBinary(ws.StateClientSide, o.maxMessageBytes), wsutil.WriteClientBinary)
 	if err != nil {
 		return nil, err
 	}
@@ -50,8 +86,53 @@ func NewSynchronizerClient(mainCtx context.Context, adapter []adapters.Adapter, 
 	return s, nil
 }
 
-func NewSynchronizerServer(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn) (*Synchronizer, error) {
-	return newSynchronizer(mainCtx, adapter, conn, false, wsutil.ReadClientBinary, wsutil.WriteServerBinary)
+func NewSynchronizerServer(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn, opts ...Option) (*Synchronizer, error) {
+	o := applyOptions(opts)
+	return newSynchronizer(mainCtx, adapter, conn, false, readBinary(ws.StateServerSide, o.maxMessageBytes), wsutil.WriteServerBinary)
+}
+
+// readBinary reads the next binary message from rw, as wsutil.ReadClientBinary and
+// ReadServerBinary do, within maxMessageBytes: a frame whose header announces more is
+// refused before its payload is read, and a message that grows past the bound over its
+// continuation frames, which the reader joins, ends the read with errMessageTooLarge, so
+// a peer cannot make this side buffer more than the bound in one message.
+func readBinary(state ws.State, maxMessageBytes int64) func(rw io.ReadWriter) ([]byte, error) {
+	return func(rw io.ReadWriter) ([]byte, error) {
+		controlHandler := wsutil.ControlFrameHandler(rw, state)
+		rd := wsutil.Reader{
+			Source:         rw,
+			State:          state,
+			CheckUTF8:      true,
+			MaxFrameSize:   maxMessageBytes,
+			OnIntermediate: controlHandler,
+		}
+		for {
+			hdr, err := rd.NextFrame()
+			if err != nil {
+				return nil, err
+			}
+			if hdr.OpCode.IsControl() {
+				if err := controlHandler(hdr, &rd); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			if hdr.OpCode&ws.OpBinary == 0 {
+				if err := rd.Discard(); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			data, err := io.ReadAll(io.LimitReader(&rd, maxMessageBytes+1))
+			if err != nil {
+				return nil, err
+			}
+			if int64(len(data)) > maxMessageBytes {
+				return nil, errMessageTooLarge
+			}
+			return data, nil
+		}
+	}
 }
 
 func newSynchronizer(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn, isClient bool, readDataFunc func(rw io.ReadWriter) ([]byte, error), writeDataFunc func(w io.Writer, p []byte) error) (*Synchronizer, error) {
