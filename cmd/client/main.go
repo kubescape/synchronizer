@@ -147,7 +147,7 @@ func run() error {
 	}
 
 	// synchronizer
-	synchronizer, err := core.NewSynchronizerClient(ctx, adpts, conn, newConn)
+	synchronizer, err := core.NewSynchronizerClient(ctx, adpts, conn, newConn, core.WithMaxMessageBytes(int64(cfg.InCluster.MaxMessageBytes)))
 	if err != nil {
 		return fmt.Errorf("create synchronizer: %w", err)
 	}

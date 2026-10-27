@@ -100,9 +100,9 @@ func startKafkaTestPod(t *testing.T, ctx context.Context, broker, outTopic, inTo
 		puts:        make(chan domain.KindName, 8),
 	}
 	client, err := core.NewSynchronizerClient(podCtx, []adapters.Adapter{clientAdapter}, clientConn,
-		func() (net.Conn, error) { return clientConn, nil })
+		func() (net.Conn, error) { return clientConn, nil }, core.WithMaxMessageBytes(int64(kafkaMaxMessageBytes(cfg))))
 	require.NoError(t, err)
-	server, err := core.NewSynchronizerServer(podCtx, []adapters.Adapter{backendAdapter}, serverConn)
+	server, err := core.NewSynchronizerServer(podCtx, []adapters.Adapter{backendAdapter}, serverConn, core.WithMaxMessageBytes(int64(kafkaMaxMessageBytes(cfg))))
 	require.NoError(t, err)
 
 	// surface an internal failure instead of leaving it to show up as a bare timeout. Both

@@ -140,7 +140,7 @@ func run() error {
 		Addr:              addr,
 		ReadHeaderTimeout: readHeaderTimeout,
 		Handler: authentication.AuthenticationServerMiddleware(cfg.Backend.AuthenticationServer,
-			synchronizationHandler(adapter)),
+			synchronizationHandler(adapter, core.WithMaxMessageBytes(int64(cfg.Backend.WebSocketMaxMessageBytes())))),
 	}
 
 	// Shut down on SIGTERM/SIGINT so the deferred cleanup runs, in particular closing
@@ -170,7 +170,7 @@ func run() error {
 
 // Keep the upgrade handler alive for the connection lifetime: its context owns
 // the synchronizer's writer and must not be cancelled immediately after upgrade.
-func synchronizationHandler(adapter adapters.Adapter) http.Handler {
+func synchronizationHandler(adapter adapters.Adapter, opts ...core.Option) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := propagation.TraceContext{}.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 		controlCtx, finish := telemetry.Default().Control(ctx, "connect")
@@ -185,7 +185,7 @@ func synchronizationHandler(adapter adapters.Adapter) http.Handler {
 
 		defer conn.Close()
 		id := utils.ClientIdentifierFromContext(r.Context())
-		synchronizer, err := core.NewSynchronizerServer(r.Context(), []adapters.Adapter{adapter}, conn)
+		synchronizer, err := core.NewSynchronizerServer(r.Context(), []adapters.Adapter{adapter}, conn, opts...)
 		if err != nil {
 			logger.L().Error("error during creating synchronizer server instance",
 				helpers.String("account", id.Account),
