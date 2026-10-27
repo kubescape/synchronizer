@@ -2,6 +2,8 @@ package authentication
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -79,6 +81,36 @@ func discardBody(body io.ReadCloser) {
 	_ = body.Close()
 }
 
+// withoutQuery renders the authentication URL for a log line without its query, which
+// carries whatever headers headerToQueryParamMapping copies into it, the access key
+// included.
+func withoutQuery(u *url.URL) string {
+	c := *u
+	c.RawQuery = ""
+	c.ForceQuery = false
+	return c.String()
+}
+
+// withoutURL unwraps the errors a transport returns, whose text repeats the request URL
+// with its query at every layer; the operation and the cause are what the log needs.
+func withoutURL(err error) error {
+	op := ""
+	for {
+		var urlErr *url.Error
+		if !errors.As(err, &urlErr) {
+			break
+		}
+		if op == "" {
+			op = urlErr.Op
+		}
+		err = urlErr.Err
+	}
+	if op == "" {
+		return err
+	}
+	return fmt.Errorf("%s: %w", op, err)
+}
+
 func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		once.Do(func() {
@@ -132,7 +164,7 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 
 			logger.L().Debug("creating authentication request",
 				helpers.String("connId", connectionId),
-				helpers.String("url", u.String()))
+				helpers.String("url", withoutQuery(u)))
 
 			authenticationRequest, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
 			if err != nil {
@@ -149,7 +181,7 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 				helpers.String("account", account),
 				helpers.String("cluster", cluster),
 				helpers.String("connId", connectionId),
-				helpers.String("url", u.String()))
+				helpers.String("url", withoutQuery(u)))
 
 			response, err := client.Do(authenticationRequest)
 			if err == nil {
@@ -159,12 +191,24 @@ func AuthenticationServerMiddleware(cfg *config.AuthenticationServerConfig, next
 				discardBody(response.Body)
 			}
 			if err != nil {
-				logger.L().Error("authentication request failed", helpers.Error(err),
+				// The authentication server could not be reached or did not answer in time:
+				// nothing is known about the credentials, so the client is told to retry
+				// rather than to give up, which a 401 makes it do.
+				logger.L().Error("authentication request failed", helpers.Error(withoutURL(err)),
 					helpers.String("account", account),
 					helpers.String("cluster", cluster),
 					helpers.String("connId", connectionId),
-					helpers.String("url", u.String()))
-				w.WriteHeader(http.StatusUnauthorized)
+					helpers.String("url", withoutQuery(u)))
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			} else if response.StatusCode >= http.StatusInternalServerError {
+				logger.L().Error("authentication server failed to answer",
+					helpers.Int("accessKey (length)", len(accessKey)),
+					helpers.String("account", account),
+					helpers.String("cluster", cluster),
+					helpers.String("connId", connectionId),
+					helpers.Int("statusCode", response.StatusCode))
+				w.WriteHeader(http.StatusServiceUnavailable)
 				return
 			} else if response.StatusCode != http.StatusOK {
 				logFields := []helpers.IDetails{

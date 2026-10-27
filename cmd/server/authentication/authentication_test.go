@@ -84,7 +84,7 @@ func TestMiddleware_ReleasesAuthResponseBody(t *testing.T) {
 	}{
 		{"authorized", http.StatusOK, `{"ok":true}`, http.StatusOK, true},
 		{"unauthorized", http.StatusUnauthorized, `{"error":"bad key"}`, http.StatusUnauthorized, false},
-		{"server error", http.StatusInternalServerError, "boom", http.StatusUnauthorized, false},
+		{"server error", http.StatusInternalServerError, "boom", http.StatusServiceUnavailable, false},
 		{"empty body", http.StatusOK, "", http.StatusOK, true},
 		// Larger than maxDrainBytes: must still be closed, without reading it all.
 		{"oversized body", http.StatusOK, strings.Repeat("x", 3*maxDrainBytes), http.StatusOK, true},
@@ -135,8 +135,8 @@ func TestMiddleware_TransportError(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, validRequest())
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 	if nextCalled {
 		t.Error("next handler must not run when the auth server is unreachable")
