@@ -25,6 +25,7 @@ type Adapter struct {
 
 	connMapMutex     sync.RWMutex
 	connectionMap    map[string]domain.ClientIdentifier // <cluster, account> -> <connection string>
+	closers          map[string]func()                  // <connection string> -> ends that connection
 	producer         messaging.MessageProducer
 	mainContext      context.Context
 	skipAlertsFrom   []string
@@ -119,6 +120,14 @@ func (b *Adapter) PutObject(ctx context.Context, id domain.KindName, checksum st
 
 func (b *Adapter) RegisterCallbacks(ctx context.Context, callbacks domain.Callbacks) {
 	id := utils.ClientIdentifierFromContext(ctx)
+	b.connMapMutex.RLock()
+	existing, ok := b.connectionMap[id.String()]
+	b.connMapMutex.RUnlock()
+	if ok && existing.ConnectionString() != id.ConnectionString() && existing.ConnectionTime.After(id.ConnectionTime) {
+		// an older connection arriving out of order: Start refuses it, and the callbacks
+		// of the connection that serves this client stay in place
+		return
+	}
 	b.callbacksMap.Set(id.String(), callbacks)
 }
 
@@ -141,8 +150,24 @@ func (b *Adapter) Start(ctx context.Context) error {
 				helpers.Interface("incomingId", incomingId))
 			return err
 		}
+		// The incoming connection supersedes this one: end it now, so its reader stops
+		// handling frames beside the new one and its goroutines go, rather than when its
+		// peer notices, which a vanished peer never does.
+		if closer := b.closers[existingId.ConnectionString()]; closer != nil {
+			logger.L().Info("closing a superseded connection",
+				helpers.Interface("existingId", existingId),
+				helpers.Interface("incomingId", incomingId))
+			closer()
+		}
+		delete(b.closers, existingId.ConnectionString())
 	}
 	b.connectionMap[incomingId.String()] = incomingId
+	if closer := utils.ConnectionCloserFromContext(ctx); closer != nil {
+		if b.closers == nil {
+			b.closers = map[string]func(){}
+		}
+		b.closers[incomingId.ConnectionString()] = closer
+	}
 
 	if b.featuresProvider != nil {
 		if accessKey := utils.AccessKeyFromContext(ctx); accessKey != "" {
@@ -193,6 +218,7 @@ func (b *Adapter) Stop(ctx context.Context) error {
 	)
 
 	delete(b.connectionMap, toDelete.String())
+	delete(b.closers, toDelete.ConnectionString())
 
 	b.callbacksMap.Delete(toDelete.String())
 	if client, ok := b.clientsMap.Load(toDelete.String()); ok {

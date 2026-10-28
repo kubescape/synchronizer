@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -184,8 +185,12 @@ func synchronizationHandler(adapter adapters.Adapter, opts ...core.Option) http.
 		}
 
 		defer conn.Close()
-		id := utils.ClientIdentifierFromContext(r.Context())
-		synchronizer, err := core.NewSynchronizerServer(r.Context(), []adapters.Adapter{adapter}, conn, opts...)
+		// The adapter ends this connection when a newer one from the same client takes
+		// over, through the closer rather than the connection itself.
+		var closeOnce sync.Once
+		connCtx := utils.ContextWithConnectionCloser(r.Context(), func() { closeOnce.Do(func() { _ = conn.Close() }) })
+		id := utils.ClientIdentifierFromContext(connCtx)
+		synchronizer, err := core.NewSynchronizerServer(connCtx, []adapters.Adapter{adapter}, conn, opts...)
 		if err != nil {
 			logger.L().Error("error during creating synchronizer server instance",
 				helpers.String("account", id.Account),
@@ -194,14 +199,14 @@ func synchronizationHandler(adapter adapters.Adapter, opts ...core.Option) http.
 				helpers.Error(err))
 			return
 		}
-		err = synchronizer.Start(r.Context())
+		err = synchronizer.Start(connCtx)
 		if err != nil {
 			logger.L().Error("error during sync, closing listener",
 				helpers.String("account", id.Account),
 				helpers.String("cluster", id.Cluster),
 				helpers.String("connectionId", id.ConnectionId),
 				helpers.Error(err))
-			err := synchronizer.Stop(r.Context())
+			err := synchronizer.Stop(connCtx)
 			if err != nil {
 				logger.L().Error("error during sync stop", helpers.Error(err))
 			}

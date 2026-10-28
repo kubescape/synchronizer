@@ -56,6 +56,17 @@ func ClientIdentifierFromContext(ctx context.Context) domain.ClientIdentifier {
 	return ctx.Value(domain.ContextKeyClientIdentifier).(domain.ClientIdentifier)
 }
 
+// ContextWithConnectionCloser attaches the function that ends the connection a context
+// serves, for the backend adapter to close a connection a newer one supersedes.
+func ContextWithConnectionCloser(ctx context.Context, closer func()) context.Context {
+	return context.WithValue(ctx, domain.ContextKeyConnectionCloser, closer)
+}
+
+func ConnectionCloserFromContext(ctx context.Context) func() {
+	closer, _ := ctx.Value(domain.ContextKeyConnectionCloser).(func())
+	return closer
+}
+
 func AccessKeyFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(domain.ContextKeyAccessKey).(string)
 	return v
