@@ -80,3 +80,49 @@ func TestAdapterStartClosesTheSupersededConnection(t *testing.T) {
 	require.NoError(t, adapter.Stop(second))
 	assert.Equal(t, 0, closed["second"], "Stop leaves closing to the handler")
 }
+
+// Registrations happen before either connection starts, in any order: the callbacks a
+// client ends up with are those of the connection that won, published in its Start, and
+// a connection Start refuses never has its callbacks published or installed.
+func TestAdapterPublishesTheWinningConnectionsCallbacks(t *testing.T) {
+	now := time.Now()
+	newCallbacks := func() domain.Callbacks {
+		return domain.Callbacks{PutObject: func(context.Context, domain.KindName, string, []byte) error { return nil }}
+	}
+	for name, order := range map[string][]string{
+		"newer registers first, newer starts first": {"B", "A", "startB", "startA"},
+		"older registers first, newer starts first": {"A", "B", "startB", "startA"},
+		"older registers and starts first":          {"A", "B", "startA", "startB"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			adapter := NewBackendAdapter(context.Background(), silentProducer{}, config.Backend{})
+			ctxs := map[string]context.Context{
+				"A": connectionContext("A", now, nil),
+				"B": connectionContext("B", now.Add(time.Second), nil),
+			}
+			callbacks := map[string]domain.Callbacks{"A": newCallbacks(), "B": newCallbacks()}
+			for _, step := range order {
+				switch step {
+				case "A", "B":
+					adapter.RegisterCallbacks(ctxs[step], callbacks[step])
+				case "startA":
+					if name == "older registers and starts first" {
+						require.NoError(t, adapter.Start(ctxs["A"]))
+					} else {
+						require.Error(t, adapter.Start(ctxs["A"]), "the older connection is refused once the newer one started")
+					}
+				case "startB":
+					require.NoError(t, adapter.Start(ctxs["B"]))
+				}
+			}
+			published, err := adapter.Callbacks(ctxs["B"])
+			require.NoError(t, err)
+			assert.Equal(t, putObjectOf(callbacks["B"]), putObjectOf(published), "the winner's callbacks are the published ones")
+			client, err := adapter.getClient(ctxs["B"])
+			require.NoError(t, err)
+			installed, err := client.Callbacks(ctxs["B"])
+			require.NoError(t, err)
+			assert.Equal(t, putObjectOf(callbacks["B"]), putObjectOf(installed), "the client serves the winner's callbacks")
+		})
+	}
+}

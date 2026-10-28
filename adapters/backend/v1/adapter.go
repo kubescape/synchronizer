@@ -26,6 +26,7 @@ type Adapter struct {
 	connMapMutex     sync.RWMutex
 	connectionMap    map[string]domain.ClientIdentifier // <cluster, account> -> <connection string>
 	closers          map[string]func()                  // <connection string> -> ends that connection
+	pendingCallbacks map[string]domain.Callbacks        // <connection string> -> callbacks registered before Start
 	producer         messaging.MessageProducer
 	mainContext      context.Context
 	skipAlertsFrom   []string
@@ -118,17 +119,21 @@ func (b *Adapter) PutObject(ctx context.Context, id domain.KindName, checksum st
 	return client.PutObject(ctx, id, checksum, object)
 }
 
+// RegisterCallbacks keeps the callbacks with the connection that registered them; Start
+// publishes them for the client once that connection is the one serving it. A
+// connection that is already serving the client gets them published at once.
 func (b *Adapter) RegisterCallbacks(ctx context.Context, callbacks domain.Callbacks) {
 	id := utils.ClientIdentifierFromContext(ctx)
-	b.connMapMutex.RLock()
-	existing, ok := b.connectionMap[id.String()]
-	b.connMapMutex.RUnlock()
-	if ok && existing.ConnectionString() != id.ConnectionString() && existing.ConnectionTime.After(id.ConnectionTime) {
-		// an older connection arriving out of order: Start refuses it, and the callbacks
-		// of the connection that serves this client stay in place
+	b.connMapMutex.Lock()
+	defer b.connMapMutex.Unlock()
+	if current, ok := b.connectionMap[id.String()]; ok && current.ConnectionString() == id.ConnectionString() {
+		b.callbacksMap.Set(id.String(), callbacks)
 		return
 	}
-	b.callbacksMap.Set(id.String(), callbacks)
+	if b.pendingCallbacks == nil {
+		b.pendingCallbacks = map[string]domain.Callbacks{}
+	}
+	b.pendingCallbacks[id.ConnectionString()] = callbacks
 }
 
 func (b *Adapter) Start(ctx context.Context) error {
@@ -148,6 +153,7 @@ func (b *Adapter) Start(ctx context.Context) error {
 			logger.L().Error(err.Error(),
 				helpers.Interface("existingId", existingId),
 				helpers.Interface("incomingId", incomingId))
+			delete(b.pendingCallbacks, incomingId.ConnectionString())
 			return err
 		}
 		// The incoming connection supersedes this one: end it now, so its reader stops
@@ -181,10 +187,15 @@ func (b *Adapter) Start(ctx context.Context) error {
 		connectedClientsGauge.Inc()
 	}
 	b.clientsMap.Set(incomingId.String(), client)
-	callbacks, err := b.Callbacks(ctx)
-	if err != nil {
-		return err
+	// The callbacks this connection registered are published here, under the same lock
+	// that made it the client's connection, so no other registration can slip in
+	// between, and a connection Start refuses never gets its callbacks published.
+	callbacks, ok := b.pendingCallbacks[incomingId.ConnectionString()]
+	if !ok {
+		return fmt.Errorf("no callbacks were registered for connection %s", incomingId.ConnectionString())
 	}
+	delete(b.pendingCallbacks, incomingId.ConnectionString())
+	b.callbacksMap.Set(incomingId.String(), callbacks)
 
 	client.RegisterCallbacks(ctx, callbacks)
 	go func() {
@@ -219,6 +230,7 @@ func (b *Adapter) Stop(ctx context.Context) error {
 
 	delete(b.connectionMap, toDelete.String())
 	delete(b.closers, toDelete.ConnectionString())
+	delete(b.pendingCallbacks, toDelete.ConnectionString())
 
 	b.callbacksMap.Delete(toDelete.String())
 	if client, ok := b.clientsMap.Load(toDelete.String()); ok {
