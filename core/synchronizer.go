@@ -41,6 +41,7 @@ type Synchronizer struct {
 	inPool        *ants.PoolWithFunc // publication and shutdown snapshot guarded by connMu
 	readDataFunc  func(rw io.ReadWriter) ([]byte, error)
 	writeDataFunc func(w io.Writer, p []byte) error
+	readTimeout   time.Duration // bounds the wait for the next frame; zero waits forever
 }
 
 // DefaultMaxMessageBytes bounds one websocket message when no limit is configured: the
@@ -56,6 +57,17 @@ type Option func(*options)
 
 type options struct {
 	maxMessageBytes int64
+	readTimeout     time.Duration
+}
+
+// DefaultServerReadTimeout is how long a server waits for the next frame from a client
+// before it ends the connection: the client sends a ping every 50 seconds, so a
+// connection silent for this long belongs to a peer that is gone without closing it.
+const DefaultServerReadTimeout = 2 * time.Minute
+
+// WithReadTimeout bounds the wait for the next frame; zero or less waits forever.
+func WithReadTimeout(d time.Duration) Option {
+	return func(o *options) { o.readTimeout = d }
 }
 
 // WithMaxMessageBytes bounds one websocket message this side reads, over all its frames;
@@ -68,8 +80,7 @@ func WithMaxMessageBytes(n int64) Option {
 	}
 }
 
-func applyOptions(opts []Option) options {
-	o := options{maxMessageBytes: DefaultMaxMessageBytes}
+func applyOptions(o options, opts []Option) options {
 	for _, opt := range opts {
 		opt(&o)
 	}
@@ -77,18 +88,24 @@ func applyOptions(opts []Option) options {
 }
 
 func NewSynchronizerClient(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn, newConn func() (net.Conn, error), opts ...Option) (*Synchronizer, error) {
-	o := applyOptions(opts)
+	o := applyOptions(options{maxMessageBytes: DefaultMaxMessageBytes}, opts)
 	s, err := newSynchronizer(mainCtx, adapter, conn, true, readBinary(ws.StateClientSide, o.maxMessageBytes), wsutil.WriteClientBinary)
 	if err != nil {
 		return nil, err
 	}
 	s.newConn = newConn
+	s.readTimeout = o.readTimeout
 	return s, nil
 }
 
 func NewSynchronizerServer(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn, opts ...Option) (*Synchronizer, error) {
-	o := applyOptions(opts)
-	return newSynchronizer(mainCtx, adapter, conn, false, readBinary(ws.StateServerSide, o.maxMessageBytes), wsutil.WriteServerBinary)
+	o := applyOptions(options{maxMessageBytes: DefaultMaxMessageBytes, readTimeout: DefaultServerReadTimeout}, opts)
+	s, err := newSynchronizer(mainCtx, adapter, conn, false, readBinary(ws.StateServerSide, o.maxMessageBytes), wsutil.WriteServerBinary)
+	if err != nil {
+		return nil, err
+	}
+	s.readTimeout = o.readTimeout
+	return s, nil
 }
 
 // readBinary reads the next binary message from rw, as wsutil.ReadClientBinary and
@@ -604,6 +621,11 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				return backoff.Permanent(err)
 			}
 			conn := s.connection()
+			if s.readTimeout > 0 {
+				// refreshed before every read, so a peer that keeps sending, pings
+				// included, keeps the connection, and a silent one loses it
+				_ = conn.SetReadDeadline(time.Now().Add(s.readTimeout))
+			}
 			data, err := s.readDataFunc(conn)
 			finish := telemetry.Default().Begin(ctx, "receive")
 			defer func() { finish(err, len(data)) }()

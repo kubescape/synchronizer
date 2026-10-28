@@ -7,4 +7,5 @@ const (
 	ContextKeyDepth            contextKey = "depth"
 	ContextKeyMsgId            contextKey = "msgId"
 	ContextKeyAccessKey        contextKey = "accessKey"
+	ContextKeyConnectionCloser contextKey = "connectionCloser"
 )
