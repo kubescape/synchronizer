@@ -2,7 +2,7 @@ package backend
 
 import (
 	"context"
-	"reflect"
+	"fmt"
 	"testing"
 	"time"
 
@@ -35,8 +35,19 @@ func connectionContext(connectionID string, at time.Time, closer func()) context
 	return ctx
 }
 
-func putObjectOf(callbacks domain.Callbacks) uintptr {
-	return reflect.ValueOf(callbacks.PutObject).Pointer()
+// callbacksNamed returns callbacks whose PutObject answers with its name, so two sets
+// built from the same literal are told apart by what they do, not by where they point.
+func callbacksNamed(name string) domain.Callbacks {
+	return domain.Callbacks{PutObject: func(context.Context, domain.KindName, string, []byte) error {
+		return fmt.Errorf("put by %s", name)
+	}}
+}
+
+func putBy(t *testing.T, callbacks domain.Callbacks) string {
+	t.Helper()
+	err := callbacks.PutObject(context.Background(), domain.KindName{}, "", nil)
+	require.Error(t, err)
+	return err.Error()
 }
 
 // A newer connection from the same client ends the one it supersedes at once, keeps its
@@ -49,12 +60,12 @@ func TestAdapterStartClosesTheSupersededConnection(t *testing.T) {
 	closer := func(id string) func() { return func() { closed[id]++ } }
 
 	first := connectionContext("first", now, closer("first"))
-	firstCallbacks := domain.Callbacks{PutObject: func(context.Context, domain.KindName, string, []byte) error { return nil }}
+	firstCallbacks := callbacksNamed("first")
 	adapter.RegisterCallbacks(first, firstCallbacks)
 	require.NoError(t, adapter.Start(first))
 
 	second := connectionContext("second", now.Add(time.Second), closer("second"))
-	secondCallbacks := domain.Callbacks{PutObject: func(context.Context, domain.KindName, string, []byte) error { return nil }}
+	secondCallbacks := callbacksNamed("second")
 	adapter.RegisterCallbacks(second, secondCallbacks)
 	require.NoError(t, adapter.Start(second))
 	assert.Equal(t, 1, closed["first"], "the superseded connection is closed when the newer one starts")
@@ -65,15 +76,15 @@ func TestAdapterStartClosesTheSupersededConnection(t *testing.T) {
 	assert.True(t, adapter.IsRelated(second, utils.ClientIdentifierFromContext(second)))
 	got, err := adapter.Callbacks(second)
 	require.NoError(t, err)
-	assert.Equal(t, putObjectOf(secondCallbacks), putObjectOf(got))
+	assert.Equal(t, putBy(t, secondCallbacks), putBy(t, got))
 
 	// An older connection arriving late registers its callbacks before Start refuses it.
 	stale := connectionContext("stale", now.Add(-time.Second), closer("stale"))
-	adapter.RegisterCallbacks(stale, domain.Callbacks{PutObject: func(context.Context, domain.KindName, string, []byte) error { return nil }})
+	adapter.RegisterCallbacks(stale, callbacksNamed("stale"))
 	require.Error(t, adapter.Start(stale))
 	got, err = adapter.Callbacks(second)
 	require.NoError(t, err)
-	assert.Equal(t, putObjectOf(secondCallbacks), putObjectOf(got), "the live connection's callbacks stay in place")
+	assert.Equal(t, "put by second", putBy(t, got), "the live connection's callbacks stay in place")
 	assert.Equal(t, 0, closed["second"], "the live connection is not closed by a stale one")
 	assert.Equal(t, 0, closed["stale"])
 
@@ -86,9 +97,6 @@ func TestAdapterStartClosesTheSupersededConnection(t *testing.T) {
 // a connection Start refuses never has its callbacks published or installed.
 func TestAdapterPublishesTheWinningConnectionsCallbacks(t *testing.T) {
 	now := time.Now()
-	newCallbacks := func() domain.Callbacks {
-		return domain.Callbacks{PutObject: func(context.Context, domain.KindName, string, []byte) error { return nil }}
-	}
 	for name, order := range map[string][]string{
 		"newer registers first, newer starts first": {"B", "A", "startB", "startA"},
 		"older registers first, newer starts first": {"A", "B", "startB", "startA"},
@@ -100,7 +108,7 @@ func TestAdapterPublishesTheWinningConnectionsCallbacks(t *testing.T) {
 				"A": connectionContext("A", now, nil),
 				"B": connectionContext("B", now.Add(time.Second), nil),
 			}
-			callbacks := map[string]domain.Callbacks{"A": newCallbacks(), "B": newCallbacks()}
+			callbacks := map[string]domain.Callbacks{"A": callbacksNamed("A"), "B": callbacksNamed("B")}
 			for _, step := range order {
 				switch step {
 				case "A", "B":
@@ -117,12 +125,12 @@ func TestAdapterPublishesTheWinningConnectionsCallbacks(t *testing.T) {
 			}
 			published, err := adapter.Callbacks(ctxs["B"])
 			require.NoError(t, err)
-			assert.Equal(t, putObjectOf(callbacks["B"]), putObjectOf(published), "the winner's callbacks are the published ones")
+			assert.Equal(t, "put by B", putBy(t, published), "the winner's callbacks are the published ones")
 			client, err := adapter.getClient(ctxs["B"])
 			require.NoError(t, err)
 			installed, err := client.Callbacks(ctxs["B"])
 			require.NoError(t, err)
-			assert.Equal(t, putObjectOf(callbacks["B"]), putObjectOf(installed), "the client serves the winner's callbacks")
+			assert.Equal(t, "put by B", putBy(t, installed), "the client serves the winner's callbacks")
 		})
 	}
 }
