@@ -161,6 +161,26 @@ synchronization; it does not itself stop scans in other components.
 A live cluster/backend is required for this smoke test; fake-client tests alone
 are not evidence that the Helm integration is complete.
 
+## API authentication
+
+Every route except `/healthz` and `/readyz` requires `Authorization: Bearer <Kubernetes service-account token>`
+with audience `kubescape.io`. The token is validated with a TokenReview and the caller is authorized
+by RBAC (SubjectAccessReview) on `kubescape.io` resources: `create` on the resource named in the URL path (`POST /apis/v1/<group>/<version>/<resource>`).
+
+- The service account running this component needs a `ClusterRoleBinding` to `system:auth-delegator`.
+- `KS_API_AUDIENCE`: expected token audience (default `kubescape.io`).
+- `POD_NAMESPACE`: required; the process exits at startup if it is unset.
+- `KS_API_AUTH_DISABLED=true`: turns the check off.
+
+To call the API by hand, mint a token for a service account that holds the matching Role:
+
+```bash
+TOKEN=$(kubectl create token <sa> -n <ns> --audience kubescape.io)
+curl -H "Authorization: Bearer $TOKEN" ...
+```
+
+Design: [in-cluster API authn/authz](https://github.com/kubescape/designs-and-proposals/blob/main/proposals/in-cluster-api-authn-authz.md).
+
 ## HTTP ingestion backpressure
 
 The HTTP endpoint returns `429 Too Many Requests` with `Retry-After: 60` when
