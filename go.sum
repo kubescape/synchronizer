@@ -653,8 +653,8 @@ github.com/kubescape/messaging v0.0.101 h1:o5MkAMIE3kdmzmtTVyNlD7+Bho8VpYrPvixOe
 github.com/kubescape/messaging v0.0.101/go.mod h1:VRh/d0n9MyQAirLapShN2oxA9jCf8I86v5jNm50kyac=
 github.com/kubescape/storage v0.0.267 h1:o2OYf2KcRhFUs/xHZDOb9TesYlVlVewm+6EC4ETfx8U=
 github.com/kubescape/storage v0.0.267/go.mod h1:hUpp5E/GHCNdMxhUDi0h4jPm6HEvyvEOlr4nd4G+Q5A=
-github.com/kubescape/storage/pkg/apiauth v0.0.0-20261103122725-1fe80814fcf6 h1:DGSFpp2xngMDsarvoRwStAUL/JVxTSQpFI9SuWGNHgU=
-github.com/kubescape/storage/pkg/apiauth v0.0.0-20261103122725-1fe80814fcf6/go.mod h1:WiGMS7DCUl6a3SPwuFjxXHosdkNCw8F+JqRtGhBwQF8=
+github.com/kubescape/storage/pkg/apiauth v0.1.0 h1:lkmcuT18mb1hi0R0Bz1MwWpJIpyVo1Ppuwo26fVh9WY=
+github.com/kubescape/storage/pkg/apiauth v0.1.0/go.mod h1:WiGMS7DCUl6a3SPwuFjxXHosdkNCw8F+JqRtGhBwQF8=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e h1:Q6MvJtQK/iRcRtzAscm/zF23XxJlbECiGPyRicsX+Ak=

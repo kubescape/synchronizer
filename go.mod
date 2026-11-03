@@ -19,7 +19,7 @@ require (
 	github.com/kubescape/k8s-interface v0.0.206
 	github.com/kubescape/messaging v0.0.101
 	github.com/kubescape/storage v0.0.267
-	github.com/kubescape/storage/pkg/apiauth v0.0.0-20261103122725-1fe80814fcf6
+	github.com/kubescape/storage/pkg/apiauth v0.1.0
 	github.com/moby/moby/api v1.55.0
 	github.com/panjf2000/ants/v2 v2.9.1
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
