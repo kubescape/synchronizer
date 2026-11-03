@@ -16,7 +16,7 @@ func (b forbiddenBody) Read([]byte) (int, error) { b.t.Fatal("invalid path read 
 func (b forbiddenBody) Close() error             { return nil }
 
 func TestInvalidPathStopsBeforeBodyAndCallbacks(t *testing.T) {
-	a := NewHTTPEndpointAdapter(config.Config{})
+	a := NewHTTPEndpointAdapter(config.Config{}, nil)
 	a.supportedPaths = map[domain.Strategy]map[string]map[string]map[string]bool{}
 	// Nil callbacks deliberately panic if reached: malformed path must exit first.
 	req := httptest.NewRequest(http.MethodPost, "/otel-validation-invalid", nil)

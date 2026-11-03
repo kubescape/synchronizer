@@ -38,7 +38,9 @@ type Adapter struct {
 	telemetry      int
 }
 
-func NewHTTPEndpointAdapter(cfg config.Config) *Adapter {
+// NewHTTPEndpointAdapter creates the adapter. A non-nil auth wraps the ingest
+// handler; probes stay unauthenticated.
+func NewHTTPEndpointAdapter(cfg config.Config, auth func(http.Handler) http.Handler) *Adapter {
 	httpMux := http.NewServeMux()
 	httpMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -58,7 +60,11 @@ func NewHTTPEndpointAdapter(cfg config.Config) *Adapter {
 		httpMux:    httpMux,
 		httpServer: server,
 	}
-	httpMux.Handle("/", a)
+	var h http.Handler = a
+	if auth != nil {
+		h = auth(a)
+	}
+	httpMux.Handle("/", h)
 	return a
 }
 

@@ -26,7 +26,7 @@ func (b unreadBody) Read([]byte) (int, error) {
 func (b unreadBody) Close() error { return nil }
 
 func testAdapter(available bool) *Adapter {
-	a := NewHTTPEndpointAdapter(config.Config{})
+	a := NewHTTPEndpointAdapter(config.Config{}, nil)
 	a.callbacks.BackendAvailable = func() bool { return available }
 	a.supportedPaths = map[domain.Strategy]map[string]map[string]map[string]bool{
 		domain.CopyStrategy: {"kubescape.io": {"v1": {"networkstreams": true, "runtimealerts": true}}},
