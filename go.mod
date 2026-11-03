@@ -10,7 +10,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/deckarep/golang-set/v2 v2.7.0
 	github.com/evanphx/json-patch v5.9.0+incompatible
-	github.com/go-logr/logr v1.4.4
+	github.com/go-logr/stdr v1.2.2
 	github.com/gobwas/ws v1.3.2
 	github.com/google/uuid v1.6.0
 	github.com/goradd/maps v1.0.0
@@ -140,7 +140,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/github/go-spdx/v2 v2.4.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
-	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-openapi/analysis v1.0.0 // indirect
 	github.com/go-openapi/errors v0.22.9 // indirect

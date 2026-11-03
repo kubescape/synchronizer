@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 
-	"github.com/go-logr/logr"
+	"github.com/go-logr/stdr"
 	"github.com/kubescape/k8s-interface/k8sinterface"
 	"github.com/kubescape/storage/pkg/apiauth"
 	httpendpoint "github.com/kubescape/synchronizer/adapters/httpendpoint/v1"
@@ -14,7 +15,7 @@ import (
 
 // newAPIAuth builds the apiauth middleware protecting the HTTP ingest endpoint.
 func newAPIAuth(ctx context.Context, k8sApi *k8sinterface.KubernetesApi) (func(http.Handler) http.Handler, error) {
-	cfg := apiauth.Config{Route: httpendpoint.Route, Logger: logr.Discard()}
+	cfg := apiauth.Config{Route: httpendpoint.Route, Logger: stdr.New(log.New(os.Stderr, "apiauth: ", log.LstdFlags))}
 	if os.Getenv(apiauth.DisabledEnv) == "true" {
 		return apiauth.New(ctx, cfg)
 	}
