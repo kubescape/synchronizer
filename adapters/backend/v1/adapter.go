@@ -31,6 +31,7 @@ type Adapter struct {
 	mainContext      context.Context
 	skipAlertsFrom   []string
 	featuresProvider *FeaturesProvider
+	replay           *replayBuffer
 }
 
 func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, cfg config.Backend) *Adapter {
@@ -57,6 +58,7 @@ func NewBackendAdapter(mainContext context.Context, messageProducer messaging.Me
 		connectionMap:    make(map[string]domain.ClientIdentifier),
 		skipAlertsFrom:   cfg.SkipAlertsFrom,
 		featuresProvider: featuresProvider,
+		replay:           newReplayBuffer(mainContext, cfg.Replay),
 	}
 
 	// SafeMap's zero-value read checks its backing map before acquiring a lock.
@@ -124,6 +126,10 @@ func (b *Adapter) PutObject(ctx context.Context, id domain.KindName, checksum st
 // connection that is already serving the client gets them published at once.
 func (b *Adapter) RegisterCallbacks(ctx context.Context, callbacks domain.Callbacks) {
 	id := utils.ClientIdentifierFromContext(ctx)
+	if b.replay != nil {
+		unlock := b.replay.lockClient(id.String())
+		defer unlock()
+	}
 	b.connMapMutex.Lock()
 	defer b.connMapMutex.Unlock()
 	if current, ok := b.connectionMap[id.String()]; ok && current.ConnectionString() == id.ConnectionString() {
@@ -137,9 +143,48 @@ func (b *Adapter) RegisterCallbacks(ctx context.Context, callbacks domain.Callba
 }
 
 func (b *Adapter) Start(ctx context.Context) error {
+	if b.replay == nil {
+		return b.start(ctx)
+	}
+	id := utils.ClientIdentifierFromContext(ctx)
+	unlock := b.replay.lockClient(id.String())
+	defer unlock()
+	if err := b.start(ctx); err != nil {
+		return err
+	}
+	return b.replayPending(ctx, id.String())
+}
+
+// StartWithAsyncReplay lets the synchronizer read client responses while a
+// backlog is sent. The routing lock is acquired before publication and held
+// by the replay goroutine, so live traffic cannot overtake the backlog.
+func (b *Adapter) StartWithAsyncReplay(ctx context.Context) error {
+	if b.replay == nil {
+		return b.start(ctx)
+	}
+	id := utils.ClientIdentifierFromContext(ctx)
+	unlock := b.replay.lockClient(id.String())
+	if err := b.start(ctx); err != nil {
+		unlock()
+		return err
+	}
+	go func() {
+		defer unlock()
+		if err := b.replayPending(ctx, id.String()); err != nil && ctx.Err() == nil && b.mainContext.Err() == nil {
+			logger.L().Error("failed to replay backend messages", helpers.Error(err))
+		}
+	}()
+	return nil
+}
+
+func (b *Adapter) start(ctx context.Context) error {
 	b.connMapMutex.Lock()
 	defer b.connMapMutex.Unlock()
 	incomingId := utils.ClientIdentifierFromContext(ctx)
+	callbacks, ok := b.pendingCallbacks[incomingId.ConnectionString()]
+	if !ok {
+		return fmt.Errorf("no callbacks were registered for connection %s", incomingId.ConnectionString())
+	}
 
 	logger.L().Info("starting synchronizer backend adapter",
 		helpers.Interface("id", incomingId),
@@ -190,10 +235,6 @@ func (b *Adapter) Start(ctx context.Context) error {
 	// The callbacks this connection registered are published here, under the same lock
 	// that made it the client's connection, so no other registration can slip in
 	// between, and a connection Start refuses never gets its callbacks published.
-	callbacks, ok := b.pendingCallbacks[incomingId.ConnectionString()]
-	if !ok {
-		return fmt.Errorf("no callbacks were registered for connection %s", incomingId.ConnectionString())
-	}
 	delete(b.pendingCallbacks, incomingId.ConnectionString())
 	b.callbacksMap.Set(incomingId.String(), callbacks)
 
@@ -207,6 +248,10 @@ func (b *Adapter) Start(ctx context.Context) error {
 
 func (b *Adapter) Stop(ctx context.Context) error {
 	toDelete := utils.ClientIdentifierFromContext(ctx)
+	if b.replay != nil {
+		unlock := b.replay.lockClient(toDelete.String())
+		defer unlock()
+	}
 
 	b.connMapMutex.Lock()
 	defer b.connMapMutex.Unlock()
@@ -216,12 +261,10 @@ func (b *Adapter) Stop(ctx context.Context) error {
 	)
 	// an existing different connection connection was found
 	if existingId, ok := b.connectionMap[toDelete.String()]; ok && existingId.ConnectionString() != toDelete.ConnectionString() {
-		if existingId.ConnectionTime.After(toDelete.ConnectionTime) {
-			logger.L().Info("not removing connected client since a different connection with newer connection time found",
-				helpers.Interface("toDelete", toDelete),
-				helpers.Interface("existingId", existingId))
-			return nil
-		}
+		logger.L().Info("not removing connected client since a different connection is serving it",
+			helpers.Interface("toDelete", toDelete),
+			helpers.Interface("existingId", existingId))
+		return nil
 	}
 
 	logger.L().Info("removing connected client from backend adapter",
