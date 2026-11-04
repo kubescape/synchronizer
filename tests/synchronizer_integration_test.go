@@ -556,7 +556,7 @@ func createAndStartSynchronizerClient(t *testing.T, cluster *TestKubernetesClust
 		return clientConn, nil
 	}
 	clientCfg.HTTPEndpoint.ServerPort = httpAdapterPort
-	httpAdapter := httpendpoint.NewHTTPEndpointAdapter(clientCfg)
+	httpAdapter := httpendpoint.NewHTTPEndpointAdapter(clientCfg, nil)
 
 	ctx, cancel := context.WithCancel(cluster.ctx)
 

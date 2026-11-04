@@ -94,7 +94,11 @@ func run() error {
 		adpts = append(adpts, inClusterAdapter)
 	}
 	if err := cfg.HTTPEndpoint.ValidateConfig(); err == nil {
-		httpEndpointAdapter := httpendpoint.NewHTTPEndpointAdapter(cfg)
+		auth, err := newAPIAuth(ctx, k8sApi)
+		if err != nil {
+			logger.L().Ctx(ctx).Fatal("API auth setup failed", helpers.Error(err))
+		}
+		httpEndpointAdapter := httpendpoint.NewHTTPEndpointAdapter(cfg, auth)
 		adpts = append(adpts, httpEndpointAdapter)
 	}
 	if len(adpts) == 0 {
