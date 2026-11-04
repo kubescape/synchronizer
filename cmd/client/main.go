@@ -147,7 +147,10 @@ func run() error {
 	}
 
 	// synchronizer
-	synchronizer, err := core.NewSynchronizerClient(ctx, adpts, conn, newConn, core.WithMaxMessageBytes(int64(cfg.InCluster.MaxMessageBytes)))
+	dedupeSeconds, dedupeMessages := cfg.InCluster.Deduplication.DeduplicationLimits()
+	synchronizer, err := core.NewSynchronizerClient(ctx, adpts, conn, newConn,
+		core.WithMaxMessageBytes(int64(cfg.InCluster.MaxMessageBytes)),
+		core.WithDeduplication(time.Duration(dedupeSeconds)*time.Second, dedupeMessages))
 	if err != nil {
 		return fmt.Errorf("create synchronizer: %w", err)
 	}

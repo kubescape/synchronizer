@@ -49,6 +49,85 @@ flowchart LR
     SERVICES=./configuration/services.json CLUSTER_CONFIG=./configuration/clusterData.json CONFIG=./configuration/client go run cmd/client/main.go
     ```
 
+## Backend message replay after reconnect
+
+Server pods can retain backend messages for disconnected clients and replay them
+when the client connects. This covers reconnecting to another pod while the old
+pod still holds a dead connection. Enable it explicitly in the server config:
+
+```json
+{
+  "backend": {
+    "replay": {
+      "enabled": true,
+      "ttlSeconds": 300,
+      "maxMessages": 10000,
+      "maxMessagesPerClient": 100,
+      "maxBytes": 67108864
+    }
+  }
+}
+```
+
+Replay is disabled by default. The limits above are the defaults when enabled;
+omitted or nonpositive limits use those defaults, as does an overflowing TTL.
+The byte limit counts retained payloads, property keys/values, and broker IDs
+across the pod; the count limits also bound per-entry metadata. Messages being
+replayed remain within these limits. Oldest queued messages are evicted when a
+limit is reached. An individual message larger than the byte budget is rejected;
+if all capacity is occupied by in-progress replay, a new message is rejected.
+Expired messages are never selected for replay and idle entries are swept every
+second. Shutdown releases the backlog as active sends finish.
+
+Backlogs are isolated by account and cluster. The server replays supported
+PutObject, PatchObject, DeleteObject, GetObject, VerifyObject and reconciliation
+messages in receive order, before delivering later live messages for that client.
+An enqueue failure retains the failed message and remaining backlog until a later
+attempt or expiration, including a failed live enqueue. The server reads client
+responses while the backlog drains, and later live messages wait behind it.
+Malformed records are rejected before admission. With
+replay enabled, both Kafka and Pulsar use one handler worker regardless of
+`consumerWorkers`, preserving reader order. A slow client can therefore delay
+other backend traffic. Kafka ordering across different partitions is not defined.
+
+**Deploy updated clients before enabling server replay.** Clients retain a cache
+of successfully applied mutation messages across socket reconnects. Configure it
+in the client config:
+
+```json
+{
+  "inCluster": {
+    "deduplication": {
+      "disabled": false,
+      "ttlSeconds": 600,
+      "maxMessages": 10000
+    }
+  }
+}
+```
+
+Client deduplication is enabled by default with the limits shown; absent,
+nonpositive, or overflowing duration values use the defaults. Set `disabled` to
+true to turn it off. Only fixed-size SHA-256 fingerprints are retained. Entries
+expire from successful application time and are evicted oldest-first at capacity;
+duplicate arrivals do not extend their lifetime. Set retention longer than the
+server replay window and size the count for the client's mutation rate.
+
+Senders must supply a stable, unique, nonempty `MsgId` for each logical message.
+The fingerprint includes the complete wire message because existing request/reply
+flows can share an ID across different operations. Exact mutation replays are
+skipped; changed contents with the same ID are not conflated. Failed applications
+remain retryable. Queries, reconciliation, and patches that request a full object
+for recovery can resend their responses instead of being suppressed.
+
+This is bounded, in-memory recovery, not an application acknowledgement protocol.
+Cache eviction/expiry, process restarts, messages sent through a dead connection
+without a retained copy on the destination pod, missing IDs, and old clients limit
+the guarantee. The sender still cannot infer application success from enqueueing.
+Acknowledgements and sender retries remain a follow-up for confirmed delivery.
+The existing `synchronizer.drops` telemetry records `replay_expired`,
+`replay_capacity`, `replay_oversized`, and `duplicate` reasons.
+
 ## Live namespace filtering
 
 Synchronizer can watch a shared ConfigMap for namespace filter changes without a
