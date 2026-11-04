@@ -171,7 +171,11 @@ func TestNamespaceFiltersOutboundPaths(t *testing.T) {
 				case "delete dispatch":
 					err = c.sendDeleteObject(ctx, id)
 				}
-				require.NoError(t, err)
+				if path == "patch fallback" && doc == excludePayments {
+					require.ErrorContains(t, err, "recovery request was suppressed")
+				} else {
+					require.NoError(t, err)
+				}
 				if doc == excludePayments {
 					require.Equal(t, before, calls, "excluded data must not be sent")
 				} else {

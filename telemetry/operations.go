@@ -133,7 +133,8 @@ func (i *Instruments) Span(ctx context.Context, op string, start time.Time, err 
 }
 func (i *Instruments) Drop(ctx context.Context, reason string) {
 	switch reason {
-	case "invalid_message", "depth", "canceled", "send_failed":
+	case "invalid_message", "depth", "canceled", "send_failed", "duplicate",
+		"replay_expired", "replay_capacity", "replay_oversized":
 	default:
 		reason = "other"
 	}
