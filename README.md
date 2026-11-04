@@ -49,6 +49,42 @@ flowchart LR
     SERVICES=./configuration/services.json CLUSTER_CONFIG=./configuration/clusterData.json CONFIG=./configuration/client go run cmd/client/main.go
     ```
 
+## Reconciliation after connecting
+
+To repair cluster-to-backend gaps shortly after a connection is established, set
+`backend.reconciliationTaskConfig.reconcileAfterConnectSeconds` in the server's
+`config.json`:
+
+```json
+{
+  "backend": {
+    "reconciliationTaskConfig": {
+      "reconcileAfterConnectSeconds": 30
+    }
+  }
+}
+```
+
+Each accepted connection schedules one reconciliation request after this delay,
+with 0–20% additional random jitter to spread reconnect bursts (30–36 seconds in
+this example). The delay starts when the backend adapter accepts the connection.
+Omitting the option or setting it to zero disables the feature; negative values
+also disable it. Values too large to represent the delay plus jitter are ignored
+with a warning. Clients must advertise synchronizer version `v0.0.57` or newer,
+matching the existing reconciliation protocol requirement.
+
+Pending requests are canceled when the connection closes, is replaced, or the
+server shuts down. Each request uses the single-client message even when
+`sendBatch` is enabled. This option works without a periodic schedule or minimum
+connection age; existing `taskIntervalSeconds`, `cronSchedule`,
+`intervalFromConnectionSeconds`, and periodic batching behavior stay unchanged.
+A periodic run may still request reconciliation near the one-off request.
+
+Reconciliation treats the cluster as the source of truth. It does not replay
+backend-to-cluster commands. Cancellation prevents a pending send attempt; it
+cannot retract a request already enqueued to the message broker or guarantee that
+downstream reconciliation completes.
+
 ## Live namespace filtering
 
 Synchronizer can watch a shared ConfigMap for namespace filter changes without a

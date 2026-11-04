@@ -125,6 +125,8 @@ type ReconciliationTaskConfig struct {
 	TaskIntervalSeconds           int    `mapstructure:"taskIntervalSeconds"`
 	IntervalFromConnectionSeconds int    `mapstructure:"intervalFromConnectionSeconds"`
 	SendBatch                     bool   `mapstructure:"sendBatch"` // if true, a single message will be sent for all connected clients
+	// Positive enables a one-off request after connecting, with up to 20% additional jitter.
+	ReconcileAfterConnectSeconds int `mapstructure:"reconcileAfterConnectSeconds"`
 }
 
 type KeepAliveTaskConfig struct {

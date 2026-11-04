@@ -31,6 +31,9 @@ type Adapter struct {
 	mainContext      context.Context
 	skipAlertsFrom   []string
 	featuresProvider *FeaturesProvider
+
+	pendingReconciliations       map[string]*pendingReconciliation // <connection string> -> pending request, guarded by connMapMutex
+	reconcileAfterConnectSeconds int
 }
 
 func NewBackendAdapter(mainContext context.Context, messageProducer messaging.MessageProducer, cfg config.Backend) *Adapter {
@@ -63,6 +66,9 @@ func NewBackendAdapter(mainContext context.Context, messageProducer messaging.Me
 	// Allocate both maps before publishing the adapter to concurrent callers.
 	adapter.clientsMap.Copy(maps.Cast(map[string]*Client{}))
 	adapter.callbacksMap.Copy(maps.Cast(map[string]domain.Callbacks{}))
+	if cfg.ReconciliationTask != nil {
+		adapter.reconcileAfterConnectSeconds = cfg.ReconciliationTask.ReconcileAfterConnectSeconds
+	}
 
 	adapter.startReconciliationPeriodicTask(mainContext, cfg.ReconciliationTask)
 	adapter.startKeepalivePeriodicTask(mainContext, cfg.KeepAliveTask)
@@ -166,6 +172,7 @@ func (b *Adapter) Start(ctx context.Context) error {
 			closer()
 		}
 		delete(b.closers, existingId.ConnectionString())
+		b.cancelReconciliationAfterConnect(existingId.ConnectionString())
 	}
 	b.connectionMap[incomingId.String()] = incomingId
 	if closer := utils.ConnectionCloserFromContext(ctx); closer != nil {
@@ -201,6 +208,7 @@ func (b *Adapter) Start(ctx context.Context) error {
 	go func() {
 		_ = client.Start(ctx)
 	}()
+	b.scheduleReconciliationAfterConnect(ctx, client)
 
 	return nil
 }
@@ -214,14 +222,14 @@ func (b *Adapter) Stop(ctx context.Context) error {
 	logger.L().Info("stopping synchronizer backend adapter",
 		helpers.String("connectionString", toDelete.ConnectionString()),
 	)
-	// an existing different connection connection was found
+	b.cancelReconciliationAfterConnect(toDelete.ConnectionString())
+	// Only the current connection may remove the client, including when a
+	// replacement has the same connection timestamp as the old connection.
 	if existingId, ok := b.connectionMap[toDelete.String()]; ok && existingId.ConnectionString() != toDelete.ConnectionString() {
-		if existingId.ConnectionTime.After(toDelete.ConnectionTime) {
-			logger.L().Info("not removing connected client since a different connection with newer connection time found",
-				helpers.Interface("toDelete", toDelete),
-				helpers.Interface("existingId", existingId))
-			return nil
-		}
+		logger.L().Info("not removing connected client since a different connection is current",
+			helpers.Interface("toDelete", toDelete),
+			helpers.Interface("existingId", existingId))
+		return nil
 	}
 
 	logger.L().Info("removing connected client from backend adapter",
