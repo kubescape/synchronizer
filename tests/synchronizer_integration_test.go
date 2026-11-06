@@ -397,7 +397,7 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 						},
 						Containers: []corev1.Container{{
 							Name:  "apiserver",
-							Image: "quay.io/kubescape/storage:v0.0.161",
+							Image: "quay.io/kubescape/storage:v0.0.298",
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "data", MountPath: "/data"},
 								{Name: "ks-cloud-config", MountPath: "/etc/config"},

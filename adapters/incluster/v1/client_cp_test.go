@@ -100,7 +100,7 @@ func newCPClient(storage spdxv1beta1.SpdxV1beta1Interface, dyn dynamic.Interface
 // containerprofiles cases in chooseLister / chooseWatcher / getResource route to
 // the storage client's ContainerProfiles(...).List/.Watch/.Get.
 func TestChooseListerWatcherGetResource_ContainerProfiles(t *testing.T) {
-	cs := storagefake.NewSimpleClientset(newContainerProfile("ns1", "cp1", "1", ""))
+	cs := storagefake.NewClientset(newContainerProfile("ns1", "cp1", "1", ""))
 	c := newCPClient(cs.SpdxV1beta1(), newCPDynamicClient(), domain.CopyStrategy)
 
 	// chooseLister -> ContainerProfiles("").List
@@ -151,7 +151,7 @@ func TestChooseListerWatcherGetResource_ContainerProfiles(t *testing.T) {
 // served by the dynamic client and never touches the storage client, even when a
 // storage client is present.
 func TestChooseRouting_NonCPFallsThroughToDynamic(t *testing.T) {
-	cs := storagefake.NewSimpleClientset()
+	cs := storagefake.NewClientset()
 	depGVR := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 	dep := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "apps/v1",
@@ -194,7 +194,7 @@ func TestChooseRouting_NonCPFallsThroughToDynamic(t *testing.T) {
 func TestCP_PutObject_CreateAndUpdate(t *testing.T) {
 	ctx := context.Background()
 	dyn := newCPDynamicClient()
-	c := newCPClient(storagefake.NewSimpleClientset().SpdxV1beta1(), dyn, domain.CopyStrategy)
+	c := newCPClient(storagefake.NewClientset().SpdxV1beta1(), dyn, domain.CopyStrategy)
 
 	objBytes, err := c.filterAndMarshal(newContainerProfile("ns1", "cp1", "", ""))
 	require.NoError(t, err)
@@ -215,7 +215,7 @@ func TestCP_PutObject_CreateAndUpdate(t *testing.T) {
 // changed object sends a (non-empty) PatchObject computed against the shadow copy.
 func TestCP_CallPutOrPatch_PutThenPatch(t *testing.T) {
 	ctx := context.Background()
-	c := newCPClient(storagefake.NewSimpleClientset().SpdxV1beta1(), newCPDynamicClient(), domain.PatchStrategy)
+	c := newCPClient(storagefake.NewClientset().SpdxV1beta1(), newCPDynamicClient(), domain.PatchStrategy)
 
 	var puts int
 	var patches [][]byte
@@ -258,7 +258,7 @@ func TestCP_CallPutOrPatch_PutThenPatch(t *testing.T) {
 // falls back to GetObject on a checksum mismatch.
 func TestCP_VerifyObject_MatchAndMismatch(t *testing.T) {
 	ctx := context.Background()
-	cs := storagefake.NewSimpleClientset(newContainerProfile("ns1", "cp1", "1", ""))
+	cs := storagefake.NewClientset(newContainerProfile("ns1", "cp1", "1", ""))
 	c := newCPClient(cs.SpdxV1beta1(), newCPDynamicClient(), domain.CopyStrategy)
 	id := domain.KindName{Kind: c.kind, Name: "cp1", Namespace: "ns1"}
 
@@ -303,7 +303,7 @@ func TestCP_PatchObject(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("apply patch and put", func(t *testing.T) {
-		cs := storagefake.NewSimpleClientset(newContainerProfile("ns1", "cp1", "1", ""))
+		cs := storagefake.NewClientset(newContainerProfile("ns1", "cp1", "1", ""))
 		dyn := newCPDynamicClient()
 		c := newCPClient(cs.SpdxV1beta1(), dyn, domain.PatchStrategy)
 		id := domain.KindName{Kind: c.kind, Name: "cp1", Namespace: "ns1"}
@@ -327,7 +327,7 @@ func TestCP_PatchObject(t *testing.T) {
 	})
 
 	t.Run("checksum mismatch falls back to GetObject", func(t *testing.T) {
-		cs := storagefake.NewSimpleClientset(newContainerProfile("ns1", "cp1", "1", ""))
+		cs := storagefake.NewClientset(newContainerProfile("ns1", "cp1", "1", ""))
 		c := newCPClient(cs.SpdxV1beta1(), newCPDynamicClient(), domain.PatchStrategy)
 		id := domain.KindName{Kind: c.kind, Name: "cp1", Namespace: "ns1"}
 		var getCalled bool
@@ -354,7 +354,7 @@ func mustGet(t *testing.T, c *Client) metav1.Object {
 func TestCP_DeleteObject(t *testing.T) {
 	ctx := context.Background()
 	dyn := newCPDynamicClient(cpUnstructured("ns1", "cp1"))
-	c := newCPClient(storagefake.NewSimpleClientset().SpdxV1beta1(), dyn, domain.PatchStrategy)
+	c := newCPClient(storagefake.NewClientset().SpdxV1beta1(), dyn, domain.PatchStrategy)
 	id := domain.KindName{Kind: c.kind, Name: "cp1", Namespace: "ns1"}
 	c.ShadowObjects[id.String()] = []byte(`{}`)
 
@@ -368,7 +368,7 @@ func TestCP_DeleteObject(t *testing.T) {
 // TestCP_GetObjectFromMeta asserts that for the CP group getObjectFromMeta
 // re-fetches the object from the storage client and marshals it.
 func TestCP_GetObjectFromMeta(t *testing.T) {
-	cs := storagefake.NewSimpleClientset(newContainerProfile("ns1", "cp1", "1", ""))
+	cs := storagefake.NewClientset(newContainerProfile("ns1", "cp1", "1", ""))
 	c := newCPClient(cs.SpdxV1beta1(), newCPDynamicClient(), domain.CopyStrategy)
 
 	got, err := c.getObjectFromMeta(newContainerProfile("ns1", "cp1", "", ""))
@@ -386,7 +386,7 @@ func TestCP_GetObjectFromMeta(t *testing.T) {
 // VerifyObject with its checksum, and a resource version is returned.
 func TestCP_GetExistingStorageObjects(t *testing.T) {
 	ctx := context.Background()
-	cs := storagefake.NewSimpleClientset(
+	cs := storagefake.NewClientset(
 		newContainerProfile("ns1", "cp1", "5", "aaa"),
 		newContainerProfile("ns1", "cp2", "7", "bbb"),
 	)
@@ -414,7 +414,7 @@ func TestReconcileBatchProcessingFunc(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("delete, put and verify are dispatched correctly", func(t *testing.T) {
-		cs := storagefake.NewSimpleClientset(
+		cs := storagefake.NewClientset(
 			newContainerProfile("ns1", "keep", "5", "k"),
 			newContainerProfile("ns1", "changed", "5", "c"),
 			newContainerProfile("ns1", "onlyclient", "5", "o"),
@@ -450,7 +450,7 @@ func TestReconcileBatchProcessingFunc(t *testing.T) {
 	})
 
 	t.Run("empty NewChecksum is rejected", func(t *testing.T) {
-		c := newCPClient(storagefake.NewSimpleClientset().SpdxV1beta1(), newCPDynamicClient(), domain.CopyStrategy)
+		c := newCPClient(storagefake.NewClientset().SpdxV1beta1(), newCPDynamicClient(), domain.CopyStrategy)
 		err := reconcileBatchProcessingFunc(ctx, c, domain.BatchItems{})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "empty")
@@ -465,7 +465,10 @@ func TestReconcileBatchProcessingFunc(t *testing.T) {
 // queue would drive it into its os.Exit(1) giving-up branch, so instead we let
 // it block on the still-open fake watcher until the test process ends.
 func TestCP_WatchRetry_ViaFakeStorageWatcher(t *testing.T) {
-	cs := storagefake.NewSimpleClientset()
+	// Use NewSimpleClientset here because storage v0.0.290's generated applyconfiguration
+	// TypeConverter does not include ContainerProfile, causing NewClientset's field-managed
+	// Create to fail prior to watch dispatch.
+	cs := storagefake.NewSimpleClientset() //nolint:staticcheck // SA1019: NewClientset lacks ContainerProfile applyconfig in v0.0.290
 	c := newCPClient(cs.SpdxV1beta1(), newCPDynamicClient(), domain.CopyStrategy)
 	eq := utils.NewCooldownQueue()
 	ctx := context.Background()
