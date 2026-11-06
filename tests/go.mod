@@ -4,15 +4,15 @@ go 1.27
 
 require (
 	github.com/apache/pulsar-client-go v0.16.0
-	github.com/armosec/armoapi-go v0.0.710
-	github.com/armosec/armosec-infra v0.0.517
+	github.com/armosec/armoapi-go v0.0.736
+	github.com/armosec/armosec-infra v0.0.569
 	github.com/armosec/event-ingester-service v0.0.416-0.20260403134312-b79c13606a4d
-	github.com/armosec/postgres-connector v0.0.1296
+	github.com/armosec/postgres-connector v0.0.1454
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/deckarep/golang-set/v2 v2.7.0
 	github.com/kubescape/go-logger v0.0.35
 	github.com/kubescape/messaging v0.0.101
-	github.com/kubescape/storage v0.0.267
+	github.com/kubescape/storage v0.0.298
 	github.com/kubescape/synchronizer v0.0.125
 	github.com/moby/moby/api v1.55.0
 	github.com/stretchr/testify v1.12.1
@@ -47,6 +47,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization v1.0.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2 v2.4.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/managementgroups/armmanagementgroups v1.2.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
@@ -264,8 +265,6 @@ require (
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-containerregistry v0.21.5 // indirect
-	github.com/google/go-github/v39 v39.2.0 // indirect
-	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/licensecheck v0.3.1 // indirect
 	github.com/google/pprof v0.0.0-20250630185457-6e76a2b096b5 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
@@ -313,8 +312,8 @@ require (
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/knqyf263/go-apk-version v0.0.0-20200609155635-041fdbb8563f // indirect
 	github.com/knqyf263/go-deb-version v0.0.0-20241115132648-6f4aee6ccd23 // indirect
-	github.com/kubescape/backend v0.0.40 // indirect
-	github.com/kubescape/k8s-interface v0.0.206 // indirect
+	github.com/kubescape/backend v0.0.41 // indirect
+	github.com/kubescape/k8s-interface v0.0.214 // indirect
 	github.com/kubescape/opa-utils v0.0.292 // indirect
 	github.com/kubescape/rbac-utils v0.0.21-0.20230806101615-07e36f555520 // indirect
 	github.com/kubescape/storage/pkg/apiauth v0.1.0 // indirect
