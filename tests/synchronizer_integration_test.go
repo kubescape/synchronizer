@@ -31,6 +31,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
+	storageutils "github.com/kubescape/storage/pkg/utils"
 	"github.com/kubescape/synchronizer/adapters"
 	"github.com/kubescape/synchronizer/adapters/backend/v1"
 	"github.com/kubescape/synchronizer/config"
@@ -311,7 +312,8 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 		&corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Name: "ks-cloud-config"},
 			Data: map[string]string{
-				"clusterData": `{"clusterName":"k3s"}`,
+				"clusterData": `{"clusterName":"k3s","namespace":"kubescape"}`,
+				"config":      `{}`,
 			},
 		}, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -412,6 +414,7 @@ func createK8sCluster(t *testing.T, cluster, account string) *TestKubernetesClus
 									LocalObjectReference: corev1.LocalObjectReference{Name: "ks-cloud-config"},
 									Items: []corev1.KeyToPath{
 										{Key: "clusterData", Path: "clusterData.json"},
+										{Key: "config", Path: "config.json"},
 									},
 								},
 							}},
@@ -797,7 +800,10 @@ func TestSynchronizer_TC01_InCluster(t *testing.T) {
 	var s3ContainerProfile v1beta1.ContainerProfile
 	err = json.Unmarshal(b, &s3ContainerProfile)
 	require.NoError(t, err)
-	assert.Equal(t, k8sContainerProfile, &s3ContainerProfile)
+	storageutils.RemoveManagedFields(k8sContainerProfile)
+	k8sBytes, err := json.Marshal(k8sContainerProfile)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(k8sBytes), string(b))
 	// check how many times the get object message was sent
 	sentGetObject := grepCount(logFile.Name(), "sent get object message")
 	sentNewChecksum := grepCount(logFile.Name(), "sent new checksum message")
