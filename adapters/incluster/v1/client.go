@@ -233,6 +233,7 @@ func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, e
 			return fmt.Errorf("client resource: %w", err)
 		}
 		logger.L().Info("starting watch", helpers.String("resource", c.res.Resource))
+		delivered := false
 		for {
 			event, chanActive := <-watcher.ResultChan()
 			// set resource version to resume watch from
@@ -246,14 +247,18 @@ func (c *Client) watchRetry(ctx context.Context, watchOpts metav1.ListOptions, e
 			}
 			if !chanActive {
 				// channel closed, retry
+				if delivered {
+					// the watch delivered events and then ended normally, e.g. at the API
+					// server's watch timeout: restart it after the initial interval, not
+					// after the grown one. A watch that ends with an error keeps backing off.
+					b.Reset()
+				}
 				return errWatchClosed
 			}
 			if event.Type == watch.Error {
 				return fmt.Errorf("watch error: %s", event.Object)
 			}
-			// the watch works: when it ends, e.g. at the API server's watch timeout,
-			// restart it after the initial interval, not after the grown one
-			b.Reset()
+			delivered = true
 			eventQueue.Enqueue(event)
 		}
 	}, b, func(err error, d time.Duration) {

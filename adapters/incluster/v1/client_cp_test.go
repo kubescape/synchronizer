@@ -496,6 +496,46 @@ func TestCP_WatchRetry_ReconnectsPromptlyAfterHealthyWatch(t *testing.T) {
 	}
 }
 
+// TestCP_WatchRetry_KeepsBackingOffAfterEventThenError: a watch that delivers an event
+// and then fails, over and over, must still back off exponentially. Only a watch that
+// ends normally after delivering events restarts after the initial interval.
+func TestCP_WatchRetry_KeepsBackingOffAfterEventThenError(t *testing.T) {
+	cs := storagefake.NewSimpleClientset() //nolint:staticcheck // SA1019: see TestCP_WatchRetry_ViaFakeStorageWatcher
+	watchers := make(chan *watch.FakeWatcher)
+	cs.PrependWatchReactor(cpResource, func(k8stesting.Action) (bool, watch.Interface, error) {
+		w := watch.NewFake()
+		watchers <- w
+		return true, w, nil
+	})
+	c := newCPClient(cs.SpdxV1beta1(), newCPDynamicClient(), domain.CopyStrategy)
+	eq := utils.NewCooldownQueue()
+	go func() {
+		for range eq.ResultChan {
+		}
+	}()
+	// the goroutine is left running, see TestCP_WatchRetry_ViaFakeStorageWatcher
+	go c.watchRetry(context.Background(), metav1.ListOptions{}, eq)
+
+	// The backoff starts at 0.5s and grows by 1.5x with ±50% jitter, so the 5th retry
+	// waits at least 0.5*1.5^4*0.5 ≈ 1.27s. Resetting on every event would keep it
+	// around 0.5s.
+	w := <-watchers
+	var last time.Duration
+	for i := range 5 {
+		w.Add(newContainerProfile("ns1", fmt.Sprintf("cp-%d", i), fmt.Sprint(i+1), ""))
+		w.Error(&metav1.Status{Status: metav1.StatusFailure, Reason: metav1.StatusReasonExpired})
+		failed := time.Now()
+		select {
+		case w = <-watchers:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("watch %d: not re-established within 10s", i+2)
+		}
+		last = time.Since(failed)
+		t.Logf("watch %d re-established after %s", i+2, last.Round(time.Millisecond))
+	}
+	assert.Greater(t, last, time.Second, "event-then-error watches should keep backing off")
+}
+
 // TestCP_WatchRetry_ViaFakeStorageWatcher exercises watchRetry against the CP
 // path using the in-memory fake storage watcher, proving the happy path (choose
 // watcher -> forward event to the cooldown queue) without a k3s testcontainer.
