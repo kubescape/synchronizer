@@ -442,7 +442,14 @@ func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum s
 	baseObject, err := c.patchObject(ctx, id, checksum, patch)
 	if err != nil {
 		logger.L().Ctx(ctx).Warning("patch object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
-		return c.sendGetObject(ctx, id, baseObject)
+		sent, recoveryErr := c.dispatchGetObject(ctx, id, baseObject)
+		if recoveryErr != nil {
+			return recoveryErr
+		}
+		if !sent {
+			return fmt.Errorf("patch failed and recovery request was suppressed: %w", err)
+		}
+		return nil
 	}
 	return nil
 }
@@ -487,6 +494,11 @@ func (c *Client) PutObject(ctx context.Context, id domain.KindName, checksum str
 	if err != nil {
 		return fmt.Errorf("unmarshal object: %w", err)
 	}
+	// the API server refuses to create an object that has a resourceVersion, before it
+	// checks whether the object exists, so clear it. The uid and creationTimestamp from
+	// the cluster copy can stay: the server replaces them on create, and the update
+	// below takes the whole metadata from the live object.
+	obj.SetResourceVersion("")
 	// use apply to create or update object, we want to overwrite existing objects
 	// TODO for the moment we keep the dynamic client as we create fewer objects than we fetch
 	_, err = c.dynamicClient.Resource(c.res).Namespace(id.Namespace).Create(context.Background(), &obj, metav1.CreateOptions{})

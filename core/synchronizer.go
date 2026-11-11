@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,8 @@ import (
 
 const maxMessageDepth = 8
 
+type recoveryContextKey struct{}
+
 type Synchronizer struct {
 	connMu        sync.RWMutex
 	adapters      []adapters.Adapter
@@ -42,6 +45,7 @@ type Synchronizer struct {
 	readDataFunc  func(rw io.ReadWriter) ([]byte, error)
 	writeDataFunc func(w io.Writer, p []byte) error
 	readTimeout   time.Duration // bounds the wait for the next frame; zero waits forever
+	dedupe        *messageDedupe
 }
 
 // DefaultMaxMessageBytes bounds one websocket message when no limit is configured: the
@@ -58,6 +62,14 @@ type Option func(*options)
 type options struct {
 	maxMessageBytes int64
 	readTimeout     time.Duration
+	dedupeTTL       time.Duration
+	dedupeMessages  int
+}
+
+// WithDeduplication bounds successful backend-message fingerprints on the client.
+// A nonpositive limit or duration disables deduplication. It has no server effect.
+func WithDeduplication(ttl time.Duration, maxMessages int) Option {
+	return func(o *options) { o.dedupeTTL, o.dedupeMessages = ttl, maxMessages }
 }
 
 // DefaultServerReadTimeout is how long a server waits for the next frame from a client
@@ -88,13 +100,14 @@ func applyOptions(o options, opts []Option) options {
 }
 
 func NewSynchronizerClient(mainCtx context.Context, adapter []adapters.Adapter, conn net.Conn, newConn func() (net.Conn, error), opts ...Option) (*Synchronizer, error) {
-	o := applyOptions(options{maxMessageBytes: DefaultMaxMessageBytes}, opts)
+	o := applyOptions(options{maxMessageBytes: DefaultMaxMessageBytes, dedupeTTL: 10 * time.Minute, dedupeMessages: 10000}, opts)
 	s, err := newSynchronizer(mainCtx, adapter, conn, true, readBinary(ws.StateClientSide, o.maxMessageBytes), wsutil.WriteClientBinary)
 	if err != nil {
 		return nil, err
 	}
 	s.newConn = newConn
 	s.readTimeout = o.readTimeout
+	s.dedupe = newMessageDedupe(o.dedupeTTL, o.dedupeMessages)
 	return s, nil
 }
 
@@ -264,6 +277,11 @@ func (s *Synchronizer) BatchCallback(ctx context.Context, kind domain.Kind, batc
 }
 
 func (s *Synchronizer) GetObjectCallback(ctx context.Context, id domain.KindName, baseObject []byte) error {
+	// Patch application can return nil after requesting a full object. That is
+	// recovery in progress, not a completed mutation eligible for deduplication.
+	if recovery, ok := ctx.Value(recoveryContextKey{}).(*atomic.Bool); ok {
+		recovery.Store(true)
+	}
 	if s.isClient {
 		baseObject = nil
 	}
@@ -316,7 +334,12 @@ func (s *Synchronizer) Start(ctx context.Context) error {
 	}
 	// adapter events
 	for _, adapter := range s.adapters {
-		err := adapter.Start(ctx)
+		var err error
+		if replay, ok := adapter.(interface{ StartWithAsyncReplay(context.Context) error }); ok && !s.isClient {
+			err = replay.StartWithAsyncReplay(ctx)
+		} else {
+			err = adapter.Start(ctx)
+		}
 		if err != nil {
 			return fmt.Errorf("start adapter: %w", err)
 		}
@@ -429,6 +452,21 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 
 		// store in context
 		ctx = utils.ContextFromGeneric(ctx, generic)
+		// MsgId is also used for correlated replies and multi-kind batches. Hash
+		// the complete wire message so those distinct operations are not suppressed.
+		// Queries and reconciliation must be able to resend a lost response.
+		dedupeMutation := s.dedupe != nil && generic.MsgId != "" &&
+			(*generic.Event == domain.EventPutObject || *generic.Event == domain.EventPatchObject || *generic.Event == domain.EventObjectDeleted)
+		var dedupeKey [sha256.Size]byte
+		var recovery atomic.Bool
+		if dedupeMutation {
+			ctx = context.WithValue(ctx, recoveryContextKey{}, &recovery)
+			dedupeKey = sha256.Sum256(data)
+			if s.dedupe.seen(dedupeKey) {
+				telemetry.Default().Drop(ctx, "duplicate")
+				return
+			}
+		}
 		// handle message
 		switch *generic.Event {
 		case domain.EventBatch:
@@ -599,6 +637,11 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 					helpers.String("msgid", msg.MsgId))
 				return
 			}
+		default:
+			return // ping and unsupported events are not applied operations
+		}
+		if dedupeMutation && !recovery.Load() {
+			s.dedupe.remember(dedupeKey)
 		}
 	})
 	if err != nil {

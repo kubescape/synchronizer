@@ -30,7 +30,22 @@ func kindFromPayload(ctx context.Context, kindStr, messageType string) (*domain.
 	return kind, nil
 }
 
-func (h *MessageHandler) Handle(ctx context.Context, adapter adapters.Adapter, msg IncomingMessage) (result error) {
+// BackendMessageRouter serializes message routing with connection publication.
+// Adapters without replay retain the ordinary delivery path.
+type BackendMessageRouter interface {
+	HandleBackendMessage(context.Context, adapters.Adapter, IncomingMessage, *MessageHandler) error
+}
+
+func (h *MessageHandler) Handle(ctx context.Context, adapter adapters.Adapter, msg IncomingMessage) error {
+	if router, ok := adapter.(BackendMessageRouter); ok {
+		return router.HandleBackendMessage(ctx, adapter, msg, h)
+	}
+	return h.Deliver(ctx, adapter, msg)
+}
+
+// Deliver dispatches a message without entering the routing hook again. A replay
+// router calls it only while it owns the client's connection routing lock.
+func (h *MessageHandler) Deliver(ctx context.Context, adapter adapters.Adapter, msg IncomingMessage) (result error) {
 	ctx = propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier(msg.Properties))
 	finish := telemetry.Default().Begin(ctx, "mq_receive")
 	defer func() { finish(result, len(msg.Payload)) }()
