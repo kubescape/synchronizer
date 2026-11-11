@@ -83,7 +83,7 @@ func (c *PulsarMessageReader) Start(mainCtx context.Context, adapter adapters.Ad
 	}()
 
 	go func() {
-		for w := 1; w <= c.workers; w++ {
+		for w := 1; w <= messaging.ReaderWorkers(adapter, c.workers); w++ {
 			logger.L().Info("starting to listening on pulsar message channel", helpers.Int("worker", w))
 			c.wg.Add(1)
 			go c.listenOnMessageChannel(mainCtx, adapter)

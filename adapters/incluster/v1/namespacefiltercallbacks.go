@@ -22,10 +22,15 @@ func (c *Client) sendDeleteObject(ctx context.Context, id domain.KindName) error
 }
 
 func (c *Client) sendGetObject(ctx context.Context, id domain.KindName, baseObject []byte) error {
+	_, err := c.dispatchGetObject(ctx, id, baseObject)
+	return err
+}
+
+func (c *Client) dispatchGetObject(ctx context.Context, id domain.KindName, baseObject []byte) (bool, error) {
 	if c.liveNamespaceExcluded(id.Namespace) || c.callbacks.GetObject == nil {
-		return nil
+		return false, nil
 	}
-	return c.callbacks.GetObject(ctx, id, baseObject)
+	return true, c.callbacks.GetObject(ctx, id, baseObject)
 }
 
 // The caller must not advance a patch baseline when dispatch was suppressed.

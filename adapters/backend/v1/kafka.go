@@ -426,7 +426,7 @@ func NewKafkaMessageReader(cfg config.Config) (*KafkaMessageReader, error) {
 }
 
 func (c *KafkaMessageReader) Start(mainCtx context.Context, adapter adapters.Adapter) {
-	for w := 1; w <= c.workers; w++ {
+	for w := 1; w <= messaging.ReaderWorkers(adapter, c.workers); w++ {
 		logger.L().Info("starting to listening on kafka message channel", helpers.Int("worker", w))
 		c.wg.Add(1)
 		go c.listenOnMessageChannel(mainCtx, adapter)

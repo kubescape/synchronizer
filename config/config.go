@@ -35,10 +35,21 @@ type Backend struct {
 	SkipAlertsFrom       []string                    `mapstructure:"skipAlertsFrom"`
 	FeaturesProvider     *FeaturesProviderConfig     `mapstructure:"featuresProvider"`
 	MessageQueue         *MessageQueueConfig         `mapstructure:"messageQueue"`
+	Replay               *ReplayConfig               `mapstructure:"replay"`
 	// MaxMessageBytes bounds one websocket message the server reads from a cluster, over
 	// all its frames. Unset, it follows the Kafka producer's maxMessageBytes, and without
 	// that the core default of 64 MiB.
 	MaxMessageBytes int `mapstructure:"maxMessageBytes"`
+}
+
+// ReplayConfig bounds the per-pod backlog for disconnected clients. Replay is
+// opt-in; nonpositive limits use the documented defaults when Enabled is true.
+type ReplayConfig struct {
+	Enabled              bool `mapstructure:"enabled"`
+	TTLSeconds           int  `mapstructure:"ttlSeconds"`
+	MaxMessages          int  `mapstructure:"maxMessages"`
+	MaxMessagesPerClient int  `mapstructure:"maxMessagesPerClient"`
+	MaxBytes             int  `mapstructure:"maxBytes"`
 }
 
 // WebSocketMaxMessageBytes is the largest websocket message the server reads: the
@@ -82,19 +93,44 @@ type KafkaConfig struct {
 }
 
 type InCluster struct {
-	NamespaceFilterConfigMapName string     `mapstructure:"namespaceFilterConfigMapName"`
-	ServerUrl                    string     `mapstructure:"serverUrl"`
-	Namespace                    string     `mapstructure:"namespace"`
-	ClusterName                  string     `mapstructure:"clusterName"`
-	ExcludeNamespaces            []string   `mapstructure:"excludeNamespaces"`
-	IncludeNamespaces            []string   `mapstructure:"includeNamespaces"`
-	Account                      string     `mapstructure:"account"`
-	AccessKey                    string     `mapstructure:"accessKey"`
-	Resources                    []Resource `mapstructure:"resources"`
+	Deduplication                *DeduplicationConfig `mapstructure:"deduplication"`
+	NamespaceFilterConfigMapName string               `mapstructure:"namespaceFilterConfigMapName"`
+	ServerUrl                    string               `mapstructure:"serverUrl"`
+	Namespace                    string               `mapstructure:"namespace"`
+	ClusterName                  string               `mapstructure:"clusterName"`
+	ExcludeNamespaces            []string             `mapstructure:"excludeNamespaces"`
+	IncludeNamespaces            []string             `mapstructure:"includeNamespaces"`
+	Account                      string               `mapstructure:"account"`
+	AccessKey                    string               `mapstructure:"accessKey"`
+	Resources                    []Resource           `mapstructure:"resources"`
 	// MaxMessageBytes bounds one websocket message the client reads from the server, over
 	// all its frames; unset, the core default of 64 MiB applies. Raise it with the
 	// backend's maxMessageBytes when that one is raised.
 	MaxMessageBytes int `mapstructure:"maxMessageBytes"`
+}
+
+type DeduplicationConfig struct {
+	Disabled    bool `mapstructure:"disabled"`
+	TTLSeconds  int  `mapstructure:"ttlSeconds"`
+	MaxMessages int  `mapstructure:"maxMessages"`
+}
+
+// DeduplicationLimits returns bounded-cache defaults even when the section is absent.
+func (c *DeduplicationConfig) DeduplicationLimits() (ttlSeconds, maxMessages int) {
+	ttlSeconds, maxMessages = 600, 10000
+	if c == nil {
+		return
+	}
+	if c.Disabled {
+		return 0, 0
+	}
+	if c.TTLSeconds > 0 && int64(c.TTLSeconds) <= (1<<63-1)/1000000000 {
+		ttlSeconds = c.TTLSeconds
+	}
+	if c.MaxMessages > 0 {
+		maxMessages = c.MaxMessages
+	}
+	return
 }
 
 type HTTPEndpoint struct {

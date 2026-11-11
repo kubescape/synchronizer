@@ -441,7 +441,14 @@ func (c *Client) PatchObject(ctx context.Context, id domain.KindName, checksum s
 	baseObject, err := c.patchObject(ctx, id, checksum, patch)
 	if err != nil {
 		logger.L().Ctx(ctx).Warning("patch object, sending get object", helpers.Error(err), helpers.String("id", id.String()))
-		return c.sendGetObject(ctx, id, baseObject)
+		sent, recoveryErr := c.dispatchGetObject(ctx, id, baseObject)
+		if recoveryErr != nil {
+			return recoveryErr
+		}
+		if !sent {
+			return fmt.Errorf("patch failed and recovery request was suppressed: %w", err)
+		}
+		return nil
 	}
 	return nil
 }
