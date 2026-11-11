@@ -626,26 +626,41 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 
 func (c *Client) filterAndMarshal(d metav1.Object) ([]byte, error) {
 	storageutils.RemoveManagedFields(d)
+	fields, ok := fieldsToRemove[c.kind.String()]
+	if !ok {
+		fields = fieldsToRemove["default"]
+	}
 	if un, ok := d.(*unstructured.Unstructured); ok {
-		fields, ok := fieldsToRemove[c.kind.String()]
-		if !ok {
-			fields = fieldsToRemove["default"]
-		}
 		if err := storageutils.RemoveSpecificFields(un, fields); err != nil {
 			return nil, fmt.Errorf("remove specific fields: %w", err)
 		}
 		if err := utils.MaskEnvironmentVariables(un); err != nil {
 			return nil, fmt.Errorf("mask environment variables: %w", err)
 		}
-	} else {
-		// add type meta information to the object
-		d.(runtime.Object).GetObjectKind().SetGroupVersionKind(schema.GroupVersionKind{
-			Group:   c.kind.Group,
-			Version: c.kind.Version,
-			Kind:    reflect.TypeOf(d).Elem().Name(),
-		})
+		return json.Marshal(un)
 	}
-	return json.Marshal(d)
+	// add type meta information to the object
+	d.(runtime.Object).GetObjectKind().SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   c.kind.Group,
+		Version: c.kind.Version,
+		Kind:    reflect.TypeOf(d).Elem().Name(),
+	})
+	if len(fields) == 0 {
+		return json.Marshal(d)
+	}
+	// typed objects from the storage client (sbomsyfts) need the same fields removed
+	b, err := json.Marshal(d)
+	if err != nil {
+		return nil, err
+	}
+	un := &unstructured.Unstructured{}
+	if err := un.UnmarshalJSON(b); err != nil {
+		return nil, fmt.Errorf("unmarshal typed object: %w", err)
+	}
+	if err := storageutils.RemoveSpecificFields(un, fields); err != nil {
+		return nil, fmt.Errorf("remove specific fields: %w", err)
+	}
+	return json.Marshal(un)
 }
 
 func (c *Client) getObjectFromMeta(d metav1.Object) ([]byte, error) {

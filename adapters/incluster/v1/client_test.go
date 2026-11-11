@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
+	storagefake "github.com/kubescape/storage/pkg/generated/clientset/versioned/fake"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
@@ -233,6 +234,61 @@ func TestClient_filterAndMarshal(t *testing.T) {
 			assert.JSONEq(t, string(got), string(tt.want))
 		})
 	}
+}
+
+// TestClient_GetObject_TypedSBOMSyftFieldsRemoved checks that the sbomsyfts fields listed
+// in fieldsToRemove are also removed on the path production uses: getResource fetches
+// sbomsyfts with the typed storage client, so filterAndMarshal gets a *v1beta1.SBOMSyft,
+// not the *unstructured.Unstructured that TestClient_filterAndMarshal passes in.
+func TestClient_GetObject_TypedSBOMSyftFieldsRemoved(t *testing.T) {
+	sbom := &v1beta1.SBOMSyft{
+		ObjectMeta: metav1.ObjectMeta{Name: "nginx-1234", Namespace: "kubescape", ResourceVersion: "1"},
+		Spec: v1beta1.SBOMSyftSpec{
+			Syft: v1beta1.SyftDocument{
+				Artifacts: []v1beta1.SyftPackage{
+					{PackageBasicData: v1beta1.PackageBasicData{ID: "pkg", Name: "openssl", Version: "3.0.2"}},
+				},
+				ArtifactRelationships: []v1beta1.SyftRelationship{{Parent: "pkg", Child: "file", Type: "contains"}},
+				Files:                 []v1beta1.SyftFile{{ID: "file"}},
+				SyftDescriptor:        v1beta1.SyftDescriptor{Name: "syft", Version: "v1.18.1"},
+			},
+		},
+	}
+	cs := storagefake.NewSimpleClientset(sbom) //nolint:staticcheck // SA1019: same fake as the ContainerProfile watch test
+	c := &Client{
+		storageClient: cs.SpdxV1beta1(),
+		dynamicClient: fake.NewSimpleDynamicClient(runtime.NewScheme()),
+		kind:          domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/sbomsyfts"),
+		res:           schema.GroupVersionResource{Group: kubescapeCustomResourceGroup, Version: "v1beta1", Resource: "sbomsyfts"},
+		ShadowObjects: map[string][]byte{},
+		Strategy:      domain.CopyStrategy,
+	}
+	// the object really comes from the typed client
+	obj, err := c.getResource("kubescape", "nginx-1234")
+	require.NoError(t, err)
+	require.IsType(t, &v1beta1.SBOMSyft{}, obj)
+
+	var sent []byte
+	c.callbacks = domain.Callbacks{
+		PutObject: func(_ context.Context, _ domain.KindName, _ string, object []byte) error {
+			sent = object
+			return nil
+		},
+	}
+	require.NoError(t, c.GetObject(context.TODO(), domain.KindName{Kind: c.kind, Name: "nginx-1234", Namespace: "kubescape"}, nil))
+	require.NotNil(t, sent, "GetObject should send the object")
+
+	var got unstructured.Unstructured
+	require.NoError(t, got.UnmarshalJSON(sent))
+	syft, found, err := unstructured.NestedMap(got.Object, "spec", "syft")
+	require.NoError(t, err)
+	require.True(t, found)
+	for _, field := range []string{"descriptor", "files", "artifactRelationships"} {
+		assert.Nil(t, syft[field], "spec.syft.%s should be removed before sending", field)
+	}
+	assert.NotEmpty(t, syft["artifacts"], "the packages should be kept")
+	assert.Equal(t, "SBOMSyft", got.GetKind())
+	assert.Equal(t, "spdx.softwarecomposition.kubescape.io/v1beta1", got.GetAPIVersion())
 }
 
 func TestClient_isFiltered(t *testing.T) {
