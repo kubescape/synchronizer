@@ -1,6 +1,7 @@
 package incluster
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -648,19 +649,25 @@ func (c *Client) filterAndMarshal(d metav1.Object) ([]byte, error) {
 	if len(fields) == 0 {
 		return json.Marshal(d)
 	}
-	// typed objects from the storage client (sbomsyfts) need the same fields removed
+	// typed objects from the storage client (sbomsyfts) need the same fields removed.
+	// Decode with UseNumber so the numbers that stay are written back exactly as they
+	// came: package metadata is raw JSON and can hold values that int64 or float64
+	// would change.
 	b, err := json.Marshal(d)
 	if err != nil {
 		return nil, err
 	}
-	un := &unstructured.Unstructured{}
-	if err := un.UnmarshalJSON(b); err != nil {
-		return nil, fmt.Errorf("unmarshal typed object: %w", err)
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	obj := map[string]interface{}{}
+	if err := dec.Decode(&obj); err != nil {
+		return nil, fmt.Errorf("decode typed object: %w", err)
 	}
+	un := &unstructured.Unstructured{Object: obj}
 	if err := storageutils.RemoveSpecificFields(un, fields); err != nil {
 		return nil, fmt.Errorf("remove specific fields: %w", err)
 	}
-	return json.Marshal(un)
+	return json.Marshal(un.Object)
 }
 
 func (c *Client) getObjectFromMeta(d metav1.Object) ([]byte, error) {

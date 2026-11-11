@@ -291,6 +291,47 @@ func TestClient_GetObject_TypedSBOMSyftFieldsRemoved(t *testing.T) {
 	assert.Equal(t, "spdx.softwarecomposition.kubescape.io/v1beta1", got.GetAPIVersion())
 }
 
+// TestClient_GetObject_TypedSBOMSyftNumbersKept: stripping fields from a typed object must
+// not change the numbers that stay. Package metadata is raw JSON, so it can hold integers
+// beyond 2^53 or beyond int64 and decimals that a float64 round trip would rewrite.
+func TestClient_GetObject_TypedSBOMSyftNumbersKept(t *testing.T) {
+	metadata := `{"installedSize":9007199254740993,"maxSize":18446744073709551615,"ratio":0.10000000000000000555}`
+	sbom := &v1beta1.SBOMSyft{
+		ObjectMeta: metav1.ObjectMeta{Name: "nginx-1234", Namespace: "kubescape", ResourceVersion: "1"},
+		Spec: v1beta1.SBOMSyftSpec{
+			Syft: v1beta1.SyftDocument{
+				Artifacts: []v1beta1.SyftPackage{{
+					PackageBasicData:  v1beta1.PackageBasicData{ID: "pkg", Name: "openssl", Version: "3.0.2"},
+					PackageCustomData: v1beta1.PackageCustomData{MetadataType: "dpkg-db-entry", Metadata: []byte(metadata)},
+				}},
+				Files: []v1beta1.SyftFile{{ID: "file"}},
+			},
+		},
+	}
+	cs := storagefake.NewSimpleClientset(sbom) //nolint:staticcheck // SA1019: same fake as the ContainerProfile watch test
+	c := &Client{
+		storageClient: cs.SpdxV1beta1(),
+		dynamicClient: fake.NewSimpleDynamicClient(runtime.NewScheme()),
+		kind:          domain.KindFromString(context.TODO(), "spdx.softwarecomposition.kubescape.io/v1beta1/sbomsyfts"),
+		res:           schema.GroupVersionResource{Group: kubescapeCustomResourceGroup, Version: "v1beta1", Resource: "sbomsyfts"},
+		ShadowObjects: map[string][]byte{},
+		Strategy:      domain.CopyStrategy,
+	}
+	var sent []byte
+	c.callbacks = domain.Callbacks{
+		PutObject: func(_ context.Context, _ domain.KindName, _ string, object []byte) error {
+			sent = object
+			return nil
+		},
+	}
+	require.NoError(t, c.GetObject(context.TODO(), domain.KindName{Kind: c.kind, Name: "nginx-1234", Namespace: "kubescape"}, nil))
+	require.NotNil(t, sent, "GetObject should send the object")
+	for _, number := range []string{"9007199254740993", "18446744073709551615", "0.10000000000000000555"} {
+		assert.Contains(t, string(sent), number, "the number should be sent unchanged")
+	}
+	assert.NotContains(t, string(sent), `{"id":"file"`, "spec.syft.files should still be removed")
+}
+
 func TestClient_isFiltered(t *testing.T) {
 	tests := []struct {
 		name     string
