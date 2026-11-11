@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 // The tests in this file provide a cluster-free unit safety net for the
@@ -447,6 +448,48 @@ func TestReconcileBatchProcessingFunc(t *testing.T) {
 		assert.Equal(t, []string{"onlyserver"}, deletes)
 		assert.Equal(t, []string{"changed"}, puts)
 		assert.Equal(t, []string{"onlyclient"}, verifies)
+	})
+
+	t.Run("client-only object is verified with its stored checksum", func(t *testing.T) {
+		// The storage server lists metadata only (StorageImpl.GetList), so the list
+		// item carries the sync-checksum annotation but not the spec. The checksum sent
+		// for an object missing from the server must be the object's own checksum, the
+		// one the startup path sends, not a hash of that spec-less list item.
+		stored := newContainerProfile("ns1", "onlyclient", "5", "")
+		stored.Spec.Syscalls = []string{"read", "write"}
+		c := newCPClient(nil, newCPDynamicClient(), domain.CopyStrategy)
+		full, err := c.filterAndMarshal(stored.DeepCopy())
+		require.NoError(t, err)
+		checksum, err := storageutils.CanonicalHash(full)
+		require.NoError(t, err)
+		stored.Annotations[helpersv1.SyncChecksumMetadataKey] = checksum
+
+		cs := storagefake.NewClientset(stored)
+		cs.PrependReactor("list", cpResource, func(k8stesting.Action) (bool, runtime.Object, error) {
+			item := stored.DeepCopy()
+			item.Spec = v1beta1.ContainerProfileSpec{}
+			return true, &v1beta1.ContainerProfileList{Items: []v1beta1.ContainerProfile{*item}}, nil
+		})
+		c = newCPClient(cs.SpdxV1beta1(), newCPDynamicClient(), domain.CopyStrategy)
+		verified := map[string]string{}
+		c.callbacks = domain.Callbacks{
+			DeleteObject: func(context.Context, domain.KindName) error { return nil },
+			VerifyObject: func(_ context.Context, id domain.KindName, checksum string) error {
+				verified[id.Name] = checksum
+				return nil
+			},
+		}
+
+		_, err = c.getExistingStorageObjects(ctx)
+		require.NoError(t, err)
+		require.Equal(t, checksum, verified["onlyclient"], "startup sends the stored checksum")
+		delete(verified, "onlyclient")
+
+		items := domain.BatchItems{NewChecksum: []domain.NewChecksum{
+			{Kind: c.kind, Name: "onlyserver", Namespace: "ns1", ResourceVersion: 9, Checksum: "s"},
+		}}
+		require.NoError(t, reconcileBatchProcessingFunc(ctx, c, items))
+		assert.Equal(t, checksum, verified["onlyclient"], "reconciliation should send the same checksum")
 	})
 
 	t.Run("empty NewChecksum is rejected", func(t *testing.T) {
