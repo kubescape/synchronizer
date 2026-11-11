@@ -2,10 +2,13 @@ package incluster
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
+	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
+	storageutils "github.com/kubescape/storage/pkg/utils"
 	"github.com/kubescape/synchronizer/config"
 	"github.com/kubescape/synchronizer/domain"
 	"github.com/kubescape/synchronizer/utils"
@@ -15,6 +18,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/k3s"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -23,6 +28,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
 )
@@ -465,4 +471,100 @@ func TestAdapter_GetClientByKind_UnconfiguredKind_NoOp(t *testing.T) {
 	require.Equal(t, 0, calls)
 }
 
+// rejectResourceVersionOnCreate makes the fake dynamic client answer a create the way the
+// API server does when the object carries metadata.resourceVersion: the etcd3 store's
+// Create returns storage.ErrResourceVersionSetOnCreate before it looks for an existing
+// object, and the handler turns that plain error into a 500 status. The fake tracker
+// does not check this by itself.
+func rejectResourceVersionOnCreate(client *fake.FakeDynamicClient) {
+	client.PrependReactor("create", "*", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		obj, err := meta.Accessor(action.(k8stesting.CreateAction).GetObject())
+		if err != nil || obj.GetResourceVersion() == "" {
+			return false, nil, nil
+		}
+		return true, nil, &k8sErrors.StatusError{ErrStatus: metav1.Status{
+			Status:  metav1.StatusFailure,
+			Code:    http.StatusInternalServerError,
+			Reason:  metav1.StatusReasonUnknown,
+			Message: "resourceVersion should not be set on objects to be created",
+		}}
+	})
+}
 
+func newConfigMapClient(strategy domain.Strategy, objects ...runtime.Object) (*Client, *fake.FakeDynamicClient) {
+	res := schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}
+	dyn := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
+		map[schema.GroupVersionResource]string{res: "ConfigMapList"}, objects...)
+	rejectResourceVersionOnCreate(dyn)
+	return &Client{
+		dynamicClient: dyn,
+		kind:          &domain.Kind{Version: "v1", Resource: "configmaps"},
+		res:           res,
+		ShadowObjects: map[string][]byte{},
+		Strategy:      strategy,
+	}, dyn
+}
+
+func clusterConfigMap(data string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata":   map[string]any{"name": "cm", "namespace": "default", "resourceVersion": "5"},
+		"data":       map[string]any{"test": data},
+	}}
+}
+
+// TestClient_PutObject_PayloadWithResourceVersion covers objects the server sends with
+// metadata.resourceVersion still set, as every object the cluster uploaded has it.
+func TestClient_PutObject_PayloadWithResourceVersion(t *testing.T) {
+	ctx := context.TODO()
+	id := domain.KindName{Kind: &domain.Kind{Version: "v1", Resource: "configmaps"}, Name: "cm", Namespace: "default"}
+	payload := []byte(`{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"cm","namespace":"default","resourceVersion":"3"},"data":{"test":"backend"}}`)
+
+	t.Run("existing object is updated", func(t *testing.T) {
+		c, dyn := newConfigMapClient(domain.CopyStrategy, clusterConfigMap("cluster"))
+		require.NoError(t, c.PutObject(ctx, id, "", payload))
+		got, err := dyn.Resource(c.res).Namespace("default").Get(ctx, "cm", metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, "backend", got.Object["data"].(map[string]any)["test"])
+	})
+
+	t.Run("missing object is created", func(t *testing.T) {
+		c, dyn := newConfigMapClient(domain.CopyStrategy)
+		require.NoError(t, c.PutObject(ctx, id, "", payload))
+		got, err := dyn.Resource(c.res).Namespace("default").Get(ctx, "cm", metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, "backend", got.Object["data"].(map[string]any)["test"])
+	})
+}
+
+// TestClient_PatchObject_AppliedToExistingObject: patchObject applies the patch to the
+// live object, so the result it writes always carries the live resourceVersion.
+func TestClient_PatchObject_AppliedToExistingObject(t *testing.T) {
+	ctx := context.TODO()
+	c, dyn := newConfigMapClient(domain.PatchStrategy, clusterConfigMap("cluster"))
+	id := domain.KindName{Kind: c.kind, Name: "cm", Namespace: "default"}
+	var getObjectSent bool
+	c.callbacks = domain.Callbacks{
+		GetObject: func(_ context.Context, _ domain.KindName, _ []byte) error {
+			getObjectSent = true
+			return nil
+		},
+	}
+
+	live, err := c.getResource("default", "cm")
+	require.NoError(t, err)
+	base, err := c.filterAndMarshal(live)
+	require.NoError(t, err)
+	patch := []byte(`{"data":{"test":"backend"}}`)
+	modified, err := jsonpatch.MergePatch(base, patch)
+	require.NoError(t, err)
+	checksum, err := storageutils.CanonicalHash(modified)
+	require.NoError(t, err)
+
+	require.NoError(t, c.PatchObject(ctx, id, checksum, patch))
+	assert.False(t, getObjectSent, "a patch that verifies should not fall back to GetObject")
+	got, err := dyn.Resource(c.res).Namespace("default").Get(ctx, "cm", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "backend", got.Object["data"].(map[string]any)["test"])
+}

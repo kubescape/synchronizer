@@ -486,6 +486,9 @@ func (c *Client) PutObject(ctx context.Context, id domain.KindName, checksum str
 	if err != nil {
 		return fmt.Errorf("unmarshal object: %w", err)
 	}
+	// the API server refuses to create an object that has a resourceVersion, before it
+	// checks whether the object exists, so clear it: the update below uses the live one
+	obj.SetResourceVersion("")
 	// use apply to create or update object, we want to overwrite existing objects
 	// TODO for the moment we keep the dynamic client as we create fewer objects than we fetch
 	_, err = c.dynamicClient.Resource(c.res).Namespace(id.Namespace).Create(context.Background(), &obj, metav1.CreateOptions{})
