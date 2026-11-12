@@ -121,7 +121,7 @@ func filterTestObject(ns string) *unstructured.Unstructured {
 func TestNamespaceFiltersOutboundPaths(t *testing.T) {
 	ctx := context.Background()
 	resource := config.Resource{Group: "apps", Version: "v1", Resource: "deployments", Strategy: domain.CopyStrategy}
-	for _, path := range []string{"get", "verify fallback", "patch fallback", "storage bootstrap", "reconcile existing", "reconcile new", "reconcile deleted", "put dispatch", "patch dispatch", "verify dispatch", "delete dispatch"} {
+	for _, path := range []string{"get", "verify fallback", "patch fallback", "storage bootstrap", "reconcile existing", "reconcile new", "reconcile deleted", "put dispatch", "patch dispatch", "delete dispatch"} {
 		t.Run(path, func(t *testing.T) {
 			obj := filterTestObject("payments")
 			dynamicClient := fake.NewSimpleDynamicClient(runtime.NewScheme(), obj)
@@ -166,8 +166,6 @@ func TestNamespaceFiltersOutboundPaths(t *testing.T) {
 					err = c.callPutOrPatch(ctx, id, "checksum", nil, []byte(`{}`))
 				case "patch dispatch":
 					_, err = c.dispatchPatchObject(ctx, id, "checksum", []byte(`{}`))
-				case "verify dispatch":
-					err = c.callVerifyObject(ctx, id, []byte(`{}`))
 				case "delete dispatch":
 					err = c.sendDeleteObject(ctx, id)
 				}

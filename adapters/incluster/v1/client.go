@@ -380,19 +380,6 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, checksu
 	return nil
 }
 
-func (c *Client) callVerifyObject(ctx context.Context, id domain.KindName, object []byte) error {
-	// calculate checksum
-	checksum, err := storageutils.CanonicalHash(object)
-	if err != nil {
-		return fmt.Errorf("calculate checksum: %w", err)
-	}
-	err = c.sendVerifyObject(ctx, id, checksum)
-	if err != nil {
-		return fmt.Errorf("send checksum: %w", err)
-	}
-	return nil
-}
-
 func (c *Client) getChecksum(d metav1.Object) (string, error) {
 	// fast path, we have the checksum already
 	if checksum, ok := d.GetAnnotations()[helpersv1.SyncChecksumMetadataKey]; ok {
@@ -817,9 +804,11 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 			ResourceVersion: resourceVersion,
 		}
 
-		newObject, marshalErr := c.filterAndMarshal(item)
-		if marshalErr != nil {
-			err = multierr.Append(err, fmt.Errorf("marshal resource: %w", marshalErr))
+		// same checksum as the watch and startup paths: storage lists metadata only,
+		// so hashing the list item would not hash the object
+		checksum, errChecksum := c.getChecksum(item)
+		if errChecksum != nil {
+			err = multierr.Append(err, fmt.Errorf("get checksum: %w", errChecksum))
 			continue
 		}
 
@@ -830,7 +819,7 @@ func reconcileBatchProcessingFunc(ctx context.Context, c *Client, items domain.B
 		// remove cached object
 		delete(c.ShadowObjects, id.String())
 		// send verify message
-		err = multierr.Append(err, c.callVerifyObject(ctx, id, newObject))
+		err = multierr.Append(err, c.sendVerifyObject(ctx, id, checksum))
 	}
 
 	return nil
