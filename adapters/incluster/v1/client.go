@@ -370,19 +370,6 @@ func (c *Client) callPutOrPatch(ctx context.Context, id domain.KindName, checksu
 	return nil
 }
 
-func (c *Client) callVerifyObject(ctx context.Context, id domain.KindName, object []byte) error {
-	// calculate checksum
-	checksum, err := storageutils.CanonicalHash(object)
-	if err != nil {
-		return fmt.Errorf("calculate checksum: %w", err)
-	}
-	err = c.sendVerifyObject(ctx, id, checksum)
-	if err != nil {
-		return fmt.Errorf("send checksum: %w", err)
-	}
-	return nil
-}
-
 func (c *Client) getChecksum(d metav1.Object) (string, error) {
 	// fast path, we have the checksum already
 	if checksum, ok := d.GetAnnotations()[helpersv1.SyncChecksumMetadataKey]; ok {

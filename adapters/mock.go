@@ -298,7 +298,7 @@ func (m *MockAdapter) TestCallPutOrPatch(ctx context.Context, id domain.KindName
 	return nil
 }
 
-// TestCallVerifyObject is used for testing purposes only, it is similar to incluster.client.callVerifyObject
+// TestCallVerifyObject is used for testing purposes only, it hashes the object and sends a verify message
 func (m *MockAdapter) TestCallVerifyObject(ctx context.Context, id domain.KindName, object []byte) error {
 	ctx = utils.ContextFromGeneric(ctx, domain.Generic{})
 	// store object locally - this is only for testing purposes
