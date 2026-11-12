@@ -1,6 +1,7 @@
 package incluster
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -647,26 +648,47 @@ func (c *Client) getExistingStorageObjects(ctx context.Context) (string, error) 
 
 func (c *Client) filterAndMarshal(d metav1.Object) ([]byte, error) {
 	storageutils.RemoveManagedFields(d)
+	fields, ok := fieldsToRemove[c.kind.String()]
+	if !ok {
+		fields = fieldsToRemove["default"]
+	}
 	if un, ok := d.(*unstructured.Unstructured); ok {
-		fields, ok := fieldsToRemove[c.kind.String()]
-		if !ok {
-			fields = fieldsToRemove["default"]
-		}
 		if err := storageutils.RemoveSpecificFields(un, fields); err != nil {
 			return nil, fmt.Errorf("remove specific fields: %w", err)
 		}
 		if err := utils.MaskEnvironmentVariables(un); err != nil {
 			return nil, fmt.Errorf("mask environment variables: %w", err)
 		}
-	} else {
-		// add type meta information to the object
-		d.(runtime.Object).GetObjectKind().SetGroupVersionKind(schema.GroupVersionKind{
-			Group:   c.kind.Group,
-			Version: c.kind.Version,
-			Kind:    reflect.TypeOf(d).Elem().Name(),
-		})
+		return json.Marshal(un)
 	}
-	return json.Marshal(d)
+	// add type meta information to the object
+	d.(runtime.Object).GetObjectKind().SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   c.kind.Group,
+		Version: c.kind.Version,
+		Kind:    reflect.TypeOf(d).Elem().Name(),
+	})
+	if len(fields) == 0 {
+		return json.Marshal(d)
+	}
+	// typed objects from the storage client (sbomsyfts) need the same fields removed.
+	// Decode with UseNumber so the numbers that stay are written back exactly as they
+	// came: package metadata is raw JSON and can hold values that int64 or float64
+	// would change.
+	b, err := json.Marshal(d)
+	if err != nil {
+		return nil, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	obj := map[string]interface{}{}
+	if err := dec.Decode(&obj); err != nil {
+		return nil, fmt.Errorf("decode typed object: %w", err)
+	}
+	un := &unstructured.Unstructured{Object: obj}
+	if err := storageutils.RemoveSpecificFields(un, fields); err != nil {
+		return nil, fmt.Errorf("remove specific fields: %w", err)
+	}
+	return json.Marshal(un.Object)
 }
 
 func (c *Client) getObjectFromMeta(d metav1.Object) ([]byte, error) {
