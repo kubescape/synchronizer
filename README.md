@@ -164,6 +164,22 @@ Acknowledgements and sender retries remain a follow-up for confirmed delivery.
 The existing `synchronizer.drops` telemetry records `replay_expired`,
 `replay_capacity`, `replay_oversized`, and `duplicate` reasons.
 
+## Pulsar reader recovery
+
+The server reads backend messages from Pulsar with a non-durable reader that
+starts at the latest message. A read error outside of a shutdown, a closed
+consumer included, means that the reader will not deliver messages anymore, so
+the server closes it and creates a new one. Attempts are spaced by an
+exponential backoff that starts at one second and is capped at 30 seconds.
+After five consecutive attempts without a healthy reader the server process
+exits so that it gets restarted; the count resets once a message was read or
+the new reader survived for a minute.
+
+The new reader also starts at the latest message, so backend messages published
+while no reader was attached are not delivered, as after a restart of the
+server. Each attempt is logged at error level (`pulsar reader lost, recreating
+it`), and the final failure at fatal level.
+
 ## Live namespace filtering
 
 Synchronizer can watch a shared ConfigMap for namespace filter changes without a
