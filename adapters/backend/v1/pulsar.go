@@ -162,6 +162,21 @@ func (c *PulsarMessageReader) stop() {
 	c.done <- true
 }
 
+// shutdown marks the reader as stopped before its client is closed. Closing
+// the client closes this reader too, which the loop has to take for the
+// shutdown it is, not for a lost reader to recreate on the closed client.
+func (c *PulsarMessageReader) shutdown() {
+	c.readerMu.Lock()
+	defer c.readerMu.Unlock()
+	c.stopped = true
+}
+
+func (c *PulsarMessageReader) isStopped() bool {
+	c.readerMu.Lock()
+	defer c.readerMu.Unlock()
+	return c.stopped
+}
+
 func (c *PulsarMessageReader) currentReader() pulsar.Reader {
 	c.readerMu.Lock()
 	defer c.readerMu.Unlock()
@@ -197,6 +212,10 @@ func (c *PulsarMessageReader) recoverReader(ctx context.Context, cause error, at
 		// the recovery quietly instead of counting as a failed attempt
 		if ctx.Err() != nil {
 			logger.L().Ctx(ctx).Info("pulsar reader recovery aborted due to context cancellation")
+			return false
+		}
+		if c.isStopped() {
+			logger.L().Ctx(ctx).Info("pulsar reader recovery aborted because the reader was stopped")
 			return false
 		}
 		*attempts++
@@ -246,6 +265,10 @@ func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
 		if err != nil {
 			if ctx.Err() != nil {
 				logger.L().Ctx(ctx).Info("pulsar reader loop exiting due to context cancellation")
+				return
+			}
+			if c.isStopped() {
+				logger.L().Ctx(ctx).Info("pulsar reader loop exiting because the reader was stopped")
 				return
 			}
 			// Any other error, a closed consumer included, means that this
