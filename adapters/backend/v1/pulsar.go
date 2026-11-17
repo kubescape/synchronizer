@@ -193,6 +193,12 @@ func (c *PulsarMessageReader) recoverReader(ctx context.Context, cause error, at
 	c.currentReader().Close()
 
 	for {
+		// a shutdown that started while the reader was being created must end
+		// the recovery quietly instead of counting as a failed attempt
+		if ctx.Err() != nil {
+			logger.L().Ctx(ctx).Info("pulsar reader recovery aborted due to context cancellation")
+			return false
+		}
 		*attempts++
 		if *attempts > c.recovery.maxAttempts {
 			c.fatal("pulsar reader lost and could not be recovered, exiting", cause)

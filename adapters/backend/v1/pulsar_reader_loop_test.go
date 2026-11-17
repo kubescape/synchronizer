@@ -370,6 +370,29 @@ func TestReaderLoop_ExitsOnContextCancellation(t *testing.T) {
 		assert.Equal(t, 0, factory.callCount())
 		assert.Empty(t, fatal.errors())
 	})
+
+	t.Run("while the last reader creation fails", func(t *testing.T) {
+		lost := &fakePulsarReader{results: []readResult{{err: errConsumerClosed}}}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		createErr := errors.New("broker unavailable")
+		factory := &readerFactory{results: []func() (pulsar.Reader, error){
+			returnsError(createErr),
+			returnsError(createErr),
+			func() (pulsar.Reader, error) {
+				cancel()
+				return nil, createErr
+			},
+		}}
+		fatal := &fatalRecorder{}
+		c := newTestPulsarMessageReader(lost, factory, fatal)
+
+		exited := runReaderLoop(ctx, c)
+		requireExited(t, exited)
+
+		assert.Equal(t, c.recovery.maxAttempts, factory.callCount())
+		assert.Empty(t, fatal.errors(), "a shutdown must not be reported as an unrecoverable reader")
+	})
 }
 
 // stop() closes the reader during shutdown; a reader created concurrently by
