@@ -6,8 +6,8 @@ import (
 	"github.com/kubescape/synchronizer/telemetry"
 	"go.opentelemetry.io/otel/propagation"
 	"os"
-	"strings"
 	"sync"
+	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/kubescape/go-logger"
@@ -24,9 +24,58 @@ import (
 // * Pulsar Message Reader  *//
 // ******************************
 
+const (
+	// readerRecoveryMaxAttempts is the number of consecutive attempts to
+	// replace a lost reader before the process exits.
+	readerRecoveryMaxAttempts = 5
+	// readerRecoveryInitialBackoff is the delay before the first attempt; it
+	// doubles on every following attempt up to readerRecoveryMaxBackoff.
+	readerRecoveryInitialBackoff = time.Second
+	readerRecoveryMaxBackoff     = 30 * time.Second
+	// readerRecoveryHealthyAfter is how long a replacement reader has to
+	// survive before an idle topic stops counting against the attempts above.
+	readerRecoveryHealthyAfter = time.Minute
+)
+
+// readerRecoveryPolicy controls how readerLoop reacts to losing its reader.
+type readerRecoveryPolicy struct {
+	maxAttempts    int
+	initialBackoff time.Duration
+	maxBackoff     time.Duration
+	healthyAfter   time.Duration
+}
+
+func defaultReaderRecoveryPolicy() readerRecoveryPolicy {
+	return readerRecoveryPolicy{
+		maxAttempts:    readerRecoveryMaxAttempts,
+		initialBackoff: readerRecoveryInitialBackoff,
+		maxBackoff:     readerRecoveryMaxBackoff,
+		healthyAfter:   readerRecoveryHealthyAfter,
+	}
+}
+
+// backoff returns the delay before the given recovery attempt (1-based).
+func (p readerRecoveryPolicy) backoff(attempt int) time.Duration {
+	delay := p.initialBackoff
+	for i := 1; i < attempt && delay < p.maxBackoff; i++ {
+		delay *= 2
+	}
+	return min(delay, p.maxBackoff)
+}
+
 type PulsarMessageReader struct {
-	name           string
-	reader         pulsar.Reader
+	name string
+	// readerMu guards reader and stopped: the reader loop replaces the reader
+	// while stop() closes it.
+	readerMu sync.Mutex
+	reader   pulsar.Reader
+	stopped  bool
+	// newReader creates a replacement for a lost reader.
+	newReader func() (pulsar.Reader, error)
+	recovery  readerRecoveryPolicy
+	// fatal reports an unrecoverable reader loss. It exits the process so
+	// that the pod is restarted instead of staying up without consuming.
+	fatal          func(msg string, err error)
 	done           chan bool
 	messageChannel chan pulsar.Message
 	wg             sync.WaitGroup
@@ -54,21 +103,29 @@ func NewPulsarMessageReader(cfg config.Config, pulsarClient pulsarconnector.Clie
 		helpers.String("readerName", readerName),
 		helpers.String("topic", topic))
 
-	reader, err := pulsarClient.CreateReader(
-		pulsar.ReaderOptions{
-			Name:                    readerName,
-			Topic:                   topic,
-			StartMessageID:          pulsar.LatestMessageID(),
-			StartMessageIDInclusive: true,
-		})
+	newReader := func() (pulsar.Reader, error) {
+		return pulsarClient.CreateReader(
+			pulsar.ReaderOptions{
+				Name:                    readerName,
+				Topic:                   topic,
+				StartMessageID:          pulsar.LatestMessageID(),
+				StartMessageIDInclusive: true,
+			})
+	}
 
+	reader, err := newReader()
 	if err != nil {
 		panic(err)
 	}
 
 	return &PulsarMessageReader{
-		name:           readerName,
-		reader:         reader,
+		name:      readerName,
+		reader:    reader,
+		newReader: newReader,
+		recovery:  defaultReaderRecoveryPolicy(),
+		fatal: func(msg string, err error) {
+			logger.L().Fatal(msg, helpers.Error(err), helpers.String("readerName", readerName))
+		},
 		done:           make(chan bool),
 		messageChannel: msgChannel,
 		workers:        workers,
@@ -96,28 +153,109 @@ func (c *PulsarMessageReader) Start(mainCtx context.Context, adapter adapters.Ad
 
 func (c *PulsarMessageReader) stop() {
 	logger.L().Info("closing pulsar reader")
+	c.readerMu.Lock()
+	c.stopped = true
 	c.reader.Close()
+	c.readerMu.Unlock()
 	logger.L().Info("closing pulsar message channel")
 	close(c.messageChannel)
 	c.done <- true
 }
 
-func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
+func (c *PulsarMessageReader) currentReader() pulsar.Reader {
+	c.readerMu.Lock()
+	defer c.readerMu.Unlock()
+	return c.reader
+}
+
+// replaceReader swaps in a newly created reader. It reports false, and closes
+// the new reader, when the message reader was stopped in the meantime.
+func (c *PulsarMessageReader) replaceReader(reader pulsar.Reader) bool {
+	c.readerMu.Lock()
+	defer c.readerMu.Unlock()
+	if c.stopped {
+		reader.Close()
+		return false
+	}
+	c.reader = reader
+	return true
+}
+
+// recoverReader replaces a reader that stopped delivering messages. Every
+// attempt waits for an exponential backoff first and counts against
+// recovery.maxAttempts; attempts carries the count across calls so that a
+// reader which is lost again right after being replaced cannot loop forever.
+// It reports false when the loop has to end: the context was cancelled, the
+// message reader was stopped, or the attempts were exhausted (after calling
+// fatal).
+func (c *PulsarMessageReader) recoverReader(ctx context.Context, cause error, attempts *int) bool {
+	// release the lost reader; closing an already closed reader is a no-op
+	c.currentReader().Close()
+
 	for {
-		msg, err := c.reader.Next(ctx)
+		*attempts++
+		if *attempts > c.recovery.maxAttempts {
+			c.fatal("pulsar reader lost and could not be recovered, exiting", cause)
+			return false
+		}
+
+		delay := c.recovery.backoff(*attempts)
+		logger.L().Ctx(ctx).Error("pulsar reader lost, recreating it",
+			helpers.Error(cause),
+			helpers.String("readerName", c.name),
+			helpers.Int("attempt", *attempts),
+			helpers.Int("maxAttempts", c.recovery.maxAttempts),
+			helpers.String("backoff", delay.String()))
+
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			logger.L().Ctx(ctx).Info("pulsar reader recovery aborted due to context cancellation")
+			return false
+		case <-timer.C:
+		}
+
+		reader, err := c.newReader()
 		if err != nil {
-			select {
-			case <-ctx.Done():
+			cause = fmt.Errorf("failed to recreate pulsar reader: %w", err)
+			continue
+		}
+		if !c.replaceReader(reader) {
+			logger.L().Ctx(ctx).Info("pulsar reader recovery aborted because the reader was stopped")
+			return false
+		}
+		logger.L().Ctx(ctx).Info("pulsar reader recreated", helpers.String("readerName", c.name))
+		return true
+	}
+}
+
+func (c *PulsarMessageReader) readerLoop(ctx context.Context) {
+	// consecutive recovery attempts since the reader was last known healthy
+	recoveryAttempts := 0
+	var lastRecovery time.Time
+
+	for {
+		msg, err := c.currentReader().Next(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
 				logger.L().Ctx(ctx).Info("pulsar reader loop exiting due to context cancellation")
 				return
-			default:
 			}
-			if strings.Contains(err.Error(), "ConsumerClosed") || strings.Contains(err.Error(), "consumer closed") {
-				logger.L().Ctx(ctx).Info("pulsar reader loop exiting due to consumer close")
+			// Any other error, a closed consumer included, means that this
+			// reader will not deliver messages anymore. Returning here would
+			// leave the process running without consuming, so replace the
+			// reader, and exit the process if that keeps failing.
+			if !lastRecovery.IsZero() && time.Since(lastRecovery) >= c.recovery.healthyAfter {
+				recoveryAttempts = 0
+			}
+			if !c.recoverReader(ctx, err, &recoveryAttempts) {
 				return
 			}
-			logger.L().Ctx(ctx).Fatal("failed to read message from pulsar", helpers.Error(err))
+			lastRecovery = time.Now()
+			continue
 		}
+		recoveryAttempts = 0
 
 		if messaging.IsSelfProducedMessage(msg.Properties(), msg.Key()) {
 			continue
