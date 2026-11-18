@@ -421,3 +421,45 @@ func TestReaderRecoveryPolicy_Backoff(t *testing.T) {
 		assert.Equal(t, expected, policy.backoff(i+1), "attempt %d", i+1)
 	}
 }
+
+// closingReader blocks in Next until it is closed, as the pulsar client closes
+// its readers when it is closed, and then reports a closed consumer.
+type closingReader struct {
+	pulsar.Reader
+	once   sync.Once
+	closed chan struct{}
+}
+
+func newClosingReader() *closingReader { return &closingReader{closed: make(chan struct{})} }
+
+func (r *closingReader) Next(ctx context.Context) (pulsar.Message, error) {
+	select {
+	case <-r.closed:
+		return nil, errConsumerClosed
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (r *closingReader) Close() { r.once.Do(func() { close(r.closed) }) }
+
+// The server closes the pulsar client before it cancels the reader's context
+// (the deferred calls in cmd/server/main.go run in that order), and closing the
+// client closes the reader. The loop must end quietly then, without taking the
+// closed reader for a lost one and recreating it on the closed client.
+func TestReaderLoop_ExitsWhenStoppedBeforeTheClientIsClosed(t *testing.T) {
+	reader := newClosingReader()
+	factory := &readerFactory{} // a new reader is never asked for
+	fatal := &fatalRecorder{}
+	c := newTestPulsarMessageReader(reader, factory, fatal)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	exited := runReaderLoop(ctx, c)
+
+	c.shutdown()   // what the message queue's Close does first
+	reader.Close() // what closing the client then does to its readers
+
+	requireExited(t, exited)
+	assert.Zero(t, factory.callCount(), "no reader is created on the closed client")
+	assert.Empty(t, fatal.errors())
+}

@@ -64,6 +64,11 @@ func newPulsarFromConfig(_ context.Context, cfg config.Config) (*messaging.Compo
 	return &messaging.Components{
 		Producer: producer,
 		Reader:   reader,
-		Close:    pulsarClient.Close,
+		// The client is closed before the reader's context is cancelled, so the
+		// reader is told first that the reader it loses then isn't lost.
+		Close: func() {
+			reader.shutdown()
+			pulsarClient.Close()
+		},
 	}, nil
 }
