@@ -169,6 +169,11 @@ func run() error {
 	return nil
 }
 
+// dialTimeout bounds one connection attempt, TCP connect and WebSocket handshake. The
+// client's read and write loops wait for a reconnect, so an attempt that hangs on a
+// silent server must end and be retried.
+var dialTimeout = 30 * time.Second
+
 // connectWebsocket owns each attempt error independently of the caller lifecycle.
 func connectWebsocket(ctx context.Context, dialer ws.Dialer, serverURL, version string) (net.Conn, error) {
 	var conn net.Conn
@@ -188,7 +193,9 @@ func connectWebsocket(ctx context.Context, dialer ws.Dialer, serverURL, version 
 			return n + int64(m), err
 		})
 		var err error
-		conn, _, _, err = attemptDialer.Dial(attemptCtx, serverURL)
+		dialCtx, cancelDial := context.WithTimeout(attemptCtx, dialTimeout)
+		conn, _, _, err = attemptDialer.Dial(dialCtx, serverURL)
+		cancelDial()
 		finish(err)
 		var status ws.StatusError
 		if errors.As(err, &status) && status == http.StatusFailedDependency {
