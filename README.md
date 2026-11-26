@@ -90,7 +90,9 @@ downstream reconciliation completes.
 The in-cluster client uses one WebSocket connection for both directions. When a
 read or a write on it fails, the client opens a new connection at once. A read
 failure does not wait for the next write (the client pings every 50 seconds), so
-the time without a connection is only the time to dial. When a read and a write
+the time without a connection is the time to dial. When reconnects repeat, the
+read loop waits with exponential backoff between them, and a successful read
+resets the backoff. When a read and a write
 fail on the same connection, the client opens one new connection, not two.
 
 A server pod forwards a backend message only to a client it holds a connection

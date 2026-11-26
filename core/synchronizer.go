@@ -671,15 +671,21 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 				// close connection
 				s.markDisconnected(conn)
 				_ = conn.Close()
+				if err := s.workerCtx.Err(); err != nil {
+					// Stop closed the connection: no reconnect, no warning
+					return backoff.Permanent(err)
+				}
 				if s.isClient {
 					// Reconnect now. The server forwards backend messages only to a live
 					// connection, so waiting for the next write (up to a 50 s ping)
 					// would drop every message sent in the gap.
-					logger.L().Ctx(ctx).Warning("process incoming messages", helpers.Error(fmt.Errorf("cannot read data: %w", err)))
 					if _, reconnectErr := s.reconnect(s.workerCtx, conn); reconnectErr != nil {
 						return fmt.Errorf("cannot read data: %w, reconnect: %w", err, reconnectErr)
 					}
-					return nil
+					// Still an error, so the next read waits for the backoff: a server that
+					// accepts and then closes at once must not make the client dial in a
+					// loop. The new connection buffers what the server sends meanwhile.
+					return fmt.Errorf("cannot read data: %w, reconnected", err)
 				} else {
 					return backoff.Permanent(fmt.Errorf("cannot read data: %w", err))
 				}

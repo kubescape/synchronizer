@@ -129,3 +129,32 @@ func TestReconnectAfterStopDoesNotDial(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, old, s.connection())
 }
+
+// A server that accepts the connection and closes it at once does not make the client
+// dial in a loop: reconnects from the read loop wait for the backoff.
+func TestReadReconnectsBackOff(t *testing.T) {
+	ctx := context.WithValue(context.Background(), domain.ContextKeyClientIdentifier, domain.ClientIdentifier{
+		Account: "11111111-2222-3333-4444-555555555555",
+		Cluster: "cluster",
+	})
+	closedConn := func() net.Conn {
+		conn, peer := net.Pipe()
+		_ = peer.Close()
+		t.Cleanup(func() { _ = conn.Close() })
+		return conn
+	}
+	var dials atomic.Int32
+	s, err := NewSynchronizerClient(ctx, []adapters.Adapter{adapters.NewMockAdapter(true)}, closedConn(), func() (net.Conn, error) {
+		dials.Add(1)
+		return closedConn(), nil
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Stop(ctx) })
+	go func() { _ = s.listenForSyncEvents(ctx) }()
+
+	time.Sleep(time.Second)
+	// the default backoff starts at 0.5 s, so about 2 dials in a second; allow jitter
+	n := dials.Load()
+	assert.GreaterOrEqual(t, n, int32(1), "the client did not reconnect")
+	assert.LessOrEqual(t, n, int32(5), "the client reconnects in a loop without backoff")
+}
