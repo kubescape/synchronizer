@@ -33,6 +33,7 @@ type recoveryContextKey struct{}
 
 type Synchronizer struct {
 	connMu        sync.RWMutex
+	reconnectMu   sync.Mutex // one client reconnect at a time, shared by the reader and the writer
 	adapters      []adapters.Adapter
 	isClient      bool // which side of the connection is this?
 	Conn          *net.Conn
@@ -221,21 +222,14 @@ func (s *Synchronizer) sendData(ctx context.Context, data []byte) {
 				if err := ctx.Err(); err != nil {
 					return backoff.Permanent(err)
 				}
-				// try to reconnect
-				conn, err := s.newConn()
+				// try to reconnect, or use the connection the reader already replaced
+				conn, err := s.reconnect(ctx, conn)
 				if err != nil {
+					if ctxErr := ctx.Err(); ctxErr != nil {
+						return backoff.Permanent(ctxErr)
+					}
 					return fmt.Errorf("refreshing outgoing connection: %w", err)
 				}
-				s.connMu.Lock()
-				if err := ctx.Err(); err != nil {
-					s.connMu.Unlock()
-					_ = conn.Close()
-					return backoff.Permanent(err)
-				}
-				s.Conn = &conn
-				s.disconnected.Store(false)
-				s.connMu.Unlock()
-				logger.L().Ctx(ctx).Info("outgoing connection refreshed, synchronization will resume")
 				err = s.writeData(conn, data)
 				if err != nil {
 					s.markDisconnected(conn)
@@ -671,19 +665,27 @@ func (s *Synchronizer) listenForSyncEvents(ctx context.Context) error {
 			}
 			data, err := s.readDataFunc(conn)
 			finish := telemetry.Default().Begin(ctx, "receive")
-			defer func() { finish(err, len(data)) }()
 			if err != nil {
+				// end the receive span before any reconnect, so it does not count the dial
+				finish(err, len(data))
 				// close connection
 				s.markDisconnected(conn)
 				_ = conn.Close()
 				if s.isClient {
-					// let sendData() reconnect and return an error to retry
-					return fmt.Errorf("cannot read data: %w", err)
+					// Reconnect now. The server forwards backend messages only to a live
+					// connection, so waiting for the next write (up to a 50 s ping)
+					// would drop every message sent in the gap.
+					logger.L().Ctx(ctx).Warning("process incoming messages", helpers.Error(fmt.Errorf("cannot read data: %w", err)))
+					if _, reconnectErr := s.reconnect(s.workerCtx, conn); reconnectErr != nil {
+						return fmt.Errorf("cannot read data: %w, reconnect: %w", err, reconnectErr)
+					}
+					return nil
 				} else {
 					return backoff.Permanent(fmt.Errorf("cannot read data: %w", err))
 				}
 			}
 			err = pool.Invoke(data)
+			finish(err, len(data))
 			if err != nil {
 				return fmt.Errorf("invoke inPool: %w", err)
 			}
@@ -989,6 +991,35 @@ func (s *Synchronizer) sendPutObject(ctx context.Context, id domain.KindName, ch
 		helpers.String("name", msg.Name),
 		helpers.Int("object size", len(msg.Object)))
 	return nil
+}
+
+// reconnect replaces the client connection failed with a new one and returns it. When
+// another goroutine already replaced failed, it returns that replacement without dialing,
+// so a read and a write that fail on the same connection open only one new connection.
+func (s *Synchronizer) reconnect(ctx context.Context, failed net.Conn) (net.Conn, error) {
+	s.reconnectMu.Lock()
+	defer s.reconnectMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if current := s.connection(); current != failed {
+		return current, nil
+	}
+	conn, err := s.newConn()
+	if err != nil {
+		return nil, err
+	}
+	s.connMu.Lock()
+	if err := ctx.Err(); err != nil {
+		s.connMu.Unlock()
+		_ = conn.Close()
+		return nil, err
+	}
+	s.Conn = &conn
+	s.disconnected.Store(false)
+	s.connMu.Unlock()
+	logger.L().Ctx(ctx).Info("connection refreshed, synchronization will resume")
+	return conn, nil
 }
 
 // Snapshot the connection without holding a lock during blocking network I/O.
