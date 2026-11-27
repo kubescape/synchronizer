@@ -238,12 +238,20 @@ func ServePprof() {
 	}
 }
 
-func StartLivenessProbe() {
-	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+// livenessMux serves only /healthz. It does not use http.DefaultServeMux,
+// because importing net/http/pprof registers the pprof handlers there.
+func livenessMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	return mux
+}
+
+func StartLivenessProbe() {
+	mux := livenessMux()
 	go func() {
-		if err := http.ListenAndServe(":7888", nil); err != nil {
+		if err := http.ListenAndServe(":7888", mux); err != nil {
 			logger.L().Error("failed to start liveness probe", helpers.Error(err))
 		}
 	}()
