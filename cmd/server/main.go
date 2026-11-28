@@ -79,8 +79,9 @@ func run() error {
 	if cfg.Backend.Prometheus != nil && cfg.Backend.Prometheus.Enabled {
 		go func() {
 			logger.L().Info("prometheus metrics enabled", helpers.Int("port", cfg.Backend.Prometheus.Port))
-			http.Handle("/metrics", promhttp.Handler())
-			_ = http.ListenAndServe(fmt.Sprintf(":%d", cfg.Backend.Prometheus.Port), nil)
+			mux := http.NewServeMux()
+			mux.Handle("/metrics", promhttp.Handler())
+			_ = http.ListenAndServe(fmt.Sprintf(":%d", cfg.Backend.Prometheus.Port), mux)
 		}()
 	}
 

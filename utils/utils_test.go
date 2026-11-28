@@ -2,6 +2,8 @@ package utils
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/kubescape/synchronizer/domain"
@@ -410,6 +412,26 @@ func TestMaskEnvironmentVariables(t *testing.T) {
 			err := MaskEnvironmentVariables(tt.input)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, tt.input)
+		})
+	}
+}
+
+func TestLivenessMux(t *testing.T) {
+	mux := livenessMux()
+	tests := []struct {
+		path string
+		want int
+	}{
+		{"/healthz", http.StatusOK},
+		{"/debug/pprof/", http.StatusNotFound},
+		{"/debug/pprof/cmdline", http.StatusNotFound},
+		{"/metrics", http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			assert.Equal(t, tt.want, rec.Code)
 		})
 	}
 }
