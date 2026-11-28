@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gobwas/ws"
 	"github.com/stretchr/testify/assert"
@@ -54,4 +55,35 @@ func TestConnectWebsocketRetriesA503AndStopsOnA401(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "server rejected our credentials")
 	assert.Equal(t, int32(1), atomic.LoadInt32(&refusals), "a refusal is final")
+}
+
+// A server that accepts the connection and never answers the upgrade does not hold the
+// client forever: the attempt times out and the client tries again.
+func TestConnectWebsocketTimesOutASilentServer(t *testing.T) {
+	defer func(d time.Duration) { dialTimeout = d }(dialTimeout)
+	dialTimeout = 100 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var attempts int32
+	dialer := ws.Dialer{Header: ws.HandshakeHeaderHTTP(http.Header{}), NetDial: func(context.Context, string, string) (net.Conn, error) {
+		if atomic.AddInt32(&attempts, 1) == 2 {
+			cancel()
+		}
+		client, server := net.Pipe()
+		go func() { _, _ = io.Copy(io.Discard, server) }() // reads the request, never answers
+		t.Cleanup(func() { _ = server.Close() })
+		return client, nil
+	}}
+	done := make(chan error, 1)
+	go func() {
+		_, err := connectWebsocket(ctx, dialer, "ws://silent.invalid", "test")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+		assert.GreaterOrEqual(t, atomic.LoadInt32(&attempts), int32(2), "the silent attempt was not timed out and retried")
+	case <-time.After(10 * time.Second):
+		t.Fatal("the attempt to a silent server never ended")
+	}
 }

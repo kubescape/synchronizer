@@ -94,7 +94,9 @@ All instruments use scope `github.com/kubescape/synchronizer/telemetry`.
 Operation vocabulary: `http_ingest,connect,receive,send,dispatch,batch,get,verify,delete,patch,
 put,mq_produce,mq_receive,other`. All caller strings normalize to this vocabulary.
 `receive` measures delivery to the incoming worker pool after the socket read,
-excluding idle read time. Adapter handlers measure application processing.
+excluding idle read time. A failed read ends its `receive` operation before the
+client reconnects, so the reconnect is counted under `connect`, not `receive`.
+Adapter handlers measure application processing.
 Broker production ends on the asynchronous acknowledgement callback, including
 failures; broker consumption measures handling, including reconciliation waits.
 
